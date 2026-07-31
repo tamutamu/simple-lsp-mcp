@@ -118,28 +118,6 @@ Every tool returns structured data. Symbol, position, and range lines and column
 | `get_subtypes` | Get direct subtypes | `language` and target |
 | `get_diagnostics` | Get diagnostics for a file | `language` when `path` is supplied |
 
-### Common inputs
-
-- `language`: An MCP language name from the table above. Required for symbol and file operations.
-- `path`: A workspace-relative file path. Absolute paths, `..`, and symbolic links that escape the workspace are rejected.
-- `line`, `column`: One-based positions.
-- `limit`: The maximum result count. It defaults to `--max-results` (500 by default). Values above that maximum are clamped.
-- `kinds`: A kind filter for `search_symbols` and `list_workspace_symbols`, for example `["function", "class"]`.
-
-Tools that accept a target require exactly one of these forms:
-
-```json
-{"symbol_id": "sym_..."}
-```
-
-```json
-{"path": "src/main.go", "line": 12, "column": 8}
-```
-
-Get `symbol_id` values from `search_symbols`, `list_workspace_symbols`, `get_document_symbols`, or hierarchy-tool results. IDs are valid only in the same MCP server process; if their file changes, calls return `STALE_SYMBOL`. `get_symbol` includes source by default; set `include_source: false` to omit it. Set `include_declaration: true` on `find_references` to include the declaration.
-
-If an LSP server does not advertise a requested capability, the relevant tool returns `METHOD_NOT_SUPPORTED`. Capability support depends on the language and LSP server implementation.
-
 ## Server options
 
 | Option | Default | Description |
@@ -149,40 +127,3 @@ If an LSP server does not advertise a requested capability, the relevant tool re
 | `--request-timeout` | `15s` | Timeout for each LSP request |
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |
 | `--max-results` | `500` | Maximum result count per tool |
-
-## Troubleshooting
-
-| Response code | Cause and resolution |
-| --- | --- |
-| `INVALID_PATH` | Ensure `path` is workspace-relative and names an existing file. |
-| `UNSUPPORTED_LANGUAGE` | Check that `language` appears in the supported-language table and its profile is configured in `LSP_MCP_SERVERS`. |
-| `LANGUAGE_SERVER_NOT_FOUND` | Confirm the configured `command` is executable from the MCP process `PATH`. |
-| `LANGUAGE_SERVER_START_FAILED` | Check LSP launch arguments, project configuration, and stdio mode. |
-| `METHOD_NOT_SUPPORTED` | The selected LSP server does not implement that LSP capability. Use a supporting server or an available tool. |
-| `REQUEST_TIMEOUT` | Increase `--request-timeout`, or inspect LSP startup and project-analysis problems. |
-| `STALE_SYMBOL` | The source file changed after the symbol was acquired. Search again and use the new `symbol_id`. |
-
-## Development and verification
-
-Run unit tests and build the command:
-
-```sh
-go test ./...
-go build ./cmd/simple-lsp-mcp
-```
-
-### Codex end-to-end verification
-
-`scripts/test-codex-exec.sh` exercises the complete path through the Codex CLI, this MCP server, and real LSP servers. It covers Python, TypeScript, Go, HTML, and CSS fixtures, and verifies that Codex calls the `simple_lsp` tool and receives the expected symbol.
-
-```sh
-bash scripts/test-codex-exec.sh
-```
-
-The check requires a logged-in Codex CLI and can consume API quota. It also requires `codex`, `go`, `pyright-langserver`, `typescript-language-server`, `gopls`, `npx`, and `jq`. `npx` downloads the HTML and CSS LSP package if it is not cached.
-
-To run one case only:
-
-```sh
-CODEX_E2E_CASE=typescript bash scripts/test-codex-exec.sh
-```
