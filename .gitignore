@@ -1,0 +1,12 @@
+# Go build and test artifacts
+/simple-lsp-mcp
+*.test
+*.out
+coverage.out
+
+# Local MCP client settings
+/.codex/
+/.claude/
+
+# OS metadata
+.DS_Store
