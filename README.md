@@ -50,55 +50,9 @@ go build -o simple-lsp-mcp ./cmd/simple-lsp-mcp
 
 Place the resulting executable on the MCP client's `PATH`, or specify its absolute path as the configured `command`.
 
-## Quick start
-
-This example configures a project that uses Go and TypeScript. Replace `/absolute/path/to/project` with the absolute path of the workspace to inspect.
-
-```json
-{
-  "go": {"command": "gopls", "args": []},
-  "typescript-javascript": {
-    "command": "typescript-language-server",
-    "args": ["--stdio"]
-  }
-}
-```
-
-Pass this JSON as `LSP_MCP_SERVERS` and supply the workspace to the server:
-
-```sh
-LSP_MCP_SERVERS='{"go":{"command":"gopls","args":[]},"typescript-javascript":{"command":"typescript-language-server","args":["--stdio"]}}' \
-  simple-lsp-mcp --workspace /absolute/path/to/project
-```
-
-`--workspace` is required. MCP communicates over standard input and output, so normally an MCP client starts the server rather than an interactive shell.
-
-### All-profile configuration example
-
-```json
-{
-  "python": {"command": "pyright-langserver", "args": ["--stdio"]},
-  "typescript-javascript": {
-    "command": "typescript-language-server",
-    "args": ["--stdio"]
-  },
-  "go": {"command": "gopls", "args": []},
-  "html": {
-    "command": "npx",
-    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-html-language-server", "--stdio"]
-  },
-  "css": {
-    "command": "npx",
-    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-css-language-server", "--stdio"]
-  }
-}
-```
-
-You may remove profiles you do not use. Calling an unconfigured language returns `UNSUPPORTED_LANGUAGE`; a configured server executable that cannot be found returns `LANGUAGE_SERVER_NOT_FOUND`.
-
 ## Codex configuration
 
-Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` or an absolute path to the built executable.
+Add the following to `~/.codex/config.toml`. Replace `/absolute/path/to/project` with the workspace to inspect. `command` may be a name on `PATH` or an absolute path to the built executable.
 
 ```toml
 [mcp_servers.simple-lsp]
@@ -117,15 +71,17 @@ enabled = true
 
 [mcp_servers.simple-lsp.env]
 LSP_MCP_SERVERS = """
-{"go":{"command":"gopls","args":[]},"typescript-javascript":{"command":"typescript-language-server","args":["--stdio"]}}
+{"python":{"command":"pyright-langserver","args":["--stdio"]},"typescript-javascript":{"command":"typescript-language-server","args":["--stdio"]},"go":{"command":"gopls","args":[]},"html":{"command":"npx","args":["--yes","--package=vscode-langservers-extracted","vscode-html-language-server","--stdio"]},"css":{"command":"npx","args":["--yes","--package=vscode-langservers-extracted","vscode-css-language-server","--stdio"]}}
 """
 ```
+
+This config enables Python, TypeScript/JavaScript, Go, HTML, and CSS. Remove profiles you do not use. Calling an unconfigured language returns `UNSUPPORTED_LANGUAGE`; a configured server executable that cannot be found returns `LANGUAGE_SERVER_NOT_FOUND`.
 
 In Codex, begin code exploration with `search_symbols` or `get_document_symbols`. For example, to list functions in `src/greeting.ts`, call `get_document_symbols` with `path: "src/greeting.ts"` and `language: "typescript"`.
 
 ## Claude Code configuration
 
-Add this MCP configuration to Claude Code:
+Add this configuration to Claude Code. It enables Python, TypeScript/JavaScript, Go, HTML, and CSS:
 
 ```json
 {
