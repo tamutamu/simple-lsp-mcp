@@ -1,13 +1,16 @@
 package workspace
 
 import (
-	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"path/filepath"
 	"strings"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 )
 
+// Workspace confines file access to a resolved workspace root.
 type Workspace struct{ root string }
 
+// Open resolves the root once so later path checks are symlink-aware.
 func Open(path string) (*Workspace, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -19,7 +22,11 @@ func Open(path string) (*Workspace, error) {
 	}
 	return &Workspace{root: real}, nil
 }
+
+// Root returns the resolved workspace root.
 func (w *Workspace) Root() string { return w.root }
+
+// Resolve returns a file inside the workspace and rejects escaping paths.
 func (w *Workspace) Resolve(path string) (string, error) {
 	if path == "" || filepath.IsAbs(path) || strings.HasPrefix(path, "\\\\") || looksLikeDrive(path) {
 		return "", core.NewError(core.InvalidPath, "path must be workspace-relative")
@@ -39,6 +46,8 @@ func (w *Workspace) Resolve(path string) (string, error) {
 	}
 	return real, nil
 }
+
+// Relative converts an in-workspace path into its workspace-relative form.
 func (w *Workspace) Relative(path string) (string, error) {
 	rel, err := filepath.Rel(w.root, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {

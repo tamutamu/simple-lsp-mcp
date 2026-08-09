@@ -9,12 +9,16 @@ import (
 	"time"
 )
 
+// MCPServersEnv contains the JSON configuration for language-server profiles.
 const MCPServersEnv = "LSP_MCP_SERVERS"
 
+// Server describes the command used to start one language server.
 type Server struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
 }
+
+// Runtime holds the server configuration and request limits used at runtime.
 type Runtime struct {
 	Workspace       string
 	Servers         map[string]Server
@@ -23,10 +27,12 @@ type Runtime struct {
 	MaxResults      int
 }
 
+// allowedProfiles keeps configuration aligned with the supported language profiles.
 var allowedProfiles = map[string]struct{}{
 	"python": {}, "typescript-javascript": {}, "go": {}, "html": {}, "css": {},
 }
 
+// Load applies defaults and reads configured language-server profiles.
 func Load(base Runtime) (Runtime, error) {
 	applyDefaults(&base)
 	servers, err := loadServers(os.Getenv(MCPServersEnv))
@@ -41,9 +47,11 @@ func applyDefaults(runtime *Runtime) {
 	if runtime.RequestTimeout == 0 {
 		runtime.RequestTimeout = 15 * time.Second
 	}
+
 	if runtime.DiagnosticsWait == 0 {
 		runtime.DiagnosticsWait = 2 * time.Second
 	}
+
 	if runtime.MaxResults == 0 {
 		runtime.MaxResults = 500
 	}

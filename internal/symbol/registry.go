@@ -3,21 +3,30 @@ package symbol
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"sync"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 )
 
+// Record stores the metadata needed to resolve a symbol during one MCP session.
 type Record struct {
 	ID, SessionKey, Name, Kind, ContainerName, URI, Path, FileHash string
 	Range, SelectionRange                                          core.Range
 	Data                                                           any
 }
+
+// Registry owns ephemeral symbol handles for the current MCP process.
 type Registry struct {
 	mu      sync.RWMutex
 	records map[string]Record
 }
 
-func New() *Registry { return &Registry{records: map[string]Record{}} }
+// New creates an empty symbol registry.
+func New() *Registry {
+	return &Registry{records: map[string]Record{}}
+}
+
+// Register assigns a collision-resistant handle to a symbol record.
 func (r *Registry) Register(v Record) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -31,6 +40,8 @@ func (r *Registry) Register(v Record) string {
 		}
 	}
 }
+
+// Get resolves a previously registered symbol handle.
 func (r *Registry) Get(id string) (Record, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

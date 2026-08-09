@@ -4,6 +4,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"time"
+
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
@@ -13,10 +16,9 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
-	"os"
-	"time"
 )
 
+// Engine coordinates MCP tool requests with workspace, document, and LSP state.
 type Engine struct {
 	WS              *workspace.Workspace
 	Sessions        *session.Manager
@@ -27,9 +29,20 @@ type Engine struct {
 	MaxResults      int
 }
 
+// New builds an engine with session-local document and symbol stores.
 func New(ws *workspace.Workspace, cfg config.Runtime) *Engine {
-	return &Engine{WS: ws, Sessions: session.NewManager(ws.Root(), cfg.Servers), Docs: document.NewStore(), Symbols: symbol.New(), Timeout: cfg.RequestTimeout, DiagnosticsWait: cfg.DiagnosticsWait, MaxResults: cfg.MaxResults}
+	return &Engine{
+		WS:              ws,
+		Sessions:        session.NewManager(ws.Root(), cfg.Servers),
+		Docs:            document.NewStore(),
+		Symbols:         symbol.New(),
+		Timeout:         cfg.RequestTimeout,
+		DiagnosticsWait: cfg.DiagnosticsWait,
+		MaxResults:      cfg.MaxResults,
+	}
 }
+
+// SearchSymbols delegates workspace symbol lookup to the selected LSP server.
 func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
 	limit, err := e.limit(in)
 	if err != nil {
@@ -68,6 +81,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	return e.workspaceSymbols(out, p, false, true, nil), nil
 }
 
+// workspaceSymbols keeps the common result metadata in one place.
 func (e *Engine) workspaceSymbols(symbols []core.SymbolSummary, profile language.Profile, truncated, includeServers bool, warnings []string) map[string]any {
 	meta := core.Meta{Complete: true, Truncated: truncated, Warnings: warnings}
 	if includeServers {
@@ -78,6 +92,8 @@ func (e *Engine) workspaceSymbols(symbols []core.SymbolSummary, profile language
 		"meta":    meta,
 	}
 }
+
+// DocumentSymbols returns hierarchical symbols when supported by the server.
 func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
 	path := stringVal(in, "path")
 	p, s, d, err := e.document(ctx, path, stringVal(in, "language"))
@@ -110,6 +126,8 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 	}
 	return map[string]any{"symbols": out}, nil
 }
+
+// GetSymbol returns a previously acquired symbol after checking its file hash.
 func (e *Engine) GetSymbol(_ context.Context, in map[string]any) (map[string]any, error) {
 	r, err := e.Symbols.Get(stringVal(in, "symbol_id"))
 	if err != nil {
@@ -141,6 +159,8 @@ func (e *Engine) GetSymbol(_ context.Context, in map[string]any) (map[string]any
 	}
 	return m, nil
 }
+
+// Relationship resolves a target and invokes one location-based LSP method.
 func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in map[string]any) (map[string]any, error) {
 	p, s, d, pos, err := e.target(ctx, in)
 	if err != nil {
@@ -174,6 +194,8 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	}
 	return map[string]any{"locations": locs, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
 }
+
+// Hierarchy prepares a call or type hierarchy before reading one level.
 func (e *Engine) Hierarchy(ctx context.Context, name string, in map[string]any) (map[string]any, error) {
 	p, s, d, pos, err := e.target(ctx, in)
 	if err != nil {
@@ -202,6 +224,8 @@ func (e *Engine) Hierarchy(ctx context.Context, name string, in map[string]any) 
 	}
 	return e.typeHierarchy(ctx, name, p, s, raw, in)
 }
+
+// Diagnostics uses pull diagnostics when available and push diagnostics otherwise.
 func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string]any, error) {
 	path := stringVal(in, "path")
 	limit, err := e.limit(in)

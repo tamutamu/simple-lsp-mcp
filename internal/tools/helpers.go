@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"strings"
+
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
@@ -12,10 +15,9 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
-	"os"
-	"strings"
 )
 
+// document resolves, starts, and synchronizes a file with its LSP session.
 func (e *Engine) document(ctx context.Context, path, languageName string) (language.Profile, *session.Session, document.Document, error) {
 	p, err := language.Require(languageName)
 	if err != nil {
@@ -35,6 +37,8 @@ func (e *Engine) document(ctx context.Context, path, languageName string) (langu
 	d, err := e.Docs.Sync(ctx, s, full, p.LanguageID)
 	return p, s, d, err
 }
+
+// target resolves either a symbol handle or a one-based source position.
 func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profile, *session.Session, document.Document, protocol.Position, error) {
 	t := targetOf(in)
 	if err := t.Validate(); err != nil {
@@ -80,6 +84,8 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 	pos, err := document.ToLSP(d.Text, core.Position{Line: t.Line, Column: t.Column}, s.Capabilities().PositionEncoding)
 	return p, s, d, pos, err
 }
+
+// symbolFromWorkspace registers an LSP workspace-symbol response for later use.
 func (e *Engine) symbolFromWorkspace(p language.Profile, v protocol.WorkspaceSymbol, s *session.Session) (core.SymbolSummary, error) {
 	l, err := e.location(protocol.Location{URI: v.Location.URI, Range: v.Location.Range}, s.Capabilities().PositionEncoding)
 	if err != nil {
@@ -89,6 +95,8 @@ func (e *Engine) symbolFromWorkspace(p language.Profile, v protocol.WorkspaceSym
 	id := e.Symbols.Register(r)
 	return core.SymbolSummary{SymbolID: id, Name: v.Name, Kind: r.Kind, ContainerName: v.ContainerName, Language: p.Name, Path: l.Path, Range: l.Range, SelectionRange: l.Range}, nil
 }
+
+// symbolFromInfo registers a flat document-symbol response for later use.
 func (e *Engine) symbolFromInfo(p language.Profile, s *session.Session, d document.Document, v protocol.SymbolInformation) (core.SymbolSummary, error) {
 	l, err := e.location(v.Location, s.Capabilities().PositionEncoding)
 	if err != nil {
@@ -98,6 +106,8 @@ func (e *Engine) symbolFromInfo(p language.Profile, s *session.Session, d docume
 	id := e.Symbols.Register(r)
 	return core.SymbolSummary{SymbolID: id, Name: v.Name, Kind: r.Kind, ContainerName: v.ContainerName, Language: p.Name, Path: l.Path, Range: l.Range, SelectionRange: l.Range}, nil
 }
+
+// documentTree converts and registers recursive document symbols.
 func (e *Engine) documentTree(p language.Profile, s *session.Session, d document.Document, vs []protocol.DocumentSymbol) []any {
 	out := make([]any, 0, len(vs))
 	path := relativeMust(e, d.Path)
@@ -120,6 +130,8 @@ func (e *Engine) documentTree(p language.Profile, s *session.Session, d document
 	}
 	return out
 }
+
+// locations accepts the three location response shapes permitted by LSP.
 func (e *Engine) locations(raw json.RawMessage, encoding string) ([]core.Location, error) {
 	var links []protocol.LocationLink
 	if json.Unmarshal(raw, &links) == nil && len(links) > 0 && links[0].TargetURI != "" {

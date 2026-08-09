@@ -4,30 +4,41 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/tamutamu/simple-lsp-mcp/internal/core"
-	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
 
+// Notifier sends document lifecycle messages to an LSP server.
 type Notifier interface {
 	Notify(method string, params any) error
 }
+
+// Document is the versioned file state known by an LSP session.
 type Document struct {
 	Path, URI, LanguageID, Hash string
 	Version                     int32
 	Text                        []byte
 	Opened                      bool
 }
+
+// Store tracks files that have been opened in an LSP session.
 type Store struct {
 	mu   sync.Mutex
 	docs map[string]*Document
 }
 
-func NewStore() *Store { return &Store{docs: map[string]*Document{}} }
+// NewStore creates an empty document store.
+func NewStore() *Store {
+	return &Store{docs: map[string]*Document{}}
+}
+
+// Sync opens a new document or sends its latest content to the language server.
 func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Document, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -36,6 +47,7 @@ func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Do
 	if !utf8.Valid(b) {
 		return Document{}, core.NewError(core.InvalidArgument, "file is not valid UTF-8")
 	}
+
 	hash := fmt.Sprintf("%x", sha256.Sum256(b))
 	uri := fileURI(path)
 	s.mu.Lock()
@@ -56,6 +68,7 @@ func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Do
 		d.Text = b
 		d.Hash = hash
 	}
+
 	return *d, nil
 }
 func fileURI(path string) string {

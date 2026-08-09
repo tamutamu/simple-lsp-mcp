@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/tools"
 )
 
+// New registers the read-only tool surface on an MCP server.
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, nil)
 	for _, d := range definitions() {
@@ -30,12 +32,14 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 	return s
 }
 
+// definition binds MCP metadata to an engine operation.
 type definition struct {
 	name, description string
 	schema            map[string]any
 	call              func(context.Context, *tools.Engine, map[string]any) (map[string]any, error)
 }
 
+// definitions is the stable public tool surface exposed by this server.
 func definitions() []definition {
 	return []definition{
 		{"search_symbols", "Use first to find a code symbol by name before any shell search. language is required and selects the LSP server.", schema("query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -64,17 +68,21 @@ func definitions() []definition {
 		}},
 	}
 }
+
 func relation(name, method, cap string) func(context.Context, *tools.Engine, map[string]any) (map[string]any, error) {
 	return func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 		return e.Relationship(c, name, method, cap, i)
 	}
 }
+
 func hierarchy(name string) func(context.Context, *tools.Engine, map[string]any) (map[string]any, error) {
 	return func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 		return e.Hierarchy(c, name, i)
 	}
 }
+
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
+
 func schema(required ...string) map[string]any {
 	s := objectSchema()
 	s["properties"] = inputProperties()
@@ -106,10 +114,12 @@ func positiveIntegerSchema() map[string]any {
 }
 
 func targetSchema() map[string]any { return schema("language") }
+
 func result(v map[string]any, isError bool) *mcp.CallToolResult {
 	b, _ := json.Marshal(v)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, StructuredContent: v, IsError: isError}
 }
+
 func errorObject(err error) map[string]any {
 	if e, ok := err.(*core.AppError); ok {
 		return map[string]any{"code": e.Code, "message": e.Message, "language": e.Language, "method": e.Method}

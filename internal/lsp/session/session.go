@@ -115,7 +115,7 @@ func (s *Session) watch(t *transport.Transport) {
 		}
 		s.mu.Unlock()
 	}()
-	}
+}
 
 func (s *Session) initialize(ctx context.Context, cmd *exec.Cmd, t *transport.Transport) (protocol.Capabilities, error) {
 	var result struct {

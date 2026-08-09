@@ -1,14 +1,17 @@
 package language
 
 import (
-	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"strings"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 )
 
+// Profile maps an MCP language name to an LSP session and language identifier.
 type Profile struct {
 	Name, SessionKey, LanguageID string
 }
 
+// Profiles lists every language accepted by the MCP tools.
 var Profiles = []Profile{
 	{Name: "python", SessionKey: "python", LanguageID: "python"},
 	{Name: "typescript", SessionKey: "typescript-javascript", LanguageID: "typescript"},
@@ -20,6 +23,7 @@ var Profiles = []Profile{
 	{Name: "css", SessionKey: "css", LanguageID: "css"},
 }
 
+// ForLanguage returns the profile matching a user-provided language name.
 func ForLanguage(name string) (Profile, error) {
 	name = strings.ToLower(name)
 	for _, p := range Profiles {
@@ -30,6 +34,7 @@ func ForLanguage(name string) (Profile, error) {
 	return Profile{}, core.NewError(core.UnsupportedLanguage, "unsupported language")
 }
 
+// Require validates that a language argument was supplied and is supported.
 func Require(name string) (Profile, error) {
 	if strings.TrimSpace(name) == "" {
 		return Profile{}, core.NewError(core.InvalidArgument, "language must be specified")
@@ -37,4 +42,7 @@ func Require(name string) (Profile, error) {
 	return ForLanguage(name)
 }
 
-func SessionKeys() []string { return []string{"python", "typescript-javascript", "go", "html", "css"} }
+// SessionKeys returns the configured language-server profile names.
+func SessionKeys() []string {
+	return []string{"python", "typescript-javascript", "go", "html", "css"}
+}
