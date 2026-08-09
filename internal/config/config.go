@@ -3,14 +3,16 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
-// MCPServersEnv contains the JSON configuration for language-server profiles.
-const MCPServersEnv = "LSP_MCP_SERVERS"
+// ConfigFile is the default configuration filename stored in workspace root.
+const ConfigFile = ".simple-lsp.json"
 
 // Server describes the command used to start one language server.
 type Server struct {
@@ -32,13 +34,52 @@ var allowedProfiles = map[string]struct{}{
 	"python": {}, "typescript-javascript": {}, "go": {}, "html": {}, "css": {},
 }
 
-// Load applies defaults and reads configured language-server profiles.
+// DefaultProfiles holds the built-in preset configurations.
+var DefaultProfiles = map[string]Server{
+	"python": {
+		Command: "pyright-langserver",
+		Args:    []string{"--stdio"},
+	},
+	"typescript-javascript": {
+		Command: "typescript-language-server",
+		Args:    []string{"--stdio"},
+	},
+	"go": {
+		Command: "gopls",
+		Args:    []string{},
+	},
+	"html": {
+		Command: "npx",
+		Args:    []string{"--yes", "--package=vscode-langservers-extracted", "vscode-html-language-server", "--stdio"},
+	},
+	"css": {
+		Command: "npx",
+		Args:    []string{"--yes", "--package=vscode-langservers-extracted", "vscode-css-language-server", "--stdio"},
+	},
+}
+
+// Load applies defaults and reads configured language-server profiles from .simple-lsp.json.
+// If .simple-lsp.json does not exist in the workspace, it is automatically created with DefaultProfiles.
 func Load(base Runtime) (Runtime, error) {
 	applyDefaults(&base)
-	servers, err := loadServers(os.Getenv(MCPServersEnv))
-	if err != nil {
-		return base, err
+
+	configPath := filepath.Join(base.Workspace, ConfigFile)
+	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+		if err := writeDefaultConfig(configPath); err != nil {
+			return base, fmt.Errorf("failed to create default config %s: %w", configPath, err)
+		}
 	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return base, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+	}
+
+	servers, err := loadServers(data)
+	if err != nil {
+		return base, fmt.Errorf("invalid config file %s: %w", configPath, err)
+	}
+
 	base.Servers = servers
 	return base, nil
 }
@@ -57,12 +98,21 @@ func applyDefaults(runtime *Runtime) {
 	}
 }
 
-func loadServers(value string) (map[string]Server, error) {
-	if value == "" {
-		return map[string]Server{}, nil
+func writeDefaultConfig(path string) error {
+	data, err := json.MarshalIndent(DefaultProfiles, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0644)
+}
+
+func loadServers(data []byte) (map[string]Server, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, errors.New("config file must contain a valid JSON object")
 	}
 
-	profiles, err := decodeProfiles(value)
+	profiles, err := decodeProfiles(data)
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +130,13 @@ func loadServers(value string) (map[string]Server, error) {
 	return servers, nil
 }
 
-func decodeProfiles(value string) (map[string]json.RawMessage, error) {
+func decodeProfiles(data []byte) (map[string]json.RawMessage, error) {
 	var profiles map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(value), &profiles); err != nil || profiles == nil {
+	if err := json.Unmarshal(data, &profiles); err != nil || profiles == nil {
 		if err != nil {
-			return nil, fmt.Errorf("%s must be a JSON object: %w", MCPServersEnv, err)
+			return nil, fmt.Errorf("config must be a JSON object: %w", err)
 		}
-		return nil, fmt.Errorf("%s must be a JSON object", MCPServersEnv)
+		return nil, errors.New("config must be a JSON object")
 	}
 	return profiles, nil
 }
@@ -109,3 +159,4 @@ func decodeServer(name string, raw json.RawMessage) (Server, error) {
 	}
 	return server, nil
 }
+

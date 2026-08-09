@@ -15,7 +15,40 @@ Instead of text search, it asks LSP servers for symbols, definitions, references
 | `html` | `html` | `.html` |
 | `css` | `css` | `.css` |
 
-The `language` argument and configuration profile are different. For example, a TypeScript tool call uses `language: "typescript"`, while `LSP_MCP_SERVERS` configures the `typescript-javascript` profile.
+The `language` argument and configuration profile are different. For example, a TypeScript tool call uses `language: "typescript"`, which maps to the `typescript-javascript` profile in `.simple-lsp.json`.
+
+## Configuration (`.simple-lsp.json`)
+
+Language server configurations are read from `.simple-lsp.json` in the root of the workspace.
+
+If `.simple-lsp.json` does not exist when `simple-lsp-mcp` is started, it will be automatically created with default profiles for Python, TypeScript/JavaScript, Go, HTML, and CSS:
+
+```json
+{
+  "python": {
+    "command": "pyright-langserver",
+    "args": ["--stdio"]
+  },
+  "typescript-javascript": {
+    "command": "typescript-language-server",
+    "args": ["--stdio"]
+  },
+  "go": {
+    "command": "gopls",
+    "args": []
+  },
+  "html": {
+    "command": "npx",
+    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-html-language-server", "--stdio"]
+  },
+  "css": {
+    "command": "npx",
+    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-css-language-server", "--stdio"]
+  }
+}
+```
+
+You can customize `.simple-lsp.json` directly in your workspace root to modify server commands, adjust arguments, or remove unwanted profiles for the supported languages.
 
 ## Requirements
 
@@ -32,7 +65,7 @@ Install and configure only the LSP servers you need. Each server starts lazily, 
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | HTML / CSS | `vscode-html-language-server`, `vscode-css-language-server` | `npm install -g vscode-langservers-extracted` |
 
-To avoid global installation, configure a launcher such as `npx` as shown for HTML and CSS below. `command` and `args` are passed directly to the process launcher, not through a shell: `~`, environment-variable expansion, pipes, and shell argument splitting are unavailable.
+To avoid global installation, configure a launcher such as `npx` as shown for HTML and CSS above. `command` and `args` are passed directly to the process launcher, not through a shell: `~`, environment-variable expansion, pipes, and shell argument splitting are unavailable.
 
 ## Installation
 
@@ -68,30 +101,20 @@ default_tools_approval_mode = "approve"
 startup_timeout_sec = 20
 tool_timeout_sec = 45
 enabled = true
-
-[mcp_servers.simple-lsp.env]
-LSP_MCP_SERVERS = """
-{"python":{"command":"pyright-langserver","args":["--stdio"]},"typescript-javascript":{"command":"typescript-language-server","args":["--stdio"]},"go":{"command":"gopls","args":[]},"html":{"command":"npx","args":["--yes","--package=vscode-langservers-extracted","vscode-html-language-server","--stdio"]},"css":{"command":"npx","args":["--yes","--package=vscode-langservers-extracted","vscode-css-language-server","--stdio"]}}
-"""
 ```
-
-This config enables Python, TypeScript/JavaScript, Go, HTML, and CSS. Remove profiles you do not use. Calling an unconfigured language returns `UNSUPPORTED_LANGUAGE`; a configured server executable that cannot be found returns `LANGUAGE_SERVER_NOT_FOUND`.
 
 In Codex, begin code exploration with `search_symbols` or `get_document_symbols`. For example, to list functions in `src/greeting.ts`, call `get_document_symbols` with `path: "src/greeting.ts"` and `language: "typescript"`.
 
 ## Claude Code configuration
 
-Add this configuration to Claude Code. It enables Python, TypeScript/JavaScript, Go, HTML, and CSS:
+Add this configuration to Claude Code:
 
 ```json
 {
   "mcpServers": {
     "simple-lsp": {
       "command": "simple-lsp-mcp",
-      "args": ["--workspace", "/absolute/path/to/project"],
-      "env": {
-        "LSP_MCP_SERVERS": "{\"python\":{\"command\":\"pyright-langserver\",\"args\":[\"--stdio\"]},\"typescript-javascript\":{\"command\":\"typescript-language-server\",\"args\":[\"--stdio\"]},\"go\":{\"command\":\"gopls\",\"args\":[]},\"html\":{\"command\":\"npx\",\"args\":[\"--yes\",\"--package=vscode-langservers-extracted\",\"vscode-html-language-server\",\"--stdio\"]},\"css\":{\"command\":\"npx\",\"args\":[\"--yes\",\"--package=vscode-langservers-extracted\",\"vscode-css-language-server\",\"--stdio\"]}}"
-      }
+      "args": ["--workspace", "/absolute/path/to/project"]
     }
   }
 }

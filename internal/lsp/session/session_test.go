@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
+	tempDir := t.TempDir()
 	value, err := json.Marshal(map[string]any{"go": map[string]any{
 		"command": os.Args[0],
 		"args":    []string{"-test.run=^TestFakeLanguageServer$", "--"},
@@ -24,12 +26,14 @@ func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(config.MCPServersEnv, string(value))
-	runtime, err := config.Load(config.Runtime{})
+	if err := os.WriteFile(filepath.Join(tempDir, config.ConfigFile), value, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := config.Load(config.Runtime{Workspace: tempDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New("go", t.TempDir(), runtime.Servers["go"])
+	s := New("go", tempDir, runtime.Servers["go"])
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := s.Ensure(ctx); err != nil {

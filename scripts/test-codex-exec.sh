@@ -55,11 +55,10 @@ run_case() {
 		prompt="Use the simple_lsp get_diagnostics tool for $document_path. Do not use shell commands or read source files. Reply with the diagnostics returned by that tool."
   fi
 
-  LSP_MCP_SERVERS="$servers" codex exec --ephemeral --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json \
+  codex exec --ephemeral --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json \
     -C "$workspace" \
     -c "mcp_servers.simple_lsp.command=\"$server_bin\"" \
     -c "mcp_servers.simple_lsp.args=[\"--workspace\", \"$workspace\"]" \
-    -c "mcp_servers.simple_lsp.env={LSP_MCP_SERVERS='$servers'}" \
     "$prompt" \
     >"$output" </dev/null
 

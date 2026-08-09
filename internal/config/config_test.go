@@ -1,40 +1,51 @@
 package config
 
 import (
-	"strings"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 )
 
-func TestLoadMCPServers(t *testing.T) {
-	t.Setenv(MCPServersEnv, `{"python":{"command":"npx","args":["-y","pyright-langserver","--stdio"]},"typescript-javascript":{"command":"npx","args":["-y","typescript-language-server","--stdio"]},"go":{"command":"gopls","args":[]}}`)
-	runtime, err := Load(Runtime{})
+func TestLoadCreatesDefaultConfigFileWhenMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	runtime, err := Load(Runtime{Workspace: tempDir})
 	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	configPath := filepath.Join(tempDir, ConfigFile)
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("expected config file %s to be created, got %v", configPath, err)
+	}
+
+	if !reflect.DeepEqual(runtime.Servers, DefaultProfiles) {
+		t.Fatalf("expected servers = %#v, got %#v", DefaultProfiles, runtime.Servers)
+	}
+}
+
+func TestLoadReadsExistingConfigFile(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, ConfigFile)
+	content := `{"go":{"command":"gopls","args":[]}}`
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if got := runtime.Servers["go"]; got.Command != "gopls" || len(got.Args) != 0 {
-		t.Fatalf("go server = %#v", got)
+
+	runtime, err := Load(Runtime{Workspace: tempDir})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
 	}
-	if got := runtime.Servers["python"]; got.Command != "npx" || strings.Join(got.Args, " ") != "-y pyright-langserver --stdio" {
-		t.Fatalf("python server = %#v", got)
+
+	if len(runtime.Servers) != 1 || runtime.Servers["go"].Command != "gopls" {
+		t.Fatalf("expected go profile, got %#v", runtime.Servers)
 	}
 }
 
-func TestLoadMCPHostExamples(t *testing.T) {
-	for _, example := range []string{
-		`{"go":{"command":"gopls","args":[]}}`,
-		`{"go":{"command":"gopls","args":[]}}`,
-	} {
-		t.Run(example, func(t *testing.T) {
-			t.Setenv(MCPServersEnv, example)
-			if _, err := Load(Runtime{}); err != nil {
-				t.Fatalf("MCP host configuration did not start: %v", err)
-			}
-		})
-	}
-}
-
-func TestLoadRejectsInvalidMCPServers(t *testing.T) {
+func TestLoadRejectsInvalidConfigFiles(t *testing.T) {
 	for name, value := range map[string]string{
+		"empty file":      "",
+		"whitespace file": "   \n",
 		"invalid JSON":    `{`,
 		"unknown profile": `{"rust":{"command":"rust-analyzer","args":[]}}`,
 		"empty command":   `{"go":{"command":"","args":[]}}`,
@@ -42,21 +53,16 @@ func TestLoadRejectsInvalidMCPServers(t *testing.T) {
 		"non-string args": `{"go":{"command":"gopls","args":[1]}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(MCPServersEnv, value)
-			if _, err := Load(Runtime{}); err == nil {
-				t.Fatal("Load succeeded")
+			tempDir := t.TempDir()
+			configPath := filepath.Join(tempDir, ConfigFile)
+			if err := os.WriteFile(configPath, []byte(value), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := Load(Runtime{Workspace: tempDir}); err == nil {
+				t.Fatal("Load succeeded for invalid config")
 			}
 		})
 	}
 }
 
-func TestLoadWithoutMCPServersDisablesAllProfiles(t *testing.T) {
-	t.Setenv(MCPServersEnv, "")
-	runtime, err := Load(Runtime{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(runtime.Servers) != 0 {
-		t.Fatalf("servers = %#v", runtime.Servers)
-	}
-}
