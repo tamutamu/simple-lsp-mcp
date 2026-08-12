@@ -17,38 +17,55 @@ Instead of text search, it asks LSP servers for symbols, definitions, references
 
 The `language` argument and configuration profile are different. For example, a TypeScript tool call uses `language: "typescript"`, which maps to the `typescript-javascript` profile in `.simple-lsp.json`.
 
-## Configuration (`.simple-lsp.json`)
+## Onboarding tool & Configuration (`.simple-lsp.yaml`)
 
-Language server configurations are read from `.simple-lsp.json` in the root of the workspace.
+Language server configurations are read from `.simple-lsp.yaml` (or `.simple-lsp.yml`) in the root of the workspace.
 
-If `.simple-lsp.json` does not exist when `simple-lsp-mcp` is started, it will be automatically created with default profiles for Python, TypeScript/JavaScript, Go, HTML, and CSS:
+### Quick Setup (Onboarding CLI)
 
-```json
-{
-  "python": {
-    "command": "pyright-langserver",
-    "args": ["--stdio"]
-  },
-  "typescript-javascript": {
-    "command": "typescript-language-server",
-    "args": ["--stdio"]
-  },
-  "go": {
-    "command": "gopls",
-    "args": []
-  },
-  "html": {
-    "command": "npx",
-    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-html-language-server", "--stdio"]
-  },
-  "css": {
-    "command": "npx",
-    "args": ["--yes", "--package=vscode-langservers-extracted", "vscode-css-language-server", "--stdio"]
-  }
-}
+You can automatically detect project structures (including monorepos) and generate `.simple-lsp.yaml`:
+
+```sh
+simple-lsp-mcp init [--workspace /path/to/project] [--yes]
 ```
 
-You can customize `.simple-lsp.json` directly in your workspace root to modify server commands, adjust arguments, or remove unwanted profiles for the supported languages.
+### Configuration Format
+
+`.simple-lsp.yaml` maps workspace relative paths (e.g. `.` for root, `apps/frontend`, `apps/backend`) to language server profiles and custom options:
+
+```yaml
+.:
+  python:
+    command: pyright-langserver
+    args: ["--stdio"]
+  go:
+    command: gopls
+    args: []
+
+apps/frontend:
+  typescript-javascript:
+    command: typescript-language-server
+    args: ["--stdio"]
+    settings:
+      tsserver:
+        maxTsServerMemory: 4096
+
+apps/backend:
+  python:
+    command: pyright-langserver
+    args: ["--stdio"]
+    cwd: apps/backend
+    env:
+      PYTHONPATH: "apps/backend"
+```
+
+Each server entry supports:
+- `command`: Command executable name or path
+- `args`: Command-line arguments
+- `cwd`: Custom working directory for the language server process
+- `env`: Map of custom environment variables
+- `settings`: Custom settings map passed via `workspace/didChangeConfiguration`
+- `initialization_options`: Custom options passed during LSP initialization
 
 ## Requirements
 
@@ -85,12 +102,11 @@ Place the resulting executable on the MCP client's `PATH`, or specify its absolu
 
 ## Codex configuration
 
-Add the following to `~/.codex/config.toml`. Replace `/absolute/path/to/project` with the workspace to inspect. `command` may be a name on `PATH` or an absolute path to the built executable.
+Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` or an absolute path to the built executable. `--workspace` is optional and defaults to the process current working directory.
 
 ```toml
 [mcp_servers.simple-lsp]
 command = "simple-lsp-mcp"
-args = ["--workspace", "/absolute/path/to/project"]
 enabled_tools = [
   "search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol",
   "get_definition", "find_references", "find_implementations", "get_type_definition",
@@ -113,8 +129,7 @@ Add this configuration to Claude Code:
 {
   "mcpServers": {
     "simple-lsp": {
-      "command": "simple-lsp-mcp",
-      "args": ["--workspace", "/absolute/path/to/project"]
+      "command": "simple-lsp-mcp"
     }
   }
 }
@@ -145,7 +160,7 @@ Every tool returns structured data. Symbol, position, and range lines and column
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--workspace` | none | Required workspace root to inspect |
+| `--workspace` | Current working directory | Workspace root to inspect (defaults to process current working directory) |
 | `--log-level` | `info` | `debug`, `info`, `warn`, or `error` |
 | `--request-timeout` | `15s` | Timeout for each LSP request |
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |

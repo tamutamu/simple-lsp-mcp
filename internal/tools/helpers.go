@@ -27,7 +27,7 @@ func (e *Engine) document(ctx context.Context, path, languageName string) (langu
 	if err != nil {
 		return p, nil, document.Document{}, err
 	}
-	s, err := e.Sessions.For(p.SessionKey)
+	s, err := e.Sessions.ForPath(p.SessionKey, path)
 	if err != nil {
 		return p, nil, document.Document{}, err
 	}
@@ -56,7 +56,8 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 		if p.SessionKey != r.SessionKey {
 			return p, nil, document.Document{}, protocol.Position{}, core.NewError(core.InvalidArgument, "language does not match symbol")
 		}
-		s, err := e.Sessions.For(r.SessionKey)
+		s, err := e.Sessions.ForPath(r.SessionKey, r.Path)
+
 		if err != nil {
 			return p, nil, document.Document{}, protocol.Position{}, err
 		}

@@ -19,21 +19,15 @@ import (
 func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
 	tempDir := t.TempDir()
-	value, err := json.Marshal(map[string]any{"go": map[string]any{
-		"command": os.Args[0],
-		"args":    []string{"-test.run=^TestFakeLanguageServer$", "--"},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tempDir, config.ConfigFile), value, 0644); err != nil {
+	content := fmt.Sprintf(".:\n  go:\n    command: %q\n    args:\n      - \"-test.run=^TestFakeLanguageServer$\"\n      - \"--\"\n", os.Args[0])
+	if err := os.WriteFile(filepath.Join(tempDir, config.ConfigFile), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runtime, err := config.Load(config.Runtime{Workspace: tempDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New("go", tempDir, runtime.Servers["go"])
+	s := New("go", tempDir, runtime.Servers["go"][0])
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := s.Ensure(ctx); err != nil {
@@ -45,7 +39,7 @@ func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 }
 
 func TestManagerRejectsUnconfiguredProfile(t *testing.T) {
-	_, err := NewManager(t.TempDir(), map[string]config.Server{}).For("go")
+	_, err := NewManager(t.TempDir(), map[string][]config.Server{}).For("go")
 	var appErr *core.AppError
 	if !errors.As(err, &appErr) || appErr.Code != core.UnsupportedLanguage {
 		t.Fatalf("For error = %v", err)

@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
-	"io"
-	"os/exec"
-	"sync"
-	"time"
 )
 
 type Session struct {
@@ -86,7 +89,28 @@ func (s *Session) launch() (*exec.Cmd, *transport.Transport, error) {
 		return nil, nil, core.NewError(core.LanguageServerStartFailed, "language server command is empty")
 	}
 	cmd := exec.Command(s.cfg.Command, s.cfg.Args...)
-	cmd.Dir = s.root
+
+	// Resolve working directory
+	targetDir := s.cfg.Cwd
+	if targetDir == "" {
+		targetDir = s.cfg.RootDir
+	}
+	if targetDir == "" || targetDir == "." {
+		cmd.Dir = s.root
+	} else if filepath.IsAbs(targetDir) {
+		cmd.Dir = targetDir
+	} else {
+		cmd.Dir = filepath.Join(s.root, targetDir)
+	}
+
+	// Apply custom environment variables
+	if len(s.cfg.Env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range s.cfg.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, nil, err
@@ -134,32 +158,52 @@ func (s *Session) initialize(ctx context.Context, cmd *exec.Cmd, t *transport.Tr
 	if err := t.Notify("initialized", map[string]any{}); err != nil {
 		return protocol.Capabilities{}, err
 	}
-	if err := t.Notify("workspace/didChangeConfiguration", map[string]any{"settings": map[string]any{}}); err != nil {
+	settings := s.cfg.Settings
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	if err := t.Notify("workspace/didChangeConfiguration", map[string]any{"settings": settings}); err != nil {
 		return protocol.Capabilities{}, err
 	}
 	return decodeCaps(result.Capabilities, result.PositionEncoding), nil
 }
 
 func (s *Session) initializationParams() map[string]any {
+	sessionRoot := s.root
+	if s.cfg.RootDir != "" && s.cfg.RootDir != "." {
+		if filepath.IsAbs(s.cfg.RootDir) {
+			sessionRoot = s.cfg.RootDir
+		} else {
+			sessionRoot = filepath.Join(s.root, s.cfg.RootDir)
+		}
+	}
+
 	if s.key == "go" {
-		// Match the initialization shape used by gopls' CLI feature commands.
+		initOpts := map[string]any{"symbolMatcher": "CaseInsensitive"}
+		for k, v := range s.cfg.InitializationOptions {
+			initOpts[k] = v
+		}
 		return map[string]any{
-			"rootUri": fileURI(s.root),
+			"rootUri": fileURI(sessionRoot),
 			"capabilities": map[string]any{
 				"workspace":    map[string]any{"configuration": true},
 				"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
 			},
-			"initializationOptions": map[string]string{"symbolMatcher": "CaseInsensitive"},
+			"initializationOptions": initOpts,
 		}
 	}
-	return map[string]any{
+	params := map[string]any{
 		"processId":        nil,
 		"clientInfo":       map[string]string{"name": "simple-lsp-mcp"},
-		"rootUri":          fileURI(s.root),
-		"workspaceFolders": []map[string]string{{"uri": fileURI(s.root), "name": "workspace"}},
+		"rootUri":          fileURI(sessionRoot),
+		"workspaceFolders": []map[string]string{{"uri": fileURI(sessionRoot), "name": "workspace"}},
 		"capabilities":     clientCapabilities(),
 		"general":          map[string]any{"positionEncodings": []string{"utf-8", "utf-16", "utf-32"}},
 	}
+	if len(s.cfg.InitializationOptions) > 0 {
+		params["initializationOptions"] = s.cfg.InitializationOptions
+	}
+	return params
 }
 func (s *Session) status() error { s.mu.RLock(); defer s.mu.RUnlock(); return s.crashed }
 func (s *Session) Request(ctx context.Context, method string, params, result any) error {
@@ -253,28 +297,53 @@ func decodeCaps(m map[string]json.RawMessage, encoding string) protocol.Capabili
 
 type Manager struct {
 	root     string
-	servers  map[string]config.Server
+	servers  map[string][]config.Server
 	mu       sync.Mutex
 	sessions map[string]*Session
 }
 
-func NewManager(root string, servers map[string]config.Server) *Manager {
+func NewManager(root string, servers map[string][]config.Server) *Manager {
 	return &Manager{root: root, servers: servers, sessions: map[string]*Session{}}
 }
+
 func (m *Manager) For(key string) (*Session, error) {
+	return m.ForPath(key, "")
+}
+
+func (m *Manager) ForPath(key string, targetPath string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s := m.sessions[key]; s != nil {
-		return s, nil
-	}
-	cfg, ok := m.servers[key]
-	if !ok {
+
+	serverList, ok := m.servers[key]
+	if !ok || len(serverList) == 0 {
 		return nil, core.NewError(core.UnsupportedLanguage, "no language server profile")
 	}
-	s := New(key, m.root, cfg)
-	m.sessions[key] = s
+
+	srv := config.SelectServer(serverList, targetPath)
+
+	cacheKey := key
+	if srv.RootDir != "" && srv.RootDir != "." {
+		cacheKey = key + ":" + srv.RootDir
+	}
+
+	if s := m.sessions[cacheKey]; s != nil {
+		return s, nil
+	}
+
+	sessionRoot := m.root
+	if srv.RootDir != "" && srv.RootDir != "." {
+		if filepath.IsAbs(srv.RootDir) {
+			sessionRoot = srv.RootDir
+		} else {
+			sessionRoot = filepath.Join(m.root, srv.RootDir)
+		}
+	}
+
+	s := New(key, sessionRoot, srv)
+	m.sessions[cacheKey] = s
 	return s, nil
 }
+
 func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
 	ss := make([]*Session, 0, len(m.sessions))

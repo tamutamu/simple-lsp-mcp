@@ -20,7 +20,7 @@ func TestSearchSymbolsRequiresLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := New(ws, config.Runtime{Servers: map[string]config.Server{}, MaxResults: 10})
+	engine := New(ws, config.Runtime{Servers: map[string][]config.Server{}, MaxResults: 10})
 	if _, err := engine.SearchSymbols(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("SearchSymbols without language returned nil error")
 	}

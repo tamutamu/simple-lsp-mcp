@@ -2,7 +2,10 @@ module github.com/tamutamu/simple-lsp-mcp
 
 go 1.26.0
 
-require github.com/modelcontextprotocol/go-sdk v1.4.0
+require (
+	github.com/modelcontextprotocol/go-sdk v1.4.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.2 // indirect
