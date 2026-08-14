@@ -10,7 +10,7 @@ implemented in Go.
 
 This tracker decomposes that specification without changing these invariants:
 
-- Exactly 14 stable MCP tools are always registered.
+- Exactly 15 stable MCP tools are always registered.
 - Language servers are the only semantic index; no grep, AST index, embedding,
   or fallback emulation is exposed.
 - MCP and LSP both use stdio; stdout is reserved for MCP protocol traffic.
@@ -29,7 +29,7 @@ This tracker decomposes that specification without changing these invariants:
 `search_symbols`, `list_workspace_symbols`, `get_document_symbols`, `get_symbol`, `get_definition`,
 `find_references`, `find_implementations`, `get_type_definition`,
 `get_declaration`, `get_incoming_calls`, `get_outgoing_calls`,
-`get_supertypes`, `get_subtypes`, and `get_diagnostics`.
+`get_supertypes`, `get_subtypes`, `get_diagnostics`, and `onboard`.
 
 ## Supported profiles
 

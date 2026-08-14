@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 14 {
+	if len(ds) != 15 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}

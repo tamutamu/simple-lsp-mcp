@@ -69,3 +69,27 @@ func TestDocumentTreeConvertsDocumentAbsolutePathToWorkspaceRelativePath(t *test
 		t.Fatalf("path = %#v, want greeting.ts", got)
 	}
 }
+
+func TestEngineOnboard(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Open(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{MaxResults: 10})
+	res, err := engine.Onboard(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("Onboard failed: %v", err)
+	}
+	if res["config_path"] == "" {
+		t.Fatal("expected config_path in result")
+	}
+	detected, ok := res["detected"].(map[string][]string)
+	if !ok || len(detected["."]) == 0 {
+		t.Fatalf("expected detected profiles for root, got %#v", res["detected"])
+	}
+}
+

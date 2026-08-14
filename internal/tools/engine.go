@@ -14,6 +14,7 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
+	"github.com/tamutamu/simple-lsp-mcp/internal/onboard"
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
@@ -265,3 +266,23 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 	}
 	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete, Truncated: tr}}, nil
 }
+
+// Onboard scans the workspace and generates .simple-lsp.yaml configuration.
+func (e *Engine) Onboard(ctx context.Context, in map[string]any) (map[string]any, error) {
+	wsDir := stringVal(in, "workspace")
+	if wsDir == "" {
+		wsDir = e.WS.Root()
+	}
+	res, err := onboard.Run(onboard.Options{
+		Workspace: wsDir,
+		Overwrite: boolValDefault(in, "overwrite", false),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"config_path": res.ConfigPath,
+		"detected":    res.Detected,
+	}, nil
+}
+

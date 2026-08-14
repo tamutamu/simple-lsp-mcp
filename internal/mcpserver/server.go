@@ -66,6 +66,9 @@ func definitions() []definition {
 		{"get_diagnostics", "Get LSP diagnostics. language is required when path is supplied and selects the LSP server.", schema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Diagnostics(c, i)
 		}},
+		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", schema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.Onboard(c, i)
+		}},
 	}
 }
 
@@ -104,6 +107,8 @@ func inputProperties() map[string]any {
 		"kinds":               map[string]any{"type": "array", "items": stringSchema()},
 		"include_source":      map[string]any{"type": "boolean"},
 		"include_declaration": map[string]any{"type": "boolean"},
+		"overwrite":           map[string]any{"type": "boolean"},
+		"workspace":           stringSchema(),
 	}
 }
 

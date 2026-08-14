@@ -21,13 +21,14 @@ The `language` argument and configuration profile are different. For example, a 
 
 Language server configurations are read from `.simple-lsp.yaml` (or `.simple-lsp.yml`) in the root of the workspace.
 
-### Quick Setup (Onboarding CLI)
+### Quick Setup (Onboarding Tool)
 
-You can automatically detect project structures (including monorepos) and generate `.simple-lsp.yaml`:
+You can automatically detect project structures (including monorepos) and generate `.simple-lsp.yaml` by executing the `onboard` MCP tool from your AI chat session.
 
-```sh
-simple-lsp-mcp init [--workspace /path/to/project] [--yes]
-```
+Options:
+- `overwrite` (boolean): Overwrite existing configuration if present.
+- `workspace` (string): Target workspace directory (defaults to process working directory).
+
 
 ### Configuration Format
 
@@ -111,7 +112,7 @@ enabled_tools = [
   "search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol",
   "get_definition", "find_references", "find_implementations", "get_type_definition",
   "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes",
-  "get_subtypes", "get_diagnostics"
+  "get_subtypes", "get_diagnostics", "onboard"
 ]
 default_tools_approval_mode = "approve"
 startup_timeout_sec = 20
@@ -155,6 +156,7 @@ Every tool returns structured data. Symbol, position, and range lines and column
 | `get_supertypes` | Get direct supertypes | `language` and target |
 | `get_subtypes` | Get direct subtypes | `language` and target |
 | `get_diagnostics` | Get diagnostics for a file | `language` when `path` is supplied |
+| `onboard` | Scan workspace and generate configuration | None |
 
 ## Server options
 
