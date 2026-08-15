@@ -54,13 +54,13 @@ func TestOnboardScansMonorepoStructure(t *testing.T) {
 	}
 
 	pyServer := config.SelectServer(runtime.Servers["python"], "apps/backend/main.py")
-	if pyServer.RootDir != "apps/backend" {
-		t.Errorf("expected python RootDir = apps/backend, got %s", pyServer.RootDir)
+	if pyServer.Directory != "apps/backend" {
+		t.Errorf("expected python Directory = apps/backend, got %s", pyServer.Directory)
 	}
 
 	tsServer := config.SelectServer(runtime.Servers["typescript-javascript"], "apps/frontend/src/index.ts")
-	if tsServer.RootDir != "apps/frontend" {
-		t.Errorf("expected typescript RootDir = apps/frontend, got %s", tsServer.RootDir)
+	if tsServer.Directory != "apps/frontend" {
+		t.Errorf("expected typescript Directory = apps/frontend, got %s", tsServer.Directory)
 	}
 }
 

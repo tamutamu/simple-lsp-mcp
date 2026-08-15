@@ -67,12 +67,7 @@ func Run(opts Options) (*Result, error) {
 		profMap := make(map[string]config.Server)
 		for _, prof := range profiles {
 			if defaultSrvList, ok := config.DefaultProfiles[prof]; ok && len(defaultSrvList) > 0 {
-				srv := defaultSrvList[0]
-				if relPath != "." {
-					srv.RootDir = relPath
-					srv.Cwd = relPath
-				}
-				profMap[prof] = srv
+				profMap[prof] = defaultSrvList[0]
 			}
 		}
 		if len(profMap) > 0 {

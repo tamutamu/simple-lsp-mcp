@@ -35,7 +35,6 @@ apps/backend:
   python:
     command: pyright-langserver
     args: ["--stdio"]
-    cwd: apps/backend
     env:
       PYTHONPATH: "apps/backend"
 `
@@ -48,25 +47,25 @@ apps/backend:
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(runtime.Servers["go"]) != 1 || runtime.Servers["go"][0].Command != "gopls" {
+	if len(runtime.Servers["go"]) != 1 || runtime.Servers["go"][0].Command != "gopls" || runtime.Servers["go"][0].Directory != "." {
 		t.Fatalf("expected go profile, got %#v", runtime.Servers["go"])
 	}
 
 	pyServers := runtime.Servers["python"]
-	if len(pyServers) != 1 || pyServers[0].Cwd != "apps/backend" || pyServers[0].Env["PYTHONPATH"] != "apps/backend" {
-		t.Fatalf("expected python profile with cwd and env under apps/backend, got %#v", pyServers)
+	if len(pyServers) != 1 || pyServers[0].Directory != "apps/backend" || pyServers[0].Env["PYTHONPATH"] != "apps/backend" {
+		t.Fatalf("expected python profile with directory and env under apps/backend, got %#v", pyServers)
 	}
 }
 
 func TestSelectServer(t *testing.T) {
 	servers := []Server{
 		{
-			RootDir: ".",
-			Command: "pyright-root",
+			Directory: ".",
+			Command:   "pyright-root",
 		},
 		{
-			RootDir: "apps/backend",
-			Command: "pyright-backend",
+			Directory: "apps/backend",
+			Command:   "pyright-backend",
 		},
 	}
 

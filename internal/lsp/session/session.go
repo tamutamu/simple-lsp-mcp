@@ -91,10 +91,7 @@ func (s *Session) launch() (*exec.Cmd, *transport.Transport, error) {
 	cmd := exec.Command(s.cfg.Command, s.cfg.Args...)
 
 	// Resolve working directory
-	targetDir := s.cfg.Cwd
-	if targetDir == "" {
-		targetDir = s.cfg.RootDir
-	}
+	targetDir := s.cfg.Directory
 	if targetDir == "" || targetDir == "." {
 		cmd.Dir = s.root
 	} else if filepath.IsAbs(targetDir) {
@@ -170,11 +167,11 @@ func (s *Session) initialize(ctx context.Context, cmd *exec.Cmd, t *transport.Tr
 
 func (s *Session) initializationParams() map[string]any {
 	sessionRoot := s.root
-	if s.cfg.RootDir != "" && s.cfg.RootDir != "." {
-		if filepath.IsAbs(s.cfg.RootDir) {
-			sessionRoot = s.cfg.RootDir
+	if s.cfg.Directory != "" && s.cfg.Directory != "." {
+		if filepath.IsAbs(s.cfg.Directory) {
+			sessionRoot = s.cfg.Directory
 		} else {
-			sessionRoot = filepath.Join(s.root, s.cfg.RootDir)
+			sessionRoot = filepath.Join(s.root, s.cfg.Directory)
 		}
 	}
 
@@ -322,8 +319,8 @@ func (m *Manager) ForPath(key string, targetPath string) (*Session, error) {
 	srv := config.SelectServer(serverList, targetPath)
 
 	cacheKey := key
-	if srv.RootDir != "" && srv.RootDir != "." {
-		cacheKey = key + ":" + srv.RootDir
+	if srv.Directory != "" && srv.Directory != "." {
+		cacheKey = key + ":" + srv.Directory
 	}
 
 	if s := m.sessions[cacheKey]; s != nil {
@@ -331,11 +328,11 @@ func (m *Manager) ForPath(key string, targetPath string) (*Session, error) {
 	}
 
 	sessionRoot := m.root
-	if srv.RootDir != "" && srv.RootDir != "." {
-		if filepath.IsAbs(srv.RootDir) {
-			sessionRoot = srv.RootDir
+	if srv.Directory != "" && srv.Directory != "." {
+		if filepath.IsAbs(srv.Directory) {
+			sessionRoot = srv.Directory
 		} else {
-			sessionRoot = filepath.Join(m.root, srv.RootDir)
+			sessionRoot = filepath.Join(m.root, srv.Directory)
 		}
 	}
 

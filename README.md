@@ -55,7 +55,6 @@ apps/backend:
   python:
     command: pyright-langserver
     args: ["--stdio"]
-    cwd: apps/backend
     env:
       PYTHONPATH: "apps/backend"
 ```
@@ -63,7 +62,7 @@ apps/backend:
 Each server entry supports:
 - `command`: Command executable name or path
 - `args`: Command-line arguments
-- `cwd`: Custom working directory for the language server process
+- `pattern`: Optional file match pattern to route requests
 - `env`: Map of custom environment variables
 - `settings`: Custom settings map passed via `workspace/didChangeConfiguration`
 - `initialization_options`: Custom options passed during LSP initialization

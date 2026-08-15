@@ -1,0 +1,26 @@
+.:
+    css:
+        command: npx
+        args:
+            - --yes
+            - --package=vscode-langservers-extracted
+            - vscode-css-language-server
+            - --stdio
+    go:
+        command: gopls
+        args: []
+    html:
+        command: npx
+        args:
+            - --yes
+            - --package=vscode-langservers-extracted
+            - vscode-html-language-server
+            - --stdio
+    python:
+        command: pyright-langserver
+        args:
+            - --stdio
+    typescript-javascript:
+        command: typescript-language-server
+        args:
+            - --stdio

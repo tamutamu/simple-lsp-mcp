@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
@@ -92,4 +94,31 @@ func TestEngineOnboard(t *testing.T) {
 		t.Fatalf("expected detected profiles for root, got %#v", res["detected"])
 	}
 }
+
+func TestSearchSymbolsWithGopls(t *testing.T) {
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.SearchSymbols(context.Background(), map[string]any{
+		"language": "go",
+		"query":    "New",
+	})
+	if err != nil {
+		t.Fatalf("SearchSymbols failed: %v", err)
+	}
+	symbols, ok := res["symbols"].([]core.SymbolSummary)
+	if !ok || len(symbols) == 0 {
+		t.Fatalf("expected symbols, got %#v", res)
+	}
+	t.Logf("found %d symbols with query 'New'", len(symbols))
+}
+
 

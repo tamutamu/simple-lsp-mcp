@@ -22,8 +22,7 @@ const ConfigFileAlt = ".simple-lsp.yml"
 type Server struct {
 	Command               string            `yaml:"command" json:"command"`
 	Args                  []string          `yaml:"args" json:"args"`
-	RootDir               string            `yaml:"root_dir,omitempty" json:"root_dir,omitempty"`
-	Cwd                   string            `yaml:"cwd,omitempty" json:"cwd,omitempty"`
+	Directory             string            `yaml:"-" json:"directory,omitempty"`
 	Pattern               string            `yaml:"pattern,omitempty" json:"pattern,omitempty"`
 	Env                   map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 	Settings              map[string]any    `yaml:"settings,omitempty" json:"settings,omitempty"`
@@ -217,9 +216,7 @@ func loadServers(data []byte) (map[string][]Server, error) {
 				if strings.TrimSpace(s.Command) == "" {
 					return nil, fmt.Errorf("profile %q server [%d] command must be a non-empty string", key, idx)
 				}
-				if s.RootDir == "" {
-					s.RootDir = "."
-				}
+				s.Directory = "."
 				servers[key] = append(servers[key], s)
 			}
 		} else {
@@ -237,9 +234,7 @@ func loadServers(data []byte) (map[string][]Server, error) {
 					if strings.TrimSpace(s.Command) == "" {
 						return nil, fmt.Errorf("path %q profile %q server [%d] command must be a non-empty string", key, profName, idx)
 					}
-					if s.RootDir == "" {
-						s.RootDir = relPath
-					}
+					s.Directory = relPath
 					servers[profName] = append(servers[profName], s)
 				}
 			}
@@ -254,7 +249,7 @@ func loadServers(data []byte) (map[string][]Server, error) {
 }
 
 // SelectServer matches a target file path against configured servers for a given language profile.
-// It prioritizes the longest matching RootDir, defaulting to the first configured server or a zero Server if none match.
+// It prioritizes the longest matching Directory, defaulting to the first configured server or a zero Server if none match.
 func SelectServer(servers []Server, targetPath string) Server {
 	if len(servers) == 0 {
 		return Server{}
@@ -265,15 +260,15 @@ func SelectServer(servers []Server, targetPath string) Server {
 	bestLen := -1
 
 	for _, s := range servers {
-		rootDir := filepath.Clean(s.RootDir)
-		if rootDir == "" {
-			rootDir = "."
+		dir := filepath.Clean(s.Directory)
+		if dir == "" {
+			dir = "."
 		}
 
 		matched := false
-		if rootDir == "." {
+		if dir == "." {
 			matched = true
-		} else if cleanTarget == rootDir || strings.HasPrefix(cleanTarget, rootDir+string(filepath.Separator)) {
+		} else if cleanTarget == dir || strings.HasPrefix(cleanTarget, dir+string(filepath.Separator)) {
 			matched = true
 		}
 
@@ -284,8 +279,8 @@ func SelectServer(servers []Server, targetPath string) Server {
 		}
 
 		if matched {
-			matchLen := len(rootDir)
-			if rootDir == "." {
+			matchLen := len(dir)
+			if dir == "." {
 				matchLen = 0
 			}
 			if matchLen > bestLen {
