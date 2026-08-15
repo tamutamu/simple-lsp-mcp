@@ -95,6 +95,9 @@ func NewError(code ErrorCode, message string) *AppError {
 	return &AppError{Code: code, Message: message}
 }
 func WithCause(code ErrorCode, message string, cause error) *AppError {
+	if cause != nil {
+		message = fmt.Sprintf("%s: %v", message, cause)
+	}
 	return &AppError{Code: code, Message: message, Cause: cause}
 }
 

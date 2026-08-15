@@ -89,16 +89,7 @@ func (s *Session) launch() (*exec.Cmd, *transport.Transport, error) {
 		return nil, nil, core.NewError(core.LanguageServerStartFailed, "language server command is empty")
 	}
 	cmd := exec.Command(s.cfg.Command, s.cfg.Args...)
-
-	// Resolve working directory
-	targetDir := s.cfg.Directory
-	if targetDir == "" || targetDir == "." {
-		cmd.Dir = s.root
-	} else if filepath.IsAbs(targetDir) {
-		cmd.Dir = targetDir
-	} else {
-		cmd.Dir = filepath.Join(s.root, targetDir)
-	}
+	cmd.Dir = s.root
 
 	// Apply custom environment variables
 	if len(s.cfg.Env) > 0 {
@@ -167,13 +158,6 @@ func (s *Session) initialize(ctx context.Context, cmd *exec.Cmd, t *transport.Tr
 
 func (s *Session) initializationParams() map[string]any {
 	sessionRoot := s.root
-	if s.cfg.Directory != "" && s.cfg.Directory != "." {
-		if filepath.IsAbs(s.cfg.Directory) {
-			sessionRoot = s.cfg.Directory
-		} else {
-			sessionRoot = filepath.Join(s.root, s.cfg.Directory)
-		}
-	}
 
 	if s.key == "go" {
 		initOpts := map[string]any{"symbolMatcher": "CaseInsensitive"}

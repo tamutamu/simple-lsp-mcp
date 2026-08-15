@@ -121,4 +121,52 @@ func TestSearchSymbolsWithGopls(t *testing.T) {
 	t.Logf("found %d symbols with query 'New'", len(symbols))
 }
 
+func TestSearchSymbolsSubdirectoryProfile(t *testing.T) {
+	tempDir := t.TempDir()
+	apiDir := filepath.Join(tempDir, "apps", "api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "go.mod"), []byte("module api\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "server.go"), []byte("package main\n\ntype ServerConfig struct{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `
+apps/api:
+  go:
+    command: gopls
+    args: []
+`
+	if err := os.WriteFile(filepath.Join(tempDir, config.ConfigFile), []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := workspace.Open(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.SearchSymbols(context.Background(), map[string]any{
+		"language": "go",
+		"query":    "ServerConfig",
+	})
+	if err != nil {
+		t.Fatalf("SearchSymbols in subdirectory failed: %v", err)
+	}
+	symbols, ok := res["symbols"].([]core.SymbolSummary)
+	if !ok || len(symbols) == 0 {
+		t.Fatalf("expected symbols for ServerConfig, got %#v", res)
+	}
+	t.Logf("found %d symbols in subdirectory profile", len(symbols))
+}
+
+
 
