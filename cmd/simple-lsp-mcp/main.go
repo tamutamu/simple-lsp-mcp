@@ -23,6 +23,7 @@ func main() {
 	var root, logLevel string
 	var timeout, wait time.Duration
 	var max int
+	var showVersion bool
 
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
@@ -30,7 +31,13 @@ func main() {
 	flag.DurationVar(&timeout, "request-timeout", 15*time.Second, "LSP request timeout")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
 	flag.IntVar(&max, "max-results", 500, "maximum result count")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("simple-lsp-mcp %s\n", version)
+		return
+	}
 	if root == "" {
 		var err error
 		root, err = os.Getwd()

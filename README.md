@@ -167,3 +167,4 @@ Every tool returns structured data. Symbol, position, and range lines and column
 | `--request-timeout` | `15s` | Timeout for each LSP request |
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |
 | `--max-results` | `500` | Maximum result count per tool |
+| `--version` | `false` | Print version information and exit |
