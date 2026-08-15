@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -18,6 +19,18 @@ import (
 )
 
 var version = "dev"
+
+func getVersion() string {
+	if version != "" && version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+	}
+	return version
+}
 
 func main() {
 	var root, logLevel string
@@ -34,8 +47,9 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
 
+	ver := getVersion()
 	if showVersion {
-		fmt.Printf("simple-lsp-mcp %s\n", version)
+		fmt.Printf("simple-lsp-mcp %s\n", ver)
 		return
 	}
 	if root == "" {
@@ -71,7 +85,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := mcpserver.New(engine, version)
+	server := mcpserver.New(engine, ver)
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil {
 		slog.Error("mcp server stopped", "error", err)
 	}
