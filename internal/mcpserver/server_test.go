@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 15 {
+	if len(ds) != 16 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}
@@ -51,6 +51,25 @@ func TestDiscoveryToolDescriptionsGuideCodeInvestigation(t *testing.T) {
 		}
 	}
 }
+func TestTargetToolsAcceptSymbolPath(t *testing.T) {
+	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover"} {
+		found := false
+		for _, d := range definitions() {
+			if d.name != name {
+				continue
+			}
+			found = true
+			properties := d.schema["properties"].(map[string]any)
+			if _, ok := properties["symbol_path"]; !ok {
+				t.Fatalf("%s schema lacks symbol_path: %#v", name, properties)
+			}
+		}
+		if !found {
+			t.Fatalf("tool %q not found", name)
+		}
+	}
+}
+
 func TestResultStructuredAndTextContentMatch(t *testing.T) {
 	v := map[string]any{"symbols": []string{"one"}}
 	r := result(v, false)

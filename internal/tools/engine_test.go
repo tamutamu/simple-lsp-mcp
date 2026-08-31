@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -145,6 +146,42 @@ func TestEngineOnboard(t *testing.T) {
 	detected, ok := res["detected"].(map[string][]string)
 	if !ok || len(detected["."]) == 0 {
 		t.Fatalf("expected detected profiles for root, got %#v", res["detected"])
+	}
+}
+
+func requireGopls(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Skip("gopls is not installed")
+	}
+}
+
+func TestResolveSymbolPathWithGopls(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	p, err := language.Require("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, warnings, err := engine.resolveSymbolPath(context.Background(), p, "New", "internal/symbol/registry.go")
+	if err != nil {
+		t.Fatalf("resolveSymbolPath failed: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %#v, warnings = %v", hits, warnings)
+	}
+	if hits[0].Node.SymbolPath != "New" {
+		t.Fatalf("SymbolPath = %q, want New", hits[0].Node.SymbolPath)
 	}
 }
 

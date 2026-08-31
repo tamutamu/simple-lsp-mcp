@@ -59,6 +59,9 @@ func definitions() []definition {
 		{"find_implementations", "Find implementation locations. language is required and selects the LSP server.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "Get type definition locations. language is required and selects the LSP server.", targetSchema(), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "Get declaration locations. language is required and selects the LSP server.", targetSchema(), relation("get_declaration", "textDocument/declaration", "declaration")},
+		{"get_hover", "Get the type a language server infers for an expression at this exact position, even when that expression has no declaration of its own (for example a local variable assigned from a generic call). For a named, declared symbol prefer get_symbol or get_symbol_context instead. language is required and selects the LSP server.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language"), "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.Hover(c, i)
+		}},
 		{"get_incoming_calls", "Get direct callers. language is required and selects the LSP server.", targetSchema(), hierarchy("get_incoming_calls")},
 		{"get_outgoing_calls", "Get direct callees. language is required and selects the LSP server.", targetSchema(), hierarchy("get_outgoing_calls")},
 		{"get_supertypes", "Get direct supertypes. language is required and selects the LSP server.", targetSchema(), hierarchy("get_supertypes")},
@@ -102,6 +105,7 @@ func allProperties() map[string]any {
 		"query":               describe(stringSchema(), "Substring or fuzzy name to search for. Empty matches every symbol."),
 		"path":                describe(stringSchema(), "File path relative to the workspace root."),
 		"symbol_id":           describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
+		"symbol_path":         describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
 		"line":                describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
 		"column":              describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
 		"limit":               describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
@@ -128,7 +132,7 @@ func props(names ...string) map[string]any {
 // targetProps is the symbol_id-or-position target shared by relation and hierarchy tools,
 // plus any tool-specific properties.
 func targetProps(extra ...string) map[string]any {
-	return props(append([]string{"symbol_id", "path", "line", "column", "language", "limit"}, extra...)...)
+	return props(append([]string{"symbol_id", "symbol_path", "path", "line", "column", "language", "limit"}, extra...)...)
 }
 
 func describe(s map[string]any, description string) map[string]any {

@@ -167,8 +167,11 @@ func (s *Session) initializationParams() map[string]any {
 		return map[string]any{
 			"rootUri": fileURI(sessionRoot),
 			"capabilities": map[string]any{
-				"workspace":    map[string]any{"configuration": true},
-				"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
+				"workspace": map[string]any{"configuration": true},
+				"textDocument": map[string]any{
+					"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true},
+					"hover":          map[string]any{"contentFormat": []string{"markdown", "plaintext"}},
+				},
 			},
 			"initializationOptions": initOpts,
 		}
@@ -269,11 +272,11 @@ func (s *Session) notification(m transport.Message) {
 }
 func fileURI(path string) string { return "file://" + path }
 func clientCapabilities() map[string]any {
-	return map[string]any{"workspace": map[string]any{"workspaceFolders": true, "didChangeConfiguration": map[string]any{"dynamicRegistration": false}, "symbol": map[string]any{"dynamicRegistration": false}, "diagnostics": map[string]any{}}, "textDocument": map[string]any{"synchronization": map[string]any{"didSave": true}, "documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}, "definition": map[string]any{"linkSupport": true}, "references": map[string]any{}, "implementation": map[string]any{"linkSupport": true}, "typeDefinition": map[string]any{"linkSupport": true}, "declaration": map[string]any{"linkSupport": true}, "callHierarchy": map[string]any{}, "typeHierarchy": map[string]any{}, "diagnostic": map[string]any{}}}
+	return map[string]any{"workspace": map[string]any{"workspaceFolders": true, "didChangeConfiguration": map[string]any{"dynamicRegistration": false}, "symbol": map[string]any{"dynamicRegistration": false}, "diagnostics": map[string]any{}}, "textDocument": map[string]any{"synchronization": map[string]any{"didSave": true}, "documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}, "hover": map[string]any{"contentFormat": []string{"markdown", "plaintext"}}, "definition": map[string]any{"linkSupport": true}, "references": map[string]any{}, "implementation": map[string]any{"linkSupport": true}, "typeDefinition": map[string]any{"linkSupport": true}, "declaration": map[string]any{"linkSupport": true}, "callHierarchy": map[string]any{}, "typeHierarchy": map[string]any{}, "diagnostic": map[string]any{}}}
 }
 func decodeCaps(m map[string]json.RawMessage, encoding string) protocol.Capabilities {
 	has := func(k string) bool { b := m[k]; return len(b) > 0 && string(b) != "false" && string(b) != "null" }
-	return protocol.Capabilities{PositionEncoding: encoding, WorkspaceSymbol: has("workspaceSymbolProvider"), DocumentSymbol: has("documentSymbolProvider"), Definition: has("definitionProvider"), References: has("referencesProvider"), Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"), CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"), WorkspaceDiagnostics: has("diagnosticProvider")}
+	return protocol.Capabilities{PositionEncoding: encoding, WorkspaceSymbol: has("workspaceSymbolProvider"), DocumentSymbol: has("documentSymbolProvider"), Hover: has("hoverProvider"), Definition: has("definitionProvider"), References: has("referencesProvider"), Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"), CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"), WorkspaceDiagnostics: has("diagnosticProvider")}
 }
 
 type Manager struct {

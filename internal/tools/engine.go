@@ -101,13 +101,7 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 	if err != nil {
 		return nil, err
 	}
-	if !s.Capabilities().DocumentSymbol {
-		return nil, e.unsupported(p, "textDocument/documentSymbol")
-	}
-	var raw json.RawMessage
-	callCtx, cancel := e.callContext(ctx)
-	err = s.Request(callCtx, "textDocument/documentSymbol", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}}, &raw)
-	cancel()
+	raw, err := e.requestDocumentSymbolTree(ctx, p, s, d)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +120,20 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 		}
 	}
 	return map[string]any{"symbols": out}, nil
+}
+
+// requestDocumentSymbolTree fetches the raw textDocument/documentSymbol
+// response for an already-resolved document, in whichever of the two
+// shapes (hierarchical or flat) the server returns.
+func (e *Engine) requestDocumentSymbolTree(ctx context.Context, p language.Profile, s *session.Session, d document.Document) (json.RawMessage, error) {
+	if !s.Capabilities().DocumentSymbol {
+		return nil, e.unsupported(p, "textDocument/documentSymbol")
+	}
+	var raw json.RawMessage
+	callCtx, cancel := e.callContext(ctx)
+	err := s.Request(callCtx, "textDocument/documentSymbol", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}}, &raw)
+	cancel()
+	return raw, err
 }
 
 // GetSymbol returns a previously acquired symbol after checking its file hash.

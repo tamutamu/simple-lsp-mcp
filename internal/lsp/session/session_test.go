@@ -16,6 +16,18 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
 )
 
+func TestDecodeCapsDetectsHoverProvider(t *testing.T) {
+	if !decodeCaps(map[string]json.RawMessage{"hoverProvider": json.RawMessage("true")}, "utf-16").Hover {
+		t.Fatal("Hover = false, want true")
+	}
+	if decodeCaps(map[string]json.RawMessage{"hoverProvider": json.RawMessage("false")}, "utf-16").Hover {
+		t.Fatal("Hover = true, want false")
+	}
+	if decodeCaps(map[string]json.RawMessage{}, "utf-16").Hover {
+		t.Fatal("Hover = true, want false when absent")
+	}
+}
+
 func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
 	tempDir := t.TempDir()

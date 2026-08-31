@@ -48,6 +48,22 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 	if err != nil {
 		return language.Profile{}, nil, document.Document{}, protocol.Position{}, err
 	}
+	if t.SymbolPath != "" {
+		hits, _, err := e.resolveSymbolPath(ctx, p, t.SymbolPath, t.Path)
+		if err != nil {
+			return p, nil, document.Document{}, protocol.Position{}, err
+		}
+		switch len(hits) {
+		case 0:
+			return p, nil, document.Document{}, protocol.Position{}, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+t.SymbolPath)
+		case 1:
+			hit := hits[0]
+			pos, err := document.ToLSP(hit.Document.Text, hit.Node.SelectionRange.Start, hit.Session.Capabilities().PositionEncoding)
+			return p, hit.Session, hit.Document, pos, err
+		default:
+			return p, nil, document.Document{}, protocol.Position{}, e.ambiguousError(t.SymbolPath, hits)
+		}
+	}
 	if t.SymbolID != "" {
 		r, err := e.Symbols.Get(t.SymbolID)
 		if err != nil {

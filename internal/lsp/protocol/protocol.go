@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 type Position struct {
 	Line      int `json:"line"`
 	Character int `json:"character"`
@@ -79,6 +81,26 @@ type CallHierarchyIncomingCall struct {
 type CallHierarchyOutgoingCall struct {
 	To         CallHierarchyItem `json:"to"`
 	FromRanges []Range           `json:"fromRanges"`
+}
+
+// Hover is the textDocument/hover response. Contents is one of
+// MarkupContent, MarkedString, or MarkedString[], and is decoded by the
+// caller since the three shapes are otherwise ambiguous to unmarshal.
+type Hover struct {
+	Contents json.RawMessage `json:"contents"`
+	Range    *Range          `json:"range,omitempty"`
+}
+
+// MarkupContent is the LSP 3.x hover body.
+type MarkupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+// MarkedString is the deprecated hover body some servers still emit.
+type MarkedString struct {
+	Language string `json:"language"`
+	Value    string `json:"value"`
 }
 type TypeHierarchyItem struct {
 	Name           string `json:"name"`
