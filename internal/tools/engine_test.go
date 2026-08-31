@@ -371,6 +371,7 @@ func TestImpactAnalysisDepthThreeStaysWithinBudget(t *testing.T) {
 }
 
 func TestSearchSymbolsWithGopls(t *testing.T) {
+	requireGopls(t)
 	ws, err := workspace.Open(".")
 	if err != nil {
 		t.Fatal(err)
@@ -397,6 +398,7 @@ func TestSearchSymbolsWithGopls(t *testing.T) {
 }
 
 func TestSearchSymbolsSubdirectoryProfile(t *testing.T) {
+	requireGopls(t)
 	tempDir := t.TempDir()
 	apiDir := filepath.Join(tempDir, "apps", "api")
 	if err := os.MkdirAll(apiDir, 0755); err != nil {
