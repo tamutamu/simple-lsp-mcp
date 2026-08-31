@@ -11,6 +11,7 @@ import (
 // Record stores the metadata needed to resolve a symbol during one MCP session.
 type Record struct {
 	ID, SessionKey, Name, Kind, ContainerName, URI, Path, FileHash string
+	SymbolPath, Detail                                             string
 	Range, SelectionRange                                          core.Range
 	Data                                                           any
 }

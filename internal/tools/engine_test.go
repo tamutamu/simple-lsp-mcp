@@ -53,11 +53,12 @@ func TestDocumentTreeConvertsDocumentAbsolutePathToWorkspaceRelativePath(t *test
 		t.Fatal(err)
 	}
 	full := filepath.Join(ws.Root(), "greeting.ts")
-	if err := os.WriteFile(full, []byte("export function greeting() {}\n"), 0o600); err != nil {
+	text := []byte("export function greeting() {}\n")
+	if err := os.WriteFile(full, text, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	engine := New(ws, config.Runtime{MaxResults: 10})
-	doc := document.Document{Path: full, URI: "file://" + full, Hash: "test"}
+	doc := document.Document{Path: full, URI: "file://" + full, Hash: "test", Text: text}
 	symbols := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
 		Name:           "greeting",
 		Kind:           12,
@@ -69,6 +70,58 @@ func TestDocumentTreeConvertsDocumentAbsolutePathToWorkspaceRelativePath(t *test
 	}
 	if got := symbols[0].(map[string]any)["path"]; got != "greeting.ts" {
 		t.Fatalf("path = %#v, want greeting.ts", got)
+	}
+}
+
+func TestDocumentTreeStillEmitsLegacyKeys(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(ws.Root(), "greeting.ts")
+	text := []byte("export function greeting() {}\n")
+	if err := os.WriteFile(full, text, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{MaxResults: 10})
+	doc := document.Document{Path: full, URI: "file://" + full, Hash: "test", Text: text}
+	symbols := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
+		Name: "greeting",
+		Kind: 12,
+	}})
+	if len(symbols) != 1 {
+		t.Fatalf("symbols = %#v, want one symbol", symbols)
+	}
+	m := symbols[0].(map[string]any)
+	for _, key := range []string{"symbol_id", "name", "kind", "language", "path", "range", "selection_range"} {
+		if _, ok := m[key]; !ok {
+			t.Fatalf("legacy key %q missing from %#v", key, m)
+		}
+	}
+}
+
+func TestRangeFromTextMatchesRangeForPath(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := []byte("line one\nline two\nline three\n")
+	full := filepath.Join(ws.Root(), "f.txt")
+	if err := os.WriteFile(full, text, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{MaxResults: 10})
+	r := protocol.Range{Start: protocol.Position{Line: 1, Character: 2}, End: protocol.Position{Line: 2, Character: 4}}
+	fromPath, err := engine.rangeForPath("f.txt", r, "utf-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromText, err := rangeFromText(text, r, "utf-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromPath != fromText {
+		t.Fatalf("rangeForPath = %#v, rangeFromText = %#v", fromPath, fromText)
 	}
 }
 

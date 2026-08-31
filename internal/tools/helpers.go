@@ -110,26 +110,45 @@ func (e *Engine) symbolFromInfo(p language.Profile, s *session.Session, d docume
 
 // documentTree converts and registers recursive document symbols.
 func (e *Engine) documentTree(p language.Profile, s *session.Session, d document.Document, vs []protocol.DocumentSymbol) []any {
-	out := make([]any, 0, len(vs))
 	path := relativeMust(e, d.Path)
-	for _, v := range vs {
-		rr, err := e.rangeForPath(path, v.Range, s.Capabilities().PositionEncoding)
-		if err != nil {
-			continue
-		}
-		sr, err := e.rangeForPath(path, v.SelectionRange, s.Capabilities().PositionEncoding)
-		if err != nil {
-			continue
-		}
-		r := symbol.Record{SessionKey: p.SessionKey, Name: v.Name, Kind: normalize.Kind(v.Kind), Path: path, URI: d.URI, Range: rr, SelectionRange: sr, FileHash: d.Hash}
-		id := e.Symbols.Register(r)
-		x := map[string]any{"symbol_id": id, "name": v.Name, "kind": r.Kind, "language": p.Name, "path": r.Path, "range": rr, "selection_range": sr}
-		if len(v.Children) > 0 {
-			x["children"] = e.documentTree(p, s, d, v.Children)
-		}
-		out = append(out, x)
+	nodes := walkDocument(d.Text, s.Capabilities().PositionEncoding, vs, nil, "")
+	out := make([]any, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, e.nodeMap(p, path, d.URI, d.Hash, n))
 	}
 	return out
+}
+
+// registerNode stores one walked node in the symbol registry and returns its handle.
+func (e *Engine) registerNode(p language.Profile, path, uri, fileHash string, n symbolNode) string {
+	r := symbol.Record{
+		SessionKey:     p.SessionKey,
+		Name:           n.Name,
+		Kind:           n.Kind,
+		ContainerName:  n.ContainerName,
+		Path:           path,
+		URI:            uri,
+		FileHash:       fileHash,
+		Range:          n.Range,
+		SelectionRange: n.SelectionRange,
+		SymbolPath:     n.SymbolPath,
+		Detail:         n.Detail,
+	}
+	return e.Symbols.Register(r)
+}
+
+// nodeMap renders one walked node for tool output, registering it and recursing into children.
+func (e *Engine) nodeMap(p language.Profile, path, uri, fileHash string, n symbolNode) map[string]any {
+	id := e.registerNode(p, path, uri, fileHash, n)
+	x := map[string]any{"symbol_id": id, "name": n.Name, "kind": n.Kind, "language": p.Name, "path": path, "range": n.Range, "selection_range": n.SelectionRange}
+	if len(n.Children) > 0 {
+		children := make([]any, 0, len(n.Children))
+		for _, c := range n.Children {
+			children = append(children, e.nodeMap(p, path, uri, fileHash, c))
+		}
+		x["children"] = children
+	}
+	return x
 }
 
 // locations accepts the three location response shapes permitted by LSP.
@@ -185,6 +204,16 @@ func (e *Engine) link(l protocol.LocationLink, encoding string) (core.Location, 
 	}
 	return core.Location{Path: path, Range: r}, nil
 }
+
+// rangeFromText converts an LSP range using file content already in memory.
+func rangeFromText(text []byte, r protocol.Range, encoding string) (core.Range, error) {
+	a, err := document.FromLSP(text, r.Start, encoding)
+	if err != nil {
+		return core.Range{}, err
+	}
+	z, err := document.FromLSP(text, r.End, encoding)
+	return core.Range{Start: a, End: z}, err
+}
 func (e *Engine) rangeForPath(path string, r protocol.Range, encoding string) (core.Range, error) {
 	full, err := e.WS.Resolve(path)
 	if err != nil {
@@ -194,12 +223,7 @@ func (e *Engine) rangeForPath(path string, r protocol.Range, encoding string) (c
 	if err != nil {
 		return core.Range{}, err
 	}
-	a, err := document.FromLSP(b, r.Start, encoding)
-	if err != nil {
-		return core.Range{}, err
-	}
-	z, err := document.FromLSP(b, r.End, encoding)
-	return core.Range{Start: a, End: z}, err
+	return rangeFromText(b, r, encoding)
 }
 func (e *Engine) fileHash(path string) string {
 	full, err := e.WS.Resolve(path)

@@ -1,0 +1,87 @@
+package tools
+
+import (
+	"testing"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
+)
+
+func TestSymbolPathEscapesSeparatorInNames(t *testing.T) {
+	if got := escapeSegment("a/b"); got != "a%2Fb" {
+		t.Fatalf("escapeSegment = %q, want a%%2Fb", got)
+	}
+	if got := escapeSegment("100%"); got != "100%25" {
+		t.Fatalf("escapeSegment = %q, want 100%%25", got)
+	}
+}
+
+func TestUnescapeSegmentRoundTripsEscapedNames(t *testing.T) {
+	for _, name := range []string{"a/b", "100%", "%2F", "plain", ""} {
+		if got := unescapeSegment(escapeSegment(name)); got != name {
+			t.Fatalf("round trip of %q = %q", name, got)
+		}
+	}
+}
+
+func TestWalkDocumentBuildsNestedPaths(t *testing.T) {
+	text := []byte("class UserService {\n  createUser() {}\n}\n")
+	vs := []protocol.DocumentSymbol{{
+		Name:  "UserService",
+		Kind:  5,
+		Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+		Children: []protocol.DocumentSymbol{{
+			Name:  "createUser",
+			Kind:  6,
+			Range: protocol.Range{Start: protocol.Position{Line: 1}, End: protocol.Position{Line: 1}},
+		}},
+	}}
+	nodes := walkDocument(text, "utf-16", vs, nil, "")
+	if len(nodes) != 1 || nodes[0].SymbolPath != "UserService" {
+		t.Fatalf("nodes = %#v", nodes)
+	}
+	if len(nodes[0].Children) != 1 {
+		t.Fatalf("children = %#v", nodes[0].Children)
+	}
+	child := nodes[0].Children[0]
+	if child.SymbolPath != "UserService/createUser" {
+		t.Fatalf("child.SymbolPath = %q, want UserService/createUser", child.SymbolPath)
+	}
+	if child.ContainerName != "UserService" {
+		t.Fatalf("child.ContainerName = %q, want UserService", child.ContainerName)
+	}
+}
+
+func TestWalkDocumentDisambiguatesDuplicateSiblings(t *testing.T) {
+	vs := []protocol.DocumentSymbol{
+		{Name: "createUser", Kind: 6},
+		{Name: "createUser", Kind: 6},
+		{Name: "createUser", Kind: 6},
+	}
+	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
+	if len(nodes) != 3 {
+		t.Fatalf("nodes = %#v", nodes)
+	}
+	want := []string{"createUser", "createUser#2", "createUser#3"}
+	for i, w := range want {
+		if nodes[i].SymbolPath != w {
+			t.Fatalf("nodes[%d].SymbolPath = %q, want %q", i, nodes[i].SymbolPath, w)
+		}
+	}
+}
+
+func TestWalkDocumentNamesAnonymousSymbolsByIndex(t *testing.T) {
+	vs := []protocol.DocumentSymbol{{Name: "a"}, {Name: ""}, {Name: ""}}
+	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
+	if nodes[1].SymbolPath != "#1" || nodes[2].SymbolPath != "#2" {
+		t.Fatalf("nodes = %#v", nodes)
+	}
+}
+
+func TestWalkDocumentSkipsSymbolsWithUnconvertibleRanges(t *testing.T) {
+	// A range past the end of an empty file cannot be converted.
+	vs := []protocol.DocumentSymbol{{Name: "a", Range: protocol.Range{Start: protocol.Position{Line: 5}, End: protocol.Position{Line: 5, Character: 1}}}}
+	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
+	if len(nodes) != 0 {
+		t.Fatalf("nodes = %#v, want none", nodes)
+	}
+}
