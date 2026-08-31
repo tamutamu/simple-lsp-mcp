@@ -93,6 +93,7 @@ type Capabilities struct {
 	PositionEncoding     string
 	WorkspaceSymbol      bool
 	DocumentSymbol       bool
+	Hover                bool
 	Definition           bool
 	References           bool
 	Implementation       bool

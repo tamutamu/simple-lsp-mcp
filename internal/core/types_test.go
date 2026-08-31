@@ -15,3 +15,33 @@ func TestTargetValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestTargetValidateAcceptsSymbolPath(t *testing.T) {
+	if err := (Target{SymbolPath: "UserService/createUser"}).Validate(); err != nil {
+		t.Fatalf("Validate = %v, want nil", err)
+	}
+}
+
+func TestTargetValidateAllowsPathAsScopeForSymbolPath(t *testing.T) {
+	if err := (Target{SymbolPath: "createUser", Path: "src/user_service.ts"}).Validate(); err != nil {
+		t.Fatalf("Validate = %v, want nil", err)
+	}
+}
+
+func TestTargetValidateRejectsSymbolPathWithSymbolID(t *testing.T) {
+	if err := (Target{SymbolPath: "createUser", SymbolID: "sym_a"}).Validate(); err == nil {
+		t.Fatal("Validate = nil, want error")
+	}
+}
+
+func TestTargetValidateRejectsSymbolIDWithPath(t *testing.T) {
+	if err := (Target{SymbolID: "sym_a", Path: "src/a.go"}).Validate(); err == nil {
+		t.Fatal("Validate = nil, want error")
+	}
+}
+
+func TestTargetValidateRejectsSymbolPathWithPosition(t *testing.T) {
+	if err := (Target{SymbolPath: "createUser", Line: 1, Column: 1}).Validate(); err == nil {
+		t.Fatal("Validate = nil, want error")
+	}
+}

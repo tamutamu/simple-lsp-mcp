@@ -8,10 +8,11 @@ import (
 
 func targetOf(in map[string]any) core.Target {
 	return core.Target{
-		SymbolID: stringVal(in, "symbol_id"),
-		Path:     stringVal(in, "path"),
-		Line:     intVal(in, "line"),
-		Column:   intVal(in, "column"),
+		SymbolID:   stringVal(in, "symbol_id"),
+		SymbolPath: stringVal(in, "symbol_path"),
+		Path:       stringVal(in, "path"),
+		Line:       intVal(in, "line"),
+		Column:     intVal(in, "column"),
 	}
 }
 

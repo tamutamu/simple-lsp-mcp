@@ -268,6 +268,16 @@ func capable(c protocol.Capabilities, name string) bool {
 		return c.TypeDefinition
 	case "declaration":
 		return c.Declaration
+	case "hover":
+		return c.Hover
+	case "documentSymbol":
+		return c.DocumentSymbol
+	case "callHierarchy":
+		return c.CallHierarchy
+	case "typeHierarchy":
+		return c.TypeHierarchy
+	case "workspaceSymbol":
+		return c.WorkspaceSymbol
 	}
 	return false
 }

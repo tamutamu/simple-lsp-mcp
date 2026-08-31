@@ -12,10 +12,11 @@ type Range struct {
 	End   Position `json:"end"`
 }
 type Target struct {
-	SymbolID string `json:"symbol_id,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Column   int    `json:"column,omitempty"`
+	SymbolID   string `json:"symbol_id,omitempty"`
+	SymbolPath string `json:"symbol_path,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Column     int    `json:"column,omitempty"`
 }
 type Meta struct {
 	Complete        bool     `json:"complete"`
@@ -26,6 +27,7 @@ type Meta struct {
 }
 type SymbolSummary struct {
 	SymbolID       string `json:"symbol_id"`
+	SymbolPath     string `json:"symbol_path,omitempty"`
 	Name           string `json:"name"`
 	Kind           string `json:"kind"`
 	ContainerName  string `json:"container_name,omitempty"`
@@ -52,14 +54,27 @@ type Diagnostic struct {
 	Locations []Location `json:"locations,omitempty"`
 }
 
+// Validate accepts exactly one of three target forms: a symbol_id, a
+// symbol_path (optionally scoped to a file with path), or a position
+// (path, line, and column together).
 func (t Target) Validate() error {
 	byID := t.SymbolID != ""
-	byPosition := t.Path != "" || t.Line != 0 || t.Column != 0
-	if byID == byPosition || (!byID && !byPosition) {
-		return NewError(InvalidArgument, "specify exactly one target form")
+	byPath := t.SymbolPath != ""
+	byPosition := t.Line != 0 || t.Column != 0
+	forms := 0
+	for _, v := range []bool{byID, byPath, byPosition} {
+		if v {
+			forms++
+		}
+	}
+	if forms != 1 {
+		return NewError(InvalidArgument, "specify exactly one of symbol_id, symbol_path, or path with line and column")
 	}
 	if byPosition && (t.Path == "" || t.Line < 1 || t.Column < 1) {
 		return NewError(InvalidArgument, "path, line, and column must be specified")
+	}
+	if byID && t.Path != "" {
+		return NewError(InvalidArgument, "path cannot be combined with symbol_id")
 	}
 	return nil
 }
