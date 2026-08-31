@@ -17,11 +17,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `server.json` for the official Model Context Protocol registry.
 - Claude Code plugin manifest under `.claude-plugin/`, so the server can be
   installed with `claude plugin install` instead of hand-editing MCP config.
+- `get_hover`: the type a language server infers for an expression with no
+  declaration of its own, such as a local variable assigned from a generic
+  call — the one thing no other tool can answer.
+- `symbol_path`, a human-readable identifier such as `UserService/createUser`
+  built from a file's own document symbol tree. Every existing target-based
+  tool (`get_definition`, `find_references`, `get_incoming_calls`, and so on)
+  now accepts it alongside `symbol_id` and `path`+`line`+`column`.
+- `find_symbol`: resolve a `symbol_path` directly, without a prior search call.
+- `get_symbol_outline`: list a symbol's direct children, or a file's
+  top-level symbols, without ever returning source text.
+- `get_symbol_context`: a symbol's source, callers, callees, references, and
+  implementations in a single call.
+- `impact_analysis`: the blast radius of changing a symbol — direct and
+  transitive callers, references, implementations, and the files they touch
+  — under a fixed request/expansion/node/time budget so a highly-connected
+  symbol degrades to a partial result instead of hanging.
 
 ### Changed
 
 - Tool input schemas now advertise only the parameters each tool actually
   accepts, and every parameter carries a description.
+- Positioning: from "a read-only, symbol-first MCP bridge for LSP" to
+  competing on how few tool calls an agent needs to understand a codebase,
+  rather than on how many LSP methods are exposed.
 
 ## [0.5.3] - 2026-08-16
 

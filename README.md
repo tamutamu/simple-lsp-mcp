@@ -5,9 +5,9 @@
 [![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A read-only, symbol-first MCP bridge that lets AI agents use local Language Server Protocol (LSP) servers safely.
+A simple, read-only code intelligence layer for AI agents, powered by local Language Server Protocol (LSP) servers.
 
-Instead of text search, it asks LSP servers for symbols, definitions, references, call relationships, type hierarchies, and diagnostics. It does not edit files, execute shell commands on behalf of tools, perform text search, or build a persistent source index.
+Instead of text search, it asks LSP servers for symbols, definitions, references, call relationships, type hierarchies, and diagnostics — and combines those primitives into higher-level tools such as `find_symbol`, `get_symbol_context`, and `impact_analysis` that answer a whole question in one call. It does not edit files, execute shell commands on behalf of tools, perform text search, or build a persistent source index.
 
 ## Why
 
@@ -20,7 +20,12 @@ An LSP server already answers those questions precisely, because that's its
 job in every editor. `simple-lsp-mcp` exposes that existing, precise knowledge
 to an agent as small, structured MCP tool calls instead of large blobs of
 grep output — one `get_definition` call instead of a multi-file text search,
-one `find_references` call instead of guessing from string matches.
+one `find_references` call instead of guessing from string matches, one
+`get_symbol_context` call instead of five separate ones to understand what a
+function does and who relies on it.
+
+The measure this project optimizes for is not how many LSP methods it exposes
+— it is how few tool calls an agent needs to understand a codebase.
 
 It stays deliberately narrow:
 
@@ -143,9 +148,10 @@ Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` o
 command = "simple-lsp-mcp"
 enabled_tools = [
   "search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol",
+  "find_symbol", "get_symbol_outline", "get_symbol_context",
   "get_definition", "find_references", "find_implementations", "get_type_definition",
-  "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes",
-  "get_subtypes", "get_diagnostics", "onboard"
+  "get_declaration", "get_hover", "get_incoming_calls", "get_outgoing_calls", "get_supertypes",
+  "get_subtypes", "get_diagnostics", "impact_analysis", "onboard"
 ]
 default_tools_approval_mode = "approve"
 startup_timeout_sec = 20
@@ -153,7 +159,7 @@ tool_timeout_sec = 45
 enabled = true
 ```
 
-In Codex, begin code exploration with `search_symbols` or `get_document_symbols`. For example, to list functions in `src/greeting.ts`, call `get_document_symbols` with `path: "src/greeting.ts"` and `language: "typescript"`.
+In Codex, begin code exploration with `find_symbol` or `get_symbol_outline` once you know roughly what you're looking for, or `search_symbols` / `get_document_symbols` when you don't. For example, to list functions in `src/greeting.ts`, call `get_document_symbols` with `path: "src/greeting.ts"` and `language: "typescript"`; to jump straight to one of them, call `find_symbol` with `symbol_path: "formatGreeting"` and `language: "typescript"`.
 
 ## Claude Code configuration
 
@@ -191,23 +197,38 @@ see [Installation](#installation) above.
 
 Every tool returns structured data. Symbol, position, and range lines and columns are **one-based**; paths are relative to the workspace.
 
+A **target** identifies one symbol or position, in exactly one of three forms: a `symbol_id` returned by an earlier call, a human-readable `symbol_path` such as `"UserService/createUser"` (optionally scoped to one file with `path`; see [Finding a symbol by name](#finding-a-symbol-by-name) below), or `path` together with `line` and `column`.
+
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
 | `list_workspace_symbols` | List workspace symbols for a language | `language` |
 | `get_document_symbols` | Get hierarchical symbols for one file | `path`, `language` |
 | `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
+| `find_symbol` | Get one symbol by its `symbol_path`, without a prior search | `symbol_path`, `language` |
+| `get_symbol_outline` | List a symbol's direct children, or a file's top-level symbols, without any source text | `language` |
+| `get_symbol_context` | Get a symbol's source, callers, callees, references, and implementations in one call | `language` and target |
 | `get_definition` | Go to a definition | `language` and target |
 | `find_references` | Get reference locations | `language` and target |
 | `find_implementations` | Get implementation locations | `language` and target |
 | `get_type_definition` | Go to a type definition | `language` and target |
 | `get_declaration` | Go to a declaration | `language` and target |
+| `get_hover` | Get the type a language server infers for an expression with no declaration of its own | `language` and target |
 | `get_incoming_calls` | Get direct callers | `language` and target |
 | `get_outgoing_calls` | Get direct callees | `language` and target |
 | `get_supertypes` | Get direct supertypes | `language` and target |
 | `get_subtypes` | Get direct subtypes | `language` and target |
 | `get_diagnostics` | Get diagnostics for a file | `language` when `path` is supplied |
+| `impact_analysis` | Estimate the blast radius of changing a symbol: callers, references, implementations, and affected files | `language` and target |
 | `onboard` | Scan workspace and generate configuration | None |
+
+### Finding a symbol by name
+
+`find_symbol`, `get_symbol_outline`, `get_symbol_context`, and every target-based tool above accept `symbol_path`: the names of a symbol and its enclosing symbols, joined by `/`, such as `UserService/createUser`. A trailing portion alone (`createUser`) is accepted when it is unambiguous anywhere in the searched file or workspace; prefix the path with `/` to require an exact match instead. Escape a literal `/` inside a name as `%2F`.
+
+A `symbol_path` reflects whatever shape the language server's own `documentSymbol` response has — it is never inferred or restructured. Methods commonly nest under their type (`UserService/createUser`), but some language servers report them as one flat, already-qualified name instead (for example Go's `gopls`, which reports `(*UserService).CreateUser` as a single segment). Call `get_symbol_outline` or `get_document_symbols` first if you are unsure which form a given server uses.
+
+When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
 
 ## Server options
 
