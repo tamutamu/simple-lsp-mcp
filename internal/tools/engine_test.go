@@ -254,6 +254,39 @@ func TestSymbolOutlineWithGopls(t *testing.T) {
 	}
 }
 
+func TestSymbolContextWithGopls(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.SymbolContext(context.Background(), map[string]any{
+		"symbol_path": "New",
+		"path":        "internal/symbol/registry.go",
+		"language":    "go",
+	})
+	if err != nil {
+		t.Fatalf("SymbolContext failed: %v", err)
+	}
+	sym, ok := res["symbol"].(map[string]any)
+	if !ok || sym["name"] != "New" {
+		t.Fatalf("expected symbol New, got %#v", res)
+	}
+	if _, ok := res["source"]; !ok {
+		t.Fatalf("expected a source section, got %#v", res)
+	}
+	if _, ok := res["references"]; !ok {
+		t.Fatalf("expected a references section, got %#v", res)
+	}
+}
+
 func TestSearchSymbolsWithGopls(t *testing.T) {
 	ws, err := workspace.Open(".")
 	if err != nil {

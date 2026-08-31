@@ -329,3 +329,262 @@ func (e *Engine) outlineNode(p language.Profile, path, uri, fileHash string, n s
 	}
 	return x
 }
+
+// defaultSectionLimit caps each section of get_symbol_context independently
+// of --max-results: a references list capped at 500 would dwarf the rest
+// of a single-call answer.
+const defaultSectionLimit = 20
+
+// sectionLimit resolves the per-section cap for an aggregate request.
+func (e *Engine) sectionLimit(in map[string]any) (int, error) {
+	return core.ClampLimit(intVal(in, "limit"), e.MaxResults, defaultSectionLimit)
+}
+
+// includeSection reports whether one get_symbol_context section was
+// requested. All sections are included when "include" is omitted or empty.
+func includeSection(in map[string]any, name string) bool {
+	values, ok := in["include"].([]any)
+	if !ok || len(values) == 0 {
+		return true
+	}
+	for _, v := range values {
+		if s, _ := v.(string); s == name {
+			return true
+		}
+	}
+	return false
+}
+
+// SymbolContext gathers everything about one symbol in a single call: its
+// source, callers, callees, references, and implementations. Each section
+// is best-effort -- a missing capability or a failed sub-request drops
+// that section and records why in meta.warnings, rather than failing the
+// whole call. Only a failure to resolve the symbol itself is a hard error.
+func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[string]any, error) {
+	p, err := language.Require(stringVal(in, "language"))
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		d                                            document.Document
+		name, kind, containerName, detail, symbolPth string
+		symRange, symSelRange                        core.Range
+		hasRange                                     bool
+		warnings                                     []string
+	)
+	subIn := map[string]any{"language": p.Name}
+
+	switch {
+	case stringVal(in, "symbol_path") != "":
+		symbolPath := stringVal(in, "symbol_path")
+		hits, w, err := e.resolveSymbolPath(ctx, p, symbolPath, stringVal(in, "path"))
+		if err != nil {
+			return nil, err
+		}
+		if len(hits) == 0 {
+			return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+symbolPath)
+		}
+		if len(hits) > 1 {
+			limit, err := e.sectionLimit(in)
+			if err != nil {
+				return nil, err
+			}
+			return e.ambiguousResult(p, symbolPath, hits, limit, w), nil
+		}
+		hit := hits[0]
+		d = hit.Document
+		warnings = w
+		docPath := relativeMust(e, d.Path)
+		subIn["symbol_id"] = e.registerNode(p, docPath, d.URI, d.Hash, hit.Node)
+		name, kind, containerName, detail, symbolPth = hit.Node.Name, hit.Node.Kind, hit.Node.ContainerName, hit.Node.Detail, hit.Node.SymbolPath
+		symRange, symSelRange, hasRange = hit.Node.Range, hit.Node.SelectionRange, true
+
+	case stringVal(in, "symbol_id") != "":
+		id := stringVal(in, "symbol_id")
+		rec, err := e.Symbols.Get(id)
+		if err != nil {
+			return nil, err
+		}
+		_, _, dd, _, err := e.target(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		d = dd
+		subIn["symbol_id"] = id
+		name, kind, containerName, detail, symbolPth = rec.Name, rec.Kind, rec.ContainerName, rec.Detail, rec.SymbolPath
+		symRange, symSelRange, hasRange = rec.Range, rec.SelectionRange, true
+
+	default:
+		_, _, dd, _, err := e.target(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		d = dd
+		subIn["path"] = stringVal(in, "path")
+		subIn["line"] = intVal(in, "line")
+		subIn["column"] = intVal(in, "column")
+	}
+
+	path := relativeMust(e, d.Path)
+	symbol := map[string]any{"language": p.Name, "path": path}
+	for k, v := range map[string]string{"symbol_path": symbolPth, "name": name, "kind": kind, "container_name": containerName, "detail": detail} {
+		if v != "" {
+			symbol[k] = v
+		}
+	}
+	if id, ok := subIn["symbol_id"]; ok {
+		symbol["symbol_id"] = id
+	}
+	if hasRange {
+		symbol["range"] = symRange
+		symbol["selection_range"] = symSelRange
+	}
+
+	limit, err := e.sectionLimit(in)
+	if err != nil {
+		return nil, err
+	}
+	rootCtx, cancel := context.WithTimeout(ctx, 3*e.Timeout)
+	defer cancel()
+
+	out := map[string]any{"symbol": symbol}
+	complete := true
+
+	if includeSection(in, "source") {
+		if hasRange {
+			text, truncated := sourceFor(d.Text, symRange, intVal(in, "max_source_lines"))
+			out["source"] = map[string]any{"text": text, "truncated": truncated}
+		} else {
+			warnings = append(warnings, "source: no declared symbol at this position")
+		}
+	}
+	if includeSection(in, "incoming_calls") {
+		v, ok, w := e.contextCalls(rootCtx, "get_incoming_calls", subIn, limit)
+		if ok {
+			out["incoming_calls"] = v
+		} else {
+			warnings, complete = append(warnings, w), false
+		}
+	}
+	if includeSection(in, "outgoing_calls") {
+		v, ok, w := e.contextCalls(rootCtx, "get_outgoing_calls", subIn, limit)
+		if ok {
+			out["outgoing_calls"] = v
+		} else {
+			warnings, complete = append(warnings, w), false
+		}
+	}
+	if includeSection(in, "references") {
+		v, ok, w := e.contextReferences(rootCtx, subIn, limit)
+		if ok {
+			out["references"] = v
+		} else {
+			warnings, complete = append(warnings, w), false
+		}
+	}
+	if includeSection(in, "implementations") {
+		v, ok, w := e.contextImplementations(rootCtx, subIn, limit)
+		if ok {
+			out["implementations"] = v
+		} else {
+			warnings, complete = append(warnings, w), false
+		}
+	}
+
+	out["meta"] = core.Meta{Complete: complete, Warnings: warnings}
+	return out, nil
+}
+
+// contextCalls runs get_incoming_calls or get_outgoing_calls as a sub-call
+// and projects each result down to the fields useful in a summary.
+func (e *Engine) contextCalls(ctx context.Context, name string, subIn map[string]any, limit int) ([]any, bool, string) {
+	res, err := e.Hierarchy(ctx, name, withLimit(subIn, limit))
+	if err != nil {
+		return nil, false, name + ": " + err.Error()
+	}
+	calls, _ := res["calls"].([]any)
+	out := make([]any, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, compactCall(c))
+	}
+	return out, true, ""
+}
+
+// compactCall projects a call-hierarchy item down to symbol_id,
+// symbol_path, name, kind, path, and the starting line, dropping
+// from_ranges and the full selection_range.
+func compactCall(v any) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	for _, k := range []string{"symbol_id", "symbol_path", "name", "kind", "path"} {
+		if x, ok := m[k]; ok {
+			out[k] = x
+		}
+	}
+	if r, ok := m["range"].(core.Range); ok {
+		out["line"] = r.Start.Line
+	}
+	return out
+}
+
+// contextReferences runs find_references as a sub-call and collapses the
+// flat location list into one entry per file with just the starting
+// lines, which is enough to decide where to look next without paying for
+// a full location per hit.
+func (e *Engine) contextReferences(ctx context.Context, subIn map[string]any, limit int) ([]any, bool, string) {
+	res, err := e.Relationship(ctx, "find_references", "textDocument/references", "references", withLimit(subIn, limit))
+	if err != nil {
+		return nil, false, "references: " + err.Error()
+	}
+	locs, _ := res["locations"].([]core.Location)
+	return groupReferences(locs), true, ""
+}
+
+// groupReferences collapses a flat location list into one entry per file.
+func groupReferences(locs []core.Location) []any {
+	type fileRefs struct {
+		path  string
+		lines []int
+	}
+	var order []string
+	byPath := map[string]*fileRefs{}
+	for _, l := range locs {
+		a, ok := byPath[l.Path]
+		if !ok {
+			a = &fileRefs{path: l.Path}
+			byPath[l.Path] = a
+			order = append(order, l.Path)
+		}
+		a.lines = append(a.lines, l.Range.Start.Line)
+	}
+	out := make([]any, 0, len(order))
+	for _, path := range order {
+		a := byPath[path]
+		out = append(out, map[string]any{"path": a.path, "count": len(a.lines), "lines": a.lines})
+	}
+	return out
+}
+
+// contextImplementations runs find_implementations as a sub-call.
+func (e *Engine) contextImplementations(ctx context.Context, subIn map[string]any, limit int) ([]core.Location, bool, string) {
+	res, err := e.Relationship(ctx, "find_implementations", "textDocument/implementation", "implementation", withLimit(subIn, limit))
+	if err != nil {
+		return nil, false, "implementations: " + err.Error()
+	}
+	locs, _ := res["locations"].([]core.Location)
+	return locs, true, ""
+}
+
+// withLimit copies a sub-call's target arguments and applies one section's limit.
+func withLimit(subIn map[string]any, limit int) map[string]any {
+	out := make(map[string]any, len(subIn)+1)
+	for k, v := range subIn {
+		out[k] = v
+	}
+	out["limit"] = limit
+	return out
+}
