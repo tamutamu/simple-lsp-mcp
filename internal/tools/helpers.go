@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -169,11 +168,14 @@ func (e *Engine) nodeMap(p language.Profile, path, uri, fileHash string, n symbo
 
 // locations accepts the three location response shapes permitted by LSP.
 func (e *Engine) locations(raw json.RawMessage, encoding string) ([]core.Location, error) {
+	return e.locationsIn(nil, raw, encoding)
+}
+func (e *Engine) locationsIn(c *fileCache, raw json.RawMessage, encoding string) ([]core.Location, error) {
 	var links []protocol.LocationLink
 	if json.Unmarshal(raw, &links) == nil && len(links) > 0 && links[0].TargetURI != "" {
 		out := make([]core.Location, 0, len(links))
 		for _, x := range links {
-			l, err := e.link(x, encoding)
+			l, err := e.linkIn(c, x, encoding)
 			if err == nil {
 				out = append(out, l)
 			}
@@ -182,7 +184,7 @@ func (e *Engine) locations(raw json.RawMessage, encoding string) ([]core.Locatio
 	}
 	var one protocol.Location
 	if json.Unmarshal(raw, &one) == nil && one.URI != "" {
-		l, err := e.location(one, encoding)
+		l, err := e.locationIn(c, one, encoding)
 		return []core.Location{l}, err
 	}
 	var many []protocol.Location
@@ -191,7 +193,7 @@ func (e *Engine) locations(raw json.RawMessage, encoding string) ([]core.Locatio
 	}
 	out := make([]core.Location, 0, len(many))
 	for _, x := range many {
-		l, err := e.location(x, encoding)
+		l, err := e.locationIn(c, x, encoding)
 		if err == nil {
 			out = append(out, l)
 		}
@@ -199,22 +201,28 @@ func (e *Engine) locations(raw json.RawMessage, encoding string) ([]core.Locatio
 	return out, nil
 }
 func (e *Engine) location(l protocol.Location, encoding string) (core.Location, error) {
+	return e.locationIn(nil, l, encoding)
+}
+func (e *Engine) locationIn(c *fileCache, l protocol.Location, encoding string) (core.Location, error) {
 	path, err := normalize.URIPath(e.WS, l.URI)
 	if err != nil {
 		return core.Location{}, err
 	}
-	r, err := e.rangeForPath(path, l.Range, encoding)
+	r, err := e.rangeIn(c, path, l.Range, encoding)
 	if err != nil {
 		return core.Location{}, err
 	}
 	return core.Location{Path: path, Range: r}, nil
 }
 func (e *Engine) link(l protocol.LocationLink, encoding string) (core.Location, error) {
+	return e.linkIn(nil, l, encoding)
+}
+func (e *Engine) linkIn(c *fileCache, l protocol.LocationLink, encoding string) (core.Location, error) {
 	path, err := normalize.URIPath(e.WS, l.TargetURI)
 	if err != nil {
 		return core.Location{}, err
 	}
-	r, err := e.rangeForPath(path, l.TargetSelectionRange, encoding)
+	r, err := e.rangeIn(c, path, l.TargetSelectionRange, encoding)
 	if err != nil {
 		return core.Location{}, err
 	}
@@ -231,26 +239,20 @@ func rangeFromText(text []byte, r protocol.Range, encoding string) (core.Range, 
 	return core.Range{Start: a, End: z}, err
 }
 func (e *Engine) rangeForPath(path string, r protocol.Range, encoding string) (core.Range, error) {
-	full, err := e.WS.Resolve(path)
-	if err != nil {
-		return core.Range{}, err
-	}
-	b, err := os.ReadFile(full)
+	return e.rangeIn(nil, path, r, encoding)
+}
+func (e *Engine) rangeIn(c *fileCache, path string, r protocol.Range, encoding string) (core.Range, error) {
+	b, err := c.read(e.WS, path)
 	if err != nil {
 		return core.Range{}, err
 	}
 	return rangeFromText(b, r, encoding)
 }
 func (e *Engine) fileHash(path string) string {
-	full, err := e.WS.Resolve(path)
-	if err != nil {
-		return ""
-	}
-	b, err := os.ReadFile(full)
-	if err != nil {
-		return ""
-	}
-	return hash(b)
+	return e.hashIn(nil, path)
+}
+func (e *Engine) hashIn(c *fileCache, path string) string {
+	return c.hashOf(e.WS, path)
 }
 func hash(b []byte) string { x := sha256.Sum256(b); return hex.EncodeToString(x[:]) }
 func relativeMust(e *Engine, path string) string {

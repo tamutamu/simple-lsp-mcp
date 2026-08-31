@@ -59,19 +59,22 @@ func (e *Engine) callHierarchy(ctx context.Context, name string, p language.Prof
 	return map[string]any{"calls": out, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
 }
 func (e *Engine) callItem(p language.Profile, s *session.Session, x protocol.CallHierarchyItem, from []protocol.Range) map[string]any {
+	return e.callItemIn(nil, p, s, x, from)
+}
+func (e *Engine) callItemIn(c *fileCache, p language.Profile, s *session.Session, x protocol.CallHierarchyItem, from []protocol.Range) map[string]any {
 	path, err := normalize.URIPath(e.WS, x.URI)
 	if err != nil {
 		return map[string]any{"name": x.Name}
 	}
-	r, err := e.rangeForPath(path, x.Range, s.Capabilities().PositionEncoding)
+	r, err := e.rangeIn(c, path, x.Range, s.Capabilities().PositionEncoding)
 	if err != nil {
 		return map[string]any{"name": x.Name}
 	}
-	sr, err := e.rangeForPath(path, x.SelectionRange, s.Capabilities().PositionEncoding)
+	sr, err := e.rangeIn(c, path, x.SelectionRange, s.Capabilities().PositionEncoding)
 	if err != nil {
 		sr = r
 	}
-	id := e.Symbols.Register(symbol.Record{SessionKey: p.SessionKey, Name: x.Name, Kind: normalize.Kind(x.Kind), Path: path, URI: x.URI, Range: r, SelectionRange: sr, FileHash: e.fileHash(path), Data: x.Data})
+	id := e.Symbols.Register(symbol.Record{SessionKey: p.SessionKey, Name: x.Name, Kind: normalize.Kind(x.Kind), Path: path, URI: x.URI, Range: r, SelectionRange: sr, FileHash: e.hashIn(c, path), Data: x.Data})
 	return map[string]any{"symbol_id": id, "name": x.Name, "kind": normalize.Kind(x.Kind), "path": path, "range": r, "selection_range": sr, "from_ranges": from}
 }
 func (e *Engine) typeHierarchy(ctx context.Context, name string, p language.Profile, s *session.Session, raw json.RawMessage, in map[string]any) (map[string]any, error) {

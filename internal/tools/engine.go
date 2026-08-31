@@ -178,18 +178,11 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if !capable(s.Capabilities(), cap) {
 		return nil, e.unsupported(p, method)
 	}
-	params := map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos}
+	var extra map[string]any
 	if name == "find_references" {
-		params["context"] = map[string]bool{"includeDeclaration": boolValDefault(in, "include_declaration", false)}
+		extra = map[string]any{"context": map[string]bool{"includeDeclaration": boolValDefault(in, "include_declaration", false)}}
 	}
-	var raw json.RawMessage
-	callCtx, cancel := e.callContext(ctx)
-	err = s.Request(callCtx, method, params, &raw)
-	cancel()
-	if err != nil {
-		return nil, err
-	}
-	locs, err := e.locations(raw, s.Capabilities().PositionEncoding)
+	locs, err := e.locationsAt(ctx, nil, s, d.URI, pos, method, extra)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +195,24 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 		locs = locs[:limit]
 	}
 	return map[string]any{"locations": locs, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
+}
+
+// locationsAt runs one location-based LSP method against an already-resolved
+// target, so a caller that has already resolved a position (impact_analysis,
+// in particular) does not need to re-resolve it or re-sync the document.
+func (e *Engine) locationsAt(ctx context.Context, c *fileCache, s *session.Session, uri string, pos protocol.Position, method string, extra map[string]any) ([]core.Location, error) {
+	params := map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: uri}, "position": pos}
+	for k, v := range extra {
+		params[k] = v
+	}
+	var raw json.RawMessage
+	callCtx, cancel := e.callContext(ctx)
+	err := s.Request(callCtx, method, params, &raw)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	return e.locationsIn(c, raw, s.Capabilities().PositionEncoding)
 }
 
 // Hierarchy prepares a call or type hierarchy before reading one level.
