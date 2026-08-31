@@ -78,6 +78,9 @@ func definitions() []definition {
 		{"get_diagnostics", "Get LSP diagnostics for one file, or every file with cached diagnostics when path is omitted. language is required when path is supplied and selects the LSP server.", objSchema(props("path", "language", "severities", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Diagnostics(c, i)
 		}},
+		{"impact_analysis", "Estimate the blast radius of changing a symbol: direct and transitive callers, references, implementations, and the files they live in. Prefer this over grepping the repository before a refactor. Traversal runs under a fixed budget, so a highly-connected symbol may return a partial result (meta.complete=false) rather than exhaust the language server. language is required and selects the LSP server.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations"), "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.ImpactAnalysis(c, i)
+		}},
 		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", objSchema(props("workspace", "overwrite")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Onboard(c, i)
 		}},
@@ -111,23 +114,25 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 // allProperties is the full catalogue of tool input properties, each documented once.
 func allProperties() map[string]any {
 	return map[string]any{
-		"query":               describe(stringSchema(), "Substring or fuzzy name to search for. Empty matches every symbol."),
-		"path":                describe(stringSchema(), "File path relative to the workspace root."),
-		"symbol_id":           describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
-		"symbol_path":         describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
-		"line":                describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
-		"column":              describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
-		"limit":               describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
-		"language":            describe(stringSchema(), "One of: python, typescript, typescriptreact, javascript, javascriptreact, go, html, css. Selects which configured LSP server handles the request."),
-		"kinds":               describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: file, module, namespace, package, class, method, property, field, constructor, enum, interface, function, variable, constant, string, number, boolean, array, object, key, null, enum_member, struct, event, operator, type_parameter.")}, "Restrict results to these symbol kinds. Omit or leave empty to allow every kind."),
-		"severities":          describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: error, warning, information, hint.")}, "Restrict results to these diagnostic severities. Omit or leave empty to allow every severity."),
-		"include_source":      describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
-		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
-		"overwrite":           describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
-		"workspace":           describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
-		"max_source_lines":    describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
-		"depth":               describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
-		"include":             describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
+		"query":                   describe(stringSchema(), "Substring or fuzzy name to search for. Empty matches every symbol."),
+		"path":                    describe(stringSchema(), "File path relative to the workspace root."),
+		"symbol_id":               describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
+		"symbol_path":             describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
+		"line":                    describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
+		"column":                  describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
+		"limit":                   describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
+		"language":                describe(stringSchema(), "One of: python, typescript, typescriptreact, javascript, javascriptreact, go, html, css. Selects which configured LSP server handles the request."),
+		"kinds":                   describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: file, module, namespace, package, class, method, property, field, constructor, enum, interface, function, variable, constant, string, number, boolean, array, object, key, null, enum_member, struct, event, operator, type_parameter.")}, "Restrict results to these symbol kinds. Omit or leave empty to allow every kind."),
+		"severities":              describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: error, warning, information, hint.")}, "Restrict results to these diagnostic severities. Omit or leave empty to allow every severity."),
+		"include_source":          describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
+		"include_declaration":     describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
+		"overwrite":               describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
+		"workspace":               describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
+		"max_source_lines":        describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
+		"depth":                   describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
+		"include":                 describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
+		"include_references":      describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),
+		"include_implementations": describe(map[string]any{"type": "boolean"}, "Include implementation locations in the impact set. Defaults to true."),
 	}
 }
 

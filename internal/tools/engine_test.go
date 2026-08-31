@@ -173,7 +173,7 @@ func TestResolveSymbolPathWithGopls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hits, warnings, err := engine.resolveSymbolPath(context.Background(), p, "New", "internal/symbol/registry.go")
+	hits, warnings, err := engine.resolveSymbolPath(context.Background(), p, "New", "engine.go")
 	if err != nil {
 		t.Fatalf("resolveSymbolPath failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestFindSymbolWithGopls(t *testing.T) {
 
 	res, err := engine.FindSymbol(context.Background(), map[string]any{
 		"symbol_path": "New",
-		"path":        "internal/symbol/registry.go",
+		"path":        "engine.go",
 		"language":    "go",
 	})
 	if err != nil {
@@ -233,7 +233,7 @@ func TestSymbolOutlineWithGopls(t *testing.T) {
 	defer engine.Sessions.Shutdown(context.Background())
 
 	res, err := engine.SymbolOutline(context.Background(), map[string]any{
-		"path":     "internal/symbol/registry.go",
+		"path":     "engine.go",
 		"language": "go",
 	})
 	if err != nil {
@@ -269,7 +269,7 @@ func TestSymbolContextWithGopls(t *testing.T) {
 
 	res, err := engine.SymbolContext(context.Background(), map[string]any{
 		"symbol_path": "New",
-		"path":        "internal/symbol/registry.go",
+		"path":        "engine.go",
 		"language":    "go",
 	})
 	if err != nil {
@@ -284,6 +284,89 @@ func TestSymbolContextWithGopls(t *testing.T) {
 	}
 	if _, ok := res["references"]; !ok {
 		t.Fatalf("expected a references section, got %#v", res)
+	}
+}
+
+func TestImpactAnalysisWithGopls(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.ImpactAnalysis(context.Background(), map[string]any{
+		"symbol_path": "(*Engine).Hierarchy",
+		"path":        "engine.go",
+		"language":    "go",
+	})
+	if err != nil {
+		t.Fatalf("ImpactAnalysis failed: %v", err)
+	}
+	meta, ok := res["meta"].(impactMeta)
+	if !ok {
+		t.Fatalf("meta = %#v", res["meta"])
+	}
+	if meta.LSPRequests > impactMaxRequests {
+		t.Fatalf("lsp_requests = %d, exceeds budget %d", meta.LSPRequests, impactMaxRequests)
+	}
+	if meta.Depth != 1 || meta.RequestedDepth != 1 {
+		t.Fatalf("meta = %#v, want depth 1", meta)
+	}
+	direct, ok := res["direct"].(map[string]any)
+	if !ok {
+		t.Fatalf("direct = %#v", res["direct"])
+	}
+	callers, ok := direct["callers"].([]any)
+	if !ok || len(callers) == 0 {
+		t.Fatalf("expected direct callers of Hierarchy, got %#v", direct)
+	}
+	affected, ok := res["affected_files"].([]any)
+	if !ok || len(affected) == 0 {
+		t.Fatalf("expected affected_files, got %#v", res["affected_files"])
+	}
+}
+
+func TestImpactAnalysisDepthThreeStaysWithinBudget(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	start := time.Now()
+	res, err := engine.ImpactAnalysis(context.Background(), map[string]any{
+		"symbol_path": "(*Engine).Hierarchy",
+		"path":        "engine.go",
+		"language":    "go",
+		"depth":       3,
+	})
+	if err != nil {
+		t.Fatalf("ImpactAnalysis failed: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 60*time.Second {
+		t.Fatalf("ImpactAnalysis took %v, want under 60s", elapsed)
+	}
+	meta, ok := res["meta"].(impactMeta)
+	if !ok {
+		t.Fatalf("meta = %#v", res["meta"])
+	}
+	if meta.LSPRequests > impactMaxRequests {
+		t.Fatalf("lsp_requests = %d, exceeds budget %d", meta.LSPRequests, impactMaxRequests)
+	}
+	if meta.RequestedDepth != 3 {
+		t.Fatalf("requested_depth = %d, want 3", meta.RequestedDepth)
 	}
 }
 
