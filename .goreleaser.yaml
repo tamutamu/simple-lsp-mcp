@@ -1,0 +1,57 @@
+version: 2
+
+project_name: simple-lsp-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: simple-lsp-mcp
+    main: ./cmd/simple-lsp-mcp
+    binary: simple-lsp-mcp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: simple-lsp-mcp
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^docs:"
+
+release:
+  github:
+    owner: tamutamu
+    name: simple-lsp-mcp
+  footer: |
+    ## Installation
+
+    ```sh
+    go install github.com/tamutamu/simple-lsp-mcp/cmd/simple-lsp-mcp@{{ .Tag }}
+    ```
+
+    Or download a prebuilt binary below and place it on your `PATH`.

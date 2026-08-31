@@ -1,8 +1,37 @@
 # simple-lsp-mcp
 
+[![CI](https://github.com/tamutamu/simple-lsp-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/tamutamu/simple-lsp-mcp/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/tamutamu/simple-lsp-mcp.svg)](https://pkg.go.dev/github.com/tamutamu/simple-lsp-mcp)
+[![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A read-only, symbol-first MCP bridge that lets AI agents use local Language Server Protocol (LSP) servers safely.
 
 Instead of text search, it asks LSP servers for symbols, definitions, references, call relationships, type hierarchies, and diagnostics. It does not edit files, execute shell commands on behalf of tools, perform text search, or build a persistent source index.
+
+## Why
+
+Coding agents commonly explore a codebase with `grep`/`ripgrep` and read whole
+files into context to figure out what a symbol means. That works, but it burns
+tokens, gets confused by name collisions and string matches, and has no notion
+of "this identifier is actually a call to that function three files away."
+
+An LSP server already answers those questions precisely, because that's its
+job in every editor. `simple-lsp-mcp` exposes that existing, precise knowledge
+to an agent as small, structured MCP tool calls instead of large blobs of
+grep output — one `get_definition` call instead of a multi-file text search,
+one `find_references` call instead of guessing from string matches.
+
+It stays deliberately narrow:
+
+- **Read-only.** No tool ever writes, edits, or deletes a file.
+- **No shell.** `command` and `args` are passed straight to the process
+  launcher; there is no shell to inject into.
+- **No hidden index.** Answers come live from the LSP server backing your own
+  editor setup — nothing is scraped, cached long-term, or sent anywhere.
+- **Lazy.** A language server starts only on the first request that needs it.
+
+See [SECURITY.md](SECURITY.md) for the full security model.
 
 ## Supported languages
 
@@ -86,7 +115,12 @@ To avoid global installation, configure a launcher such as `npx` as shown for HT
 
 ## Installation
 
-To install the published module:
+Prebuilt binaries for Linux, macOS, and Windows (amd64 and arm64) are attached
+to every [release](https://github.com/tamutamu/simple-lsp-mcp/releases).
+Download the archive for your platform, extract it, and place `simple-lsp-mcp`
+on your `PATH`.
+
+With Go 1.26 or later installed:
 
 ```sh
 go install github.com/tamutamu/simple-lsp-mcp/cmd/simple-lsp-mcp@latest
@@ -123,7 +157,13 @@ In Codex, begin code exploration with `search_symbols` or `get_document_symbols`
 
 ## Claude Code configuration
 
-Add this configuration to Claude Code:
+With the binary on your `PATH`, add it as a project or user MCP server:
+
+```sh
+claude mcp add simple-lsp -- simple-lsp-mcp
+```
+
+Or add this configuration directly:
 
 ```json
 {
@@ -134,6 +174,18 @@ Add this configuration to Claude Code:
   }
 }
 ```
+
+This repository is also a Claude Code plugin (`.claude-plugin/plugin.json`), so
+it can be installed from a marketplace pointing at this repository instead of
+hand-editing MCP config:
+
+```sh
+claude plugin marketplace add tamutamu/simple-lsp-mcp
+claude plugin install simple-lsp-mcp@simple-lsp-mcp
+```
+
+The plugin still expects `simple-lsp-mcp` to be installed and on your `PATH` —
+see [Installation](#installation) above.
 
 ## MCP tools
 
@@ -167,3 +219,23 @@ Every tool returns structured data. Symbol, position, and range lines and column
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |
 | `--max-results` | `500` | Maximum result count per tool |
 | `--version` | `false` | Print version information and exit |
+
+## Contributing
+
+Bug reports, new language profiles, and documentation fixes are all welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and the
+design constraints a change needs to respect. Please also read the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) to report a vulnerability, and for the security
+model this server is designed around.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)

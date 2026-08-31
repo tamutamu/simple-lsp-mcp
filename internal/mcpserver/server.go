@@ -42,20 +42,20 @@ type definition struct {
 // definitions is the stable public tool surface exposed by this server.
 func definitions() []definition {
 	return []definition{
-		{"search_symbols", "Use first to find a code symbol by name before any shell search. language is required and selects the LSP server.", schema("query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"search_symbols", "Use first to find a code symbol by name before any shell search. language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"list_workspace_symbols", "List methods in Go code or other workspace symbols for one language. language is required and selects the LSP server.", schema("language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"list_workspace_symbols", "List methods in Go code or other workspace symbols for one language, optionally filtered by a query. language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file and required language selects the LSP server.", schema("path", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file and required language selects the LSP server.", objSchema(props("path", "language"), "path", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},
-		{"get_symbol", "Get a symbol handle and optional source.", schema("symbol_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_symbol", "Get a previously acquired symbol_id and its source.", objSchema(props("symbol_id", "include_source"), "symbol_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.GetSymbol(c, i)
 		}},
 		{"get_definition", "Get definition locations. language is required and selects the LSP server.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "Find reference locations. language is required and selects the LSP server.", targetSchema(), relation("find_references", "textDocument/references", "references")},
+		{"find_references", "Find reference locations. language is required and selects the LSP server.", objSchema(targetProps("include_declaration"), "language"), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "Find implementation locations. language is required and selects the LSP server.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "Get type definition locations. language is required and selects the LSP server.", targetSchema(), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "Get declaration locations. language is required and selects the LSP server.", targetSchema(), relation("get_declaration", "textDocument/declaration", "declaration")},
@@ -63,10 +63,10 @@ func definitions() []definition {
 		{"get_outgoing_calls", "Get direct callees. language is required and selects the LSP server.", targetSchema(), hierarchy("get_outgoing_calls")},
 		{"get_supertypes", "Get direct supertypes. language is required and selects the LSP server.", targetSchema(), hierarchy("get_supertypes")},
 		{"get_subtypes", "Get direct subtypes. language is required and selects the LSP server.", targetSchema(), hierarchy("get_subtypes")},
-		{"get_diagnostics", "Get LSP diagnostics. language is required when path is supplied and selects the LSP server.", schema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_diagnostics", "Get LSP diagnostics for one file, or every file with cached diagnostics when path is omitted. language is required when path is supplied and selects the LSP server.", objSchema(props("path", "language", "severities", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Diagnostics(c, i)
 		}},
-		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", schema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", objSchema(props("workspace", "overwrite")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Onboard(c, i)
 		}},
 	}
@@ -86,30 +86,54 @@ func hierarchy(name string) func(context.Context, *tools.Engine, map[string]any)
 
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
 
-func schema(required ...string) map[string]any {
+// objSchema builds an input schema exposing exactly the named properties.
+func objSchema(properties map[string]any, required ...string) map[string]any {
 	s := objectSchema()
-	s["properties"] = inputProperties()
+	s["properties"] = properties
 	if len(required) > 0 {
 		s["required"] = required
 	}
 	return s
 }
 
-func inputProperties() map[string]any {
+// allProperties is the full catalogue of tool input properties, each documented once.
+func allProperties() map[string]any {
 	return map[string]any{
-		"query":               stringSchema(),
-		"path":                stringSchema(),
-		"symbol_id":           stringSchema(),
-		"line":                positiveIntegerSchema(),
-		"column":              positiveIntegerSchema(),
-		"limit":               positiveIntegerSchema(),
-		"language":            stringSchema(),
-		"kinds":               map[string]any{"type": "array", "items": stringSchema()},
-		"include_source":      map[string]any{"type": "boolean"},
-		"include_declaration": map[string]any{"type": "boolean"},
-		"overwrite":           map[string]any{"type": "boolean"},
-		"workspace":           stringSchema(),
+		"query":               describe(stringSchema(), "Substring or fuzzy name to search for. Empty matches every symbol."),
+		"path":                describe(stringSchema(), "File path relative to the workspace root."),
+		"symbol_id":           describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
+		"line":                describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
+		"column":              describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
+		"limit":               describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
+		"language":            describe(stringSchema(), "One of: python, typescript, typescriptreact, javascript, javascriptreact, go, html, css. Selects which configured LSP server handles the request."),
+		"kinds":               describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: file, module, namespace, package, class, method, property, field, constructor, enum, interface, function, variable, constant, string, number, boolean, array, object, key, null, enum_member, struct, event, operator, type_parameter.")}, "Restrict results to these symbol kinds. Omit or leave empty to allow every kind."),
+		"severities":          describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: error, warning, information, hint.")}, "Restrict results to these diagnostic severities. Omit or leave empty to allow every severity."),
+		"include_source":      describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
+		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
+		"overwrite":           describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
+		"workspace":           describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
 	}
+}
+
+// props selects a subset of allProperties by name, in a stable field order.
+func props(names ...string) map[string]any {
+	all := allProperties()
+	out := make(map[string]any, len(names))
+	for _, n := range names {
+		out[n] = all[n]
+	}
+	return out
+}
+
+// targetProps is the symbol_id-or-position target shared by relation and hierarchy tools,
+// plus any tool-specific properties.
+func targetProps(extra ...string) map[string]any {
+	return props(append([]string{"symbol_id", "path", "line", "column", "language", "limit"}, extra...)...)
+}
+
+func describe(s map[string]any, description string) map[string]any {
+	s["description"] = description
+	return s
 }
 
 func stringSchema() map[string]any { return map[string]any{"type": "string"} }
@@ -118,7 +142,7 @@ func positiveIntegerSchema() map[string]any {
 	return map[string]any{"type": "integer", "minimum": 1}
 }
 
-func targetSchema() map[string]any { return schema("language") }
+func targetSchema() map[string]any { return objSchema(targetProps(), "language") }
 
 func result(v map[string]any, isError bool) *mcp.CallToolResult {
 	b, _ := json.Marshal(v)

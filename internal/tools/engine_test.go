@@ -167,6 +167,3 @@ apps/api:
 	}
 	t.Logf("found %d symbols in subdirectory profile", len(symbols))
 }
-
-
-

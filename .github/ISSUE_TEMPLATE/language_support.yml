@@ -1,0 +1,58 @@
+name: Language support
+description: Request or contribute support for another language.
+labels: ["enhancement", "language-support"]
+body:
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "Rust"
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Language server
+      description: Name, install command, and how it is launched in stdio mode.
+      placeholder: "rust-analyzer — rustup component add rust-analyzer — `rust-analyzer` (stdio by default)"
+    validations:
+      required: true
+
+  - type: input
+    id: markers
+    attributes:
+      label: Project marker files
+      description: What files should `onboard` look for to detect this project?
+      placeholder: "Cargo.toml"
+    validations:
+      required: true
+
+  - type: input
+    id: extensions
+    attributes:
+      label: File extensions
+      placeholder: ".rs"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Which capabilities does the server support?
+      options:
+        - label: workspace/symbol
+        - label: textDocument/documentSymbol
+        - label: textDocument/definition
+        - label: textDocument/references
+        - label: textDocument/implementation
+        - label: callHierarchy
+        - label: typeHierarchy
+        - label: diagnostics
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a pull request for this.

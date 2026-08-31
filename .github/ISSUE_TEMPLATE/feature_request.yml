@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a new tool, option, or behaviour.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before writing: this server is deliberately **read-only** and
+        **symbol-first**. It does not edit files, run shell commands, perform
+        text search, or maintain a persistent index. Requests that need one of
+        those are usually better served by a different tool.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation, not the solution. What does the agent fail to figure out today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: If you have a specific tool or option in mind, sketch its inputs and outputs.
+
+  - type: input
+    id: lsp-method
+    attributes:
+      label: Corresponding LSP method, if any
+      placeholder: "textDocument/documentHighlight"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today

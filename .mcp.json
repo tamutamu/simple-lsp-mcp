@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "simple-lsp": {
+      "command": "simple-lsp-mcp",
+      "args": []
+    }
+  }
+}

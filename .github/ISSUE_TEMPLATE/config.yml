@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/tamutamu/simple-lsp-mcp/discussions
+    about: Ask how to configure something, or float an idea before filing an issue.
+  - name: Security vulnerability
+    url: https://github.com/tamutamu/simple-lsp-mcp/security/advisories/new
+    about: Report privately. Please do not open a public issue.

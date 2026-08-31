@@ -1,0 +1,83 @@
+name: Bug report
+description: A tool returned the wrong result, an error, or nothing at all.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The three things that make a bug actionable are
+        the language server, the exact tool call, and the log output at
+        `--log-level debug`.
+
+  - type: input
+    id: version
+    attributes:
+      label: simple-lsp-mcp version
+      description: Output of `simple-lsp-mcp --version`.
+      placeholder: v0.5.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - go
+        - python
+        - typescript / javascript
+        - html
+        - css
+        - other (say which below)
+    validations:
+      required: true
+
+  - type: input
+    id: lsp
+    attributes:
+      label: Language server and version
+      placeholder: "gopls v0.16.2"
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: "Claude Code 2.1.x / Codex 0.4.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: call
+    attributes:
+      label: The tool call
+      description: Tool name and the arguments you passed.
+      render: json
+      placeholder: |
+        {
+          "tool": "find_references",
+          "arguments": { "path": "internal/tools/engine.go", "line": 42, "column": 6, "language": "go" }
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: Run the server with `--log-level debug` and paste the relevant stderr output.
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: .simple-lsp.yaml
+      render: yaml

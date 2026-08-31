@@ -1,0 +1,15 @@
+{
+  "name": "simple-lsp-mcp",
+  "displayName": "simple-lsp-mcp",
+  "version": "0.5.3",
+  "description": "Read-only, symbol-first code navigation for AI agents via local LSP servers — symbols, definitions, references, call/type hierarchies, and diagnostics instead of text search.",
+  "author": {
+    "name": "tamutamu",
+    "url": "https://github.com/tamutamu"
+  },
+  "homepage": "https://github.com/tamutamu/simple-lsp-mcp#readme",
+  "repository": "https://github.com/tamutamu/simple-lsp-mcp",
+  "license": "MIT",
+  "keywords": ["lsp", "language-server", "code-navigation", "go", "python", "typescript"],
+  "mcpServers": "./.mcp.json"
+}
