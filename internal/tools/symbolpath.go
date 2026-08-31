@@ -106,3 +106,78 @@ func walkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol, pa
 	}
 	return out
 }
+
+// parseSymbolPath splits a user-supplied symbol path into its raw
+// (unescaped) segments. A leading "/" anchors the match to the exact
+// nesting depth given, disabling the trailing-segment fallback in
+// matchNodes. An empty segment (as in "A//B", or the path itself) is
+// rejected.
+func parseSymbolPath(raw string) (segments []string, anchored bool, err error) {
+	s := raw
+	if strings.HasPrefix(s, symbolPathSeparator) {
+		anchored = true
+		s = s[len(symbolPathSeparator):]
+	}
+	for _, part := range strings.Split(s, symbolPathSeparator) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, false, core.NewError(core.InvalidArgument, "symbol_path segments must not be empty")
+		}
+		segments = append(segments, unescapeSegment(part))
+	}
+	return segments, anchored, nil
+}
+
+// matchNodes returns every node (searched at any depth) whose raw segments
+// equal the requested segments exactly. When no exact match exists and the
+// request is not anchored, it falls back to nodes whose trailing segments
+// equal the requested ones, so a shorter path such as "createUser" can
+// match a node nested arbitrarily deep.
+func matchNodes(nodes []symbolNode, segments []string, anchored bool) []symbolNode {
+	var exact, suffix []symbolNode
+	var walk func(ns []symbolNode)
+	walk = func(ns []symbolNode) {
+		for _, n := range ns {
+			switch {
+			case segmentsEqual(n.Segments, segments):
+				exact = append(exact, n)
+			case !anchored && suffixMatch(n.Segments, segments):
+				suffix = append(suffix, n)
+			}
+			if len(n.Children) > 0 {
+				walk(n.Children)
+			}
+		}
+	}
+	walk(nodes)
+	if len(exact) > 0 {
+		return exact
+	}
+	return suffix
+}
+
+func segmentsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// suffixMatch reports whether requested is a trailing subsequence of full.
+func suffixMatch(full, requested []string) bool {
+	if len(requested) > len(full) || len(requested) == len(full) {
+		return false
+	}
+	offset := len(full) - len(requested)
+	for i, seg := range requested {
+		if full[offset+i] != seg {
+			return false
+		}
+	}
+	return true
+}

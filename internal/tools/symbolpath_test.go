@@ -85,3 +85,122 @@ func TestWalkDocumentSkipsSymbolsWithUnconvertibleRanges(t *testing.T) {
 		t.Fatalf("nodes = %#v, want none", nodes)
 	}
 }
+
+func TestParseSymbolPathSplitsOnSeparator(t *testing.T) {
+	segments, anchored, err := parseSymbolPath("UserService/createUser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anchored {
+		t.Fatal("anchored = true, want false")
+	}
+	if len(segments) != 2 || segments[0] != "UserService" || segments[1] != "createUser" {
+		t.Fatalf("segments = %#v", segments)
+	}
+}
+
+func TestParseSymbolPathRoundTripsEscapedNames(t *testing.T) {
+	segments, _, err := parseSymbolPath("a%2Fb/plain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 2 || segments[0] != "a/b" || segments[1] != "plain" {
+		t.Fatalf("segments = %#v", segments)
+	}
+}
+
+func TestParseSymbolPathDetectsAnchor(t *testing.T) {
+	segments, anchored, err := parseSymbolPath("/createUser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !anchored {
+		t.Fatal("anchored = false, want true")
+	}
+	if len(segments) != 1 || segments[0] != "createUser" {
+		t.Fatalf("segments = %#v", segments)
+	}
+}
+
+func TestParseSymbolPathRejectsEmptySegment(t *testing.T) {
+	for _, raw := range []string{"A//B", "", "/", "A/ /B"} {
+		if _, _, err := parseSymbolPath(raw); err == nil {
+			t.Fatalf("parseSymbolPath(%q) = nil error, want one", raw)
+		}
+	}
+}
+
+func TestParseSymbolPathTrimsSurroundingSpace(t *testing.T) {
+	segments, _, err := parseSymbolPath(" UserService / createUser ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 2 || segments[0] != "UserService" || segments[1] != "createUser" {
+		t.Fatalf("segments = %#v", segments)
+	}
+}
+
+func documentSymbolNodes() []symbolNode {
+	text := []byte("class App {\n class UserService {\n  createUser() {}\n }\n}\n")
+	vs := []protocol.DocumentSymbol{{
+		Name: "App",
+		Kind: 5,
+		Children: []protocol.DocumentSymbol{{
+			Name: "UserService",
+			Kind: 5,
+			Children: []protocol.DocumentSymbol{{
+				Name: "createUser",
+				Kind: 6,
+			}},
+		}},
+	}}
+	return walkDocument(text, "utf-16", vs, nil, "")
+}
+
+func TestMatchNodesPrefersExactOverSuffix(t *testing.T) {
+	nodes := documentSymbolNodes()
+	got := matchNodes(nodes, []string{"App", "UserService", "createUser"}, false)
+	if len(got) != 1 || got[0].SymbolPath != "App/UserService/createUser" {
+		t.Fatalf("matchNodes = %#v", got)
+	}
+}
+
+func TestMatchNodesMatchesTrailingSegments(t *testing.T) {
+	nodes := documentSymbolNodes()
+	got := matchNodes(nodes, []string{"createUser"}, false)
+	if len(got) != 1 || got[0].SymbolPath != "App/UserService/createUser" {
+		t.Fatalf("matchNodes = %#v", got)
+	}
+	got = matchNodes(nodes, []string{"UserService", "createUser"}, false)
+	if len(got) != 1 || got[0].SymbolPath != "App/UserService/createUser" {
+		t.Fatalf("matchNodes = %#v", got)
+	}
+}
+
+func TestMatchNodesAnchoredRejectsSuffixOnlyMatch(t *testing.T) {
+	nodes := documentSymbolNodes()
+	got := matchNodes(nodes, []string{"createUser"}, true)
+	if len(got) != 0 {
+		t.Fatalf("matchNodes = %#v, want none", got)
+	}
+}
+
+func TestMatchNodesReturnsEveryCandidateWhenAmbiguous(t *testing.T) {
+	text := []byte("class A {\n createUser() {}\n}\nclass B {\n createUser() {}\n}\n")
+	vs := []protocol.DocumentSymbol{
+		{Name: "A", Kind: 5, Children: []protocol.DocumentSymbol{{Name: "createUser", Kind: 6}}},
+		{Name: "B", Kind: 5, Children: []protocol.DocumentSymbol{{Name: "createUser", Kind: 6}}},
+	}
+	nodes := walkDocument(text, "utf-16", vs, nil, "")
+	got := matchNodes(nodes, []string{"createUser"}, false)
+	if len(got) != 2 {
+		t.Fatalf("matchNodes = %#v, want two candidates", got)
+	}
+}
+
+func TestMatchNodesReturnsNoneWhenNothingMatches(t *testing.T) {
+	nodes := documentSymbolNodes()
+	if got := matchNodes(nodes, []string{"doesNotExist"}, false); len(got) != 0 {
+		t.Fatalf("matchNodes = %#v, want none", got)
+	}
+}
