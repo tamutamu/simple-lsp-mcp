@@ -219,6 +219,41 @@ func TestFindSymbolWithGopls(t *testing.T) {
 	}
 }
 
+func TestSymbolOutlineWithGopls(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.SymbolOutline(context.Background(), map[string]any{
+		"path":     "internal/symbol/registry.go",
+		"language": "go",
+	})
+	if err != nil {
+		t.Fatalf("SymbolOutline failed: %v", err)
+	}
+	if _, ok := res["parent"]; ok {
+		t.Fatalf("file-scoped outline should omit parent, got %#v", res)
+	}
+	children, ok := res["children"].([]any)
+	if !ok || len(children) == 0 {
+		t.Fatalf("expected children, got %#v", res)
+	}
+	for _, c := range children {
+		m := c.(map[string]any)
+		if _, ok := m["source"]; ok {
+			t.Fatalf("outline must never include source: %#v", m)
+		}
+	}
+}
+
 func TestSearchSymbolsWithGopls(t *testing.T) {
 	ws, err := workspace.Open(".")
 	if err != nil {

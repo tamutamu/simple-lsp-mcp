@@ -57,6 +57,9 @@ func definitions() []definition {
 		{"find_symbol", "Get one symbol by its human-readable symbol_path such as \"UserService/createUser\", without knowing its file position. Supply path as well when you know the file: that makes the lookup a single LSP request. When symbol_path is ambiguous the result carries candidates instead of symbol. language is required and selects the LSP server.", objSchema(props("symbol_path", "path", "language", "include_source", "max_source_lines", "limit"), "symbol_path", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.FindSymbol(c, i)
 		}},
+		{"get_symbol_outline", "List the direct children of a symbol_path, or the top-level symbols of a file when symbol_path is omitted. Returns names, kinds, signatures, and ranges only, never source text, so use it to understand a class or a file cheaply before reading anything. language is required and selects the LSP server.", objSchema(props("symbol_path", "path", "language", "depth", "limit"), "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.SymbolOutline(c, i)
+		}},
 		{"get_definition", "Get definition locations. language is required and selects the LSP server.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
 		{"find_references", "Find reference locations. language is required and selects the LSP server.", objSchema(targetProps("include_declaration"), "language"), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "Find implementation locations. language is required and selects the LSP server.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
@@ -120,6 +123,7 @@ func allProperties() map[string]any {
 		"overwrite":           describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
 		"workspace":           describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
 		"max_source_lines":    describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
+		"depth":               describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
 	}
 }
 

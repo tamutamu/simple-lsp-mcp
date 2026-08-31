@@ -238,3 +238,94 @@ func (e *Engine) ambiguousResult(p language.Profile, symbolPath string, hits []s
 	warnings = append(warnings, fmt.Sprintf("%q matches %d symbols; pass a more specific symbol_path, a path, or the symbol_id of one candidate", symbolPath, len(hits)))
 	return map[string]any{"symbol": nil, "ambiguous": true, "candidates": candidates, "meta": core.Meta{Complete: true, Truncated: tr, Warnings: warnings}}
 }
+
+// maxOutlineDepth bounds how many levels of children get_symbol_outline
+// will recurse into.
+const maxOutlineDepth = 3
+
+// SymbolOutline lists the direct children of a symbol_path, or the
+// top-level symbols of a file when symbol_path is omitted. It never
+// returns source text: get_symbol or get_symbol_context can, once the
+// caller has decided which child is worth reading.
+func (e *Engine) SymbolOutline(ctx context.Context, in map[string]any) (map[string]any, error) {
+	p, err := language.Require(stringVal(in, "language"))
+	if err != nil {
+		return nil, err
+	}
+	depth, err := core.ClampLimit(intVal(in, "depth"), maxOutlineDepth, 1)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := e.limit(in)
+	if err != nil {
+		return nil, err
+	}
+	symbolPath := stringVal(in, "symbol_path")
+	path := stringVal(in, "path")
+
+	if symbolPath == "" {
+		if path == "" {
+			return nil, core.NewError(core.InvalidArgument, "specify symbol_path, path, or both")
+		}
+		_, d, nodes, err := e.documentNodes(ctx, p, path)
+		if err != nil {
+			return nil, err
+		}
+		docPath := relativeMust(e, d.Path)
+		children, tr := e.outlineChildren(p, docPath, d.URI, d.Hash, nodes, depth, limit)
+		return map[string]any{"children": children, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
+	}
+
+	hits, warnings, err := e.resolveSymbolPath(ctx, p, symbolPath, path)
+	if err != nil {
+		return nil, err
+	}
+	if len(hits) == 0 {
+		return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+symbolPath)
+	}
+	if len(hits) > 1 {
+		return e.ambiguousResult(p, symbolPath, hits, limit, warnings), nil
+	}
+	hit := hits[0]
+	docPath := relativeMust(e, hit.Document.Path)
+	parentID := e.registerNode(p, docPath, hit.Document.URI, hit.Document.Hash, hit.Node)
+	parent := map[string]any{
+		"symbol_id": parentID, "symbol_path": hit.Node.SymbolPath, "name": hit.Node.Name,
+		"kind": hit.Node.Kind, "detail": hit.Node.Detail, "path": docPath,
+		"range": hit.Node.Range, "selection_range": hit.Node.SelectionRange,
+	}
+	children, tr := e.outlineChildren(p, docPath, hit.Document.URI, hit.Document.Hash, hit.Node.Children, depth, limit)
+	return map[string]any{"parent": parent, "children": children, "meta": core.Meta{Complete: true, Truncated: tr, Warnings: warnings}}, nil
+}
+
+// outlineChildren renders and registers up to limit direct children,
+// recursing depth-1 further levels into each. It never includes source
+// text and registers only the nodes it actually returns.
+func (e *Engine) outlineChildren(p language.Profile, path, uri, fileHash string, nodes []symbolNode, depth, limit int) ([]any, bool) {
+	tr := len(nodes) > limit
+	if tr {
+		nodes = nodes[:limit]
+	}
+	out := make([]any, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, e.outlineNode(p, path, uri, fileHash, n, depth))
+	}
+	return out, tr
+}
+
+func (e *Engine) outlineNode(p language.Profile, path, uri, fileHash string, n symbolNode, depth int) map[string]any {
+	id := e.registerNode(p, path, uri, fileHash, n)
+	x := map[string]any{
+		"symbol_id": id, "symbol_path": n.SymbolPath, "name": n.Name, "kind": n.Kind,
+		"detail": n.Detail, "path": path, "range": n.Range, "selection_range": n.SelectionRange,
+		"child_count": len(n.Children),
+	}
+	if depth > 1 && len(n.Children) > 0 {
+		children := make([]any, 0, len(n.Children))
+		for _, c := range n.Children {
+			children = append(children, e.outlineNode(p, path, uri, fileHash, c, depth-1))
+		}
+		x["children"] = children
+	}
+	return x
+}
