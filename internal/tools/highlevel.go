@@ -152,3 +152,89 @@ func (e *Engine) ambiguousError(symbolPath string, hits []symbolLocation) error 
 	}
 	return core.NewError(core.AmbiguousSymbol, fmt.Sprintf("%q matches %d symbols: %s", symbolPath, len(hits), strings.Join(names, ", ")))
 }
+
+// defaultSourceLines caps how much source find_symbol includes by default.
+const defaultSourceLines = 200
+
+// FindSymbol resolves a symbol_path directly, without a prior search call.
+// A single match returns normally; zero matches is a SYMBOL_NOT_FOUND
+// error; more than one match returns a normal result carrying candidates
+// instead of symbol, since an ambiguous outcome is not itself an error.
+func (e *Engine) FindSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
+	p, err := language.Require(stringVal(in, "language"))
+	if err != nil {
+		return nil, err
+	}
+	symbolPath := stringVal(in, "symbol_path")
+	hits, warnings, err := e.resolveSymbolPath(ctx, p, symbolPath, stringVal(in, "path"))
+	if err != nil {
+		return nil, err
+	}
+	if len(hits) == 0 {
+		return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+symbolPath)
+	}
+	if len(hits) > 1 {
+		limit, err := e.limit(in)
+		if err != nil {
+			return nil, err
+		}
+		return e.ambiguousResult(p, symbolPath, hits, limit, warnings), nil
+	}
+	hit := hits[0]
+	path := relativeMust(e, hit.Document.Path)
+	id := e.registerNode(p, path, hit.Document.URI, hit.Document.Hash, hit.Node)
+	sym := map[string]any{
+		"symbol_id": id, "symbol_path": hit.Node.SymbolPath, "name": hit.Node.Name, "kind": hit.Node.Kind,
+		"container_name": hit.Node.ContainerName, "detail": hit.Node.Detail, "language": p.Name, "path": path,
+		"range": hit.Node.Range, "selection_range": hit.Node.SelectionRange,
+	}
+	meta := core.Meta{Complete: true, Warnings: warnings}
+	if boolValDefault(in, "include_source", true) {
+		source, truncated := sourceFor(hit.Document.Text, hit.Node.Range, intVal(in, "max_source_lines"))
+		sym["source"] = source
+		meta.SourceTruncated = truncated
+	}
+	return map[string]any{"symbol": sym, "meta": meta}, nil
+}
+
+// sourceFor extracts a symbol's source text, capping both the number of
+// lines (maxLines, or defaultSourceLines when zero) and the total size.
+func sourceFor(text []byte, r core.Range, maxLines int) (string, bool) {
+	if maxLines <= 0 {
+		maxLines = defaultSourceLines
+	}
+	capped := r
+	truncated := false
+	if capped.End.Line-capped.Start.Line+1 > maxLines {
+		capped.End.Line = capped.Start.Line + maxLines - 1
+		truncated = true
+	}
+	source := sliceRange(text, capped)
+	if len(source) > hoverMaxBytes {
+		source = source[:hoverMaxBytes]
+		truncated = true
+	}
+	return string(source), truncated
+}
+
+// ambiguousResult renders the candidate payload shared by the high-level
+// tools when a symbol_path matches more than one symbol. Each candidate
+// carries its own symbol_id, so the next call can target it directly
+// instead of repeating the ambiguous search.
+func (e *Engine) ambiguousResult(p language.Profile, symbolPath string, hits []symbolLocation, limit int, warnings []string) map[string]any {
+	tr := len(hits) > limit
+	if tr {
+		hits = hits[:limit]
+	}
+	candidates := make([]map[string]any, len(hits))
+	for i, h := range hits {
+		path := relativeMust(e, h.Document.Path)
+		id := e.registerNode(p, path, h.Document.URI, h.Document.Hash, h.Node)
+		candidates[i] = map[string]any{
+			"symbol_id": id, "symbol_path": h.Node.SymbolPath, "name": h.Node.Name, "kind": h.Node.Kind,
+			"path": path, "range": h.Node.Range, "selection_range": h.Node.SelectionRange,
+		}
+	}
+	warnings = append(warnings, fmt.Sprintf("%q matches %d symbols; pass a more specific symbol_path, a path, or the symbol_id of one candidate", symbolPath, len(hits)))
+	return map[string]any{"symbol": nil, "ambiguous": true, "candidates": candidates, "meta": core.Meta{Complete: true, Truncated: tr, Warnings: warnings}}
+}

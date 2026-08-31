@@ -185,6 +185,40 @@ func TestResolveSymbolPathWithGopls(t *testing.T) {
 	}
 }
 
+func TestFindSymbolWithGopls(t *testing.T) {
+	requireGopls(t)
+	ws, err := workspace.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 10 * time.Second, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, cfg)
+	defer engine.Sessions.Shutdown(context.Background())
+
+	res, err := engine.FindSymbol(context.Background(), map[string]any{
+		"symbol_path": "New",
+		"path":        "internal/symbol/registry.go",
+		"language":    "go",
+	})
+	if err != nil {
+		t.Fatalf("FindSymbol failed: %v", err)
+	}
+	sym, ok := res["symbol"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected a resolved symbol, got %#v", res)
+	}
+	// find_symbol's own symbol_id must resolve through get_symbol: a
+	// round trip any language's output should satisfy, regardless of
+	// whether that language's server reports nested document symbols.
+	id, _ := sym["symbol_id"].(string)
+	if _, err := engine.GetSymbol(context.Background(), map[string]any{"symbol_id": id}); err != nil {
+		t.Fatalf("GetSymbol(%q) failed: %v", id, err)
+	}
+}
+
 func TestSearchSymbolsWithGopls(t *testing.T) {
 	ws, err := workspace.Open(".")
 	if err != nil {

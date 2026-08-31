@@ -54,6 +54,9 @@ func definitions() []definition {
 		{"get_symbol", "Get a previously acquired symbol_id and its source.", objSchema(props("symbol_id", "include_source"), "symbol_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.GetSymbol(c, i)
 		}},
+		{"find_symbol", "Get one symbol by its human-readable symbol_path such as \"UserService/createUser\", without knowing its file position. Supply path as well when you know the file: that makes the lookup a single LSP request. When symbol_path is ambiguous the result carries candidates instead of symbol. language is required and selects the LSP server.", objSchema(props("symbol_path", "path", "language", "include_source", "max_source_lines", "limit"), "symbol_path", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.FindSymbol(c, i)
+		}},
 		{"get_definition", "Get definition locations. language is required and selects the LSP server.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
 		{"find_references", "Find reference locations. language is required and selects the LSP server.", objSchema(targetProps("include_declaration"), "language"), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "Find implementation locations. language is required and selects the LSP server.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
@@ -116,6 +119,7 @@ func allProperties() map[string]any {
 		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
 		"overwrite":           describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
 		"workspace":           describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
+		"max_source_lines":    describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
 	}
 }
 
