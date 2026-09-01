@@ -3,7 +3,7 @@
   "name": "io.github.tamutamu/simple-lsp-mcp",
   "description": "A read-only, symbol-first MCP bridge that lets AI agents use local Language Server Protocol (LSP) servers safely — symbols, definitions, references, call and type hierarchies, and diagnostics instead of text search.",
   "title": "simple-lsp-mcp",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "repository": {
     "url": "https://github.com/tamutamu/simple-lsp-mcp",
     "source": "github"
