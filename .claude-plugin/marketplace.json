@@ -9,8 +9,8 @@
     {
       "name": "simple-lsp-mcp",
       "source": "./",
-      "description": "Read-only, symbol-first code navigation for AI agents via local LSP servers — symbols, definitions, references, call/type hierarchies, and diagnostics instead of text search.",
-      "version": "0.6.0",
+      "description": "Read-only semantic context for coding agents via local LSP servers — token-budgeted code slices, symbol context, impact analysis, definitions, references, and hierarchies.",
+      "version": "0.7.0",
       "author": {
         "name": "tamutamu",
         "url": "https://github.com/tamutamu"

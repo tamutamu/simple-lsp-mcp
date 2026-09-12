@@ -294,6 +294,13 @@ func (m *Manager) For(key string) (*Session, error) {
 	return m.ForPath(key, "")
 }
 
+// Configured reports whether at least one server is configured for a profile.
+func (m *Manager) Configured(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.servers[key]) > 0
+}
+
 func (m *Manager) ForPath(key string, targetPath string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

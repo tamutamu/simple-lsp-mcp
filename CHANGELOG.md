@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-12
+
+### Added
+
+- `get_semantic_slice`: a token-budgeted semantic context tool that returns root source, bounded callee source, compact callers, and implementations in one call.
+- `cmd/simple-lsp-bench`: a reproducible context-efficiency benchmark comparing separate navigation calls with the aggregate context tools.
+- Automatic language inference for target-based tools from `symbol_id`, source-file extension, or configured LSP profiles for bare `symbol_path` lookups.
+
+### Changed
+
+- `get_symbol_context` gathers callers, callees, references, and implementations concurrently to reduce aggregate latency.
+- Target-based MCP schemas no longer require `language` when it can be inferred safely.
+- README positioning now focuses on token-efficient semantic context rather than being a generic LSP-to-MCP bridge.
+
 ## [0.6.0] - 2026-09-02
 
 ### Added
@@ -90,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing symbol search, definitions, references, implementations, type
   definitions, declarations, call hierarchy, type hierarchy, and diagnostics.
 
-[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.1...v0.5.2

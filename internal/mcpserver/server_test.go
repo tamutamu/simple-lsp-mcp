@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 20 {
+	if len(ds) != 21 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}
@@ -66,6 +66,22 @@ func TestTargetToolsAcceptSymbolPath(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("tool %q not found", name)
+		}
+	}
+}
+
+func TestTargetToolsInferLanguage(t *testing.T) {
+	for _, name := range []string{"find_symbol", "get_symbol_context", "get_semantic_slice", "get_definition", "find_references", "get_hover", "impact_analysis"} {
+		for _, d := range definitions() {
+			if d.name != name {
+				continue
+			}
+			required, _ := d.schema["required"].([]string)
+			for _, field := range required {
+				if field == "language" {
+					t.Fatalf("%s still requires language", name)
+				}
+			}
 		}
 	}
 }

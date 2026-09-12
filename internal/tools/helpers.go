@@ -16,9 +16,38 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
 )
 
+// profileForInput resolves language explicitly when supplied, otherwise from
+// a symbol handle or source path. symbol_path-only inputs are handled by the
+// cross-language resolver because they have no file extension to inspect.
+func (e *Engine) profileForInput(in map[string]any) (language.Profile, error) {
+	if name := stringVal(in, "language"); name != "" {
+		return language.Require(name)
+	}
+	if id := stringVal(in, "symbol_id"); id != "" {
+		r, err := e.Symbols.Get(id)
+		if err != nil {
+			return language.Profile{}, err
+		}
+		return language.ForSessionKey(r.SessionKey, r.Path)
+	}
+	if path := stringVal(in, "path"); path != "" {
+		return language.FromPath(path)
+	}
+	return language.Profile{}, core.NewError(core.InvalidArgument, "language could not be inferred; specify language or a source path")
+}
+
 // document resolves, starts, and synchronizes a file with its LSP session.
+// languageName is optional when the path has a supported extension.
 func (e *Engine) document(ctx context.Context, path, languageName string) (language.Profile, *session.Session, document.Document, error) {
-	p, err := language.Require(languageName)
+	var (
+		p   language.Profile
+		err error
+	)
+	if languageName != "" {
+		p, err = language.Require(languageName)
+	} else {
+		p, err = language.FromPath(path)
+	}
 	if err != nil {
 		return language.Profile{}, nil, document.Document{}, err
 	}
@@ -37,18 +66,29 @@ func (e *Engine) document(ctx context.Context, path, languageName string) (langu
 	return p, s, d, err
 }
 
-// target resolves either a symbol handle or a one-based source position.
+// target resolves either a symbol handle, a symbol path, or a one-based
+// source position. language is inferred whenever the target contains enough
+// information to do so safely.
 func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profile, *session.Session, document.Document, protocol.Position, error) {
 	t := targetOf(in)
 	if err := t.Validate(); err != nil {
 		return language.Profile{}, nil, document.Document{}, protocol.Position{}, err
 	}
-	p, err := language.Require(stringVal(in, "language"))
-	if err != nil {
-		return language.Profile{}, nil, document.Document{}, protocol.Position{}, err
-	}
+
 	if t.SymbolPath != "" {
-		hits, _, err := e.resolveSymbolPath(ctx, p, t.SymbolPath, t.Path)
+		var (
+			p    language.Profile
+			hits []symbolLocation
+			err  error
+		)
+		if stringVal(in, "language") == "" && t.Path == "" {
+			hits, _, err = e.resolveSymbolPathAcrossLanguages(ctx, t.SymbolPath)
+		} else {
+			p, err = e.profileForInput(in)
+			if err == nil {
+				hits, _, err = e.resolveSymbolPath(ctx, p, t.SymbolPath, t.Path)
+			}
+		}
 		if err != nil {
 			return p, nil, document.Document{}, protocol.Position{}, err
 		}
@@ -57,11 +97,17 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 			return p, nil, document.Document{}, protocol.Position{}, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+t.SymbolPath)
 		case 1:
 			hit := hits[0]
+			p = hit.Profile
 			pos, err := document.ToLSP(hit.Document.Text, hit.Node.SelectionRange.Start, hit.Session.Capabilities().PositionEncoding)
 			return p, hit.Session, hit.Document, pos, err
 		default:
 			return p, nil, document.Document{}, protocol.Position{}, e.ambiguousError(t.SymbolPath, hits)
 		}
+	}
+
+	p, err := e.profileForInput(in)
+	if err != nil {
+		return language.Profile{}, nil, document.Document{}, protocol.Position{}, err
 	}
 	if t.SymbolID != "" {
 		r, err := e.Symbols.Get(t.SymbolID)
@@ -72,7 +118,6 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 			return p, nil, document.Document{}, protocol.Position{}, core.NewError(core.InvalidArgument, "language does not match symbol")
 		}
 		s, err := e.Sessions.ForPath(r.SessionKey, r.Path)
-
 		if err != nil {
 			return p, nil, document.Document{}, protocol.Position{}, err
 		}

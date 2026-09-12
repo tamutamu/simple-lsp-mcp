@@ -5,36 +5,61 @@
 [![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A simple, read-only code intelligence layer for AI agents, powered by local Language Server Protocol (LSP) servers.
+**Stop making coding agents grep your whole repository.**
 
-Instead of text search, it asks LSP servers for symbols, definitions, references, call relationships, type hierarchies, and diagnostics — and combines those primitives into higher-level tools such as `find_symbol`, `get_symbol_context`, and `impact_analysis` that answer a whole question in one call. It does not edit files, execute shell commands on behalf of tools, perform text search, or build a persistent source index.
+`simple-lsp-mcp` turns the LSP servers you already use into **precise, token-efficient semantic context** for Claude Code, Codex, and other MCP clients.
+
+Instead of making an agent search strings, read whole files, and stitch relationships together itself, it can ask one semantic question and get a bounded answer from the language server:
+
+```text
+❌ grep → read → grep → read → infer relationships
+✅ get_semantic_slice("UserService/createUser", max_tokens=6000)
+```
+
+`get_semantic_slice` returns the root source, the source of code it calls, compact callers, and implementations under a strict depth/node/token budget. For a shallower view, `get_symbol_context` returns source + callers + callees + references + implementations in one call.
+
+## ⭐ Flagship: `get_semantic_slice`
+
+`get_semantic_slice` is the main reason to use `simple-lsp-mcp`. Give it one symbol and it builds the smallest useful semantic code neighborhood an agent needs to understand or change that symbol.
+
+```text
+get_semantic_slice(
+  symbol_path="UserService/createUser",
+  max_tokens=6000,
+  depth=2
+)
+
+→ root source
+→ direct + transitive callee source
+→ compact callers
+→ implementations
+→ bounded by token, depth, and node budgets
+```
+
+Instead of making the agent perform several navigation calls and assemble the relationships itself, `get_semantic_slice` performs that semantic traversal inside the MCP server and returns one bounded result. The goal is simple: **fewer tool calls, less irrelevant code, more room for reasoning.**
+
+The project stays deliberately narrow:
+
+- **Read-only.** It understands code; it never edits it.
+- **No hidden index or embeddings.** Answers come live from your local LSP server.
+- **No external indexing service.** The server reads your workspace locally and only returns requested results to your configured MCP client.
+- **Token-budgeted context.** High-level tools bound how much code is returned.
+- **Language inference.** For most target-based tools, `language` can be omitted; it is inferred from `symbol_id`, file extension, or configured LSP profiles.
+- **Lazy.** A language server starts only when a request needs it.
 
 ## Why
 
-Coding agents commonly explore a codebase with `grep`/`ripgrep` and read whole
-files into context to figure out what a symbol means. That works, but it burns
-tokens, gets confused by name collisions and string matches, and has no notion
-of "this identifier is actually a call to that function three files away."
+Coding agents are very good at reasoning about code once they have the right context. The expensive part is often *finding* that context. Text search produces name collisions and string matches; reading entire files burns context; raw LSP primitives are precise but can require several agent-visible round trips.
 
-An LSP server already answers those questions precisely, because that's its
-job in every editor. `simple-lsp-mcp` exposes that existing, precise knowledge
-to an agent as small, structured MCP tool calls instead of large blobs of
-grep output — one `get_definition` call instead of a multi-file text search,
-one `find_references` call instead of guessing from string matches, one
-`get_symbol_context` call instead of five separate ones to understand what a
-function does and who relies on it.
+`simple-lsp-mcp` treats LSP as a semantic context backend. Low-level navigation tools remain available, but the main goal is to answer a whole code-understanding question in as few tool calls as possible:
 
-The measure this project optimizes for is not how many LSP methods it exposes
-— it is how few tool calls an agent needs to understand a codebase.
+- `find_symbol` — resolve a human-readable symbol without first knowing its file or position.
+- `get_symbol_outline` — inspect structure without returning source text.
+- `get_symbol_context` — source, callers, callees, references, and implementations in one call.
+- `get_semantic_slice` — gather the minimum useful source neighborhood under a token budget.
+- `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
 
-It stays deliberately narrow:
-
-- **Read-only.** No tool ever writes, edits, or deletes a file.
-- **No shell.** `command` and `args` are passed straight to the process
-  launcher; there is no shell to inject into.
-- **No hidden index.** Answers come live from the LSP server backing your own
-  editor setup — nothing is scraped, cached long-term, or sent anywhere.
-- **Lazy.** A language server starts only on the first request that needs it.
+That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding task**.
 
 See [SECURITY.md](SECURITY.md) for the full security model.
 
@@ -49,7 +74,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 | `html` | `html` | `.html` |
 | `css` | `css` | `.css` |
 
-The `language` argument and configuration profile are different. For example, a TypeScript tool call uses `language: "typescript"`, which maps to the `typescript-javascript` profile in `.simple-lsp.json`.
+The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` and `list_workspace_symbols` still require `language` to keep workspace-wide searches bounded.
 
 ## Onboarding tool & Configuration (`.simple-lsp.yaml`)
 
@@ -148,7 +173,7 @@ Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` o
 command = "simple-lsp-mcp"
 enabled_tools = [
   "search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol",
-  "find_symbol", "get_symbol_outline", "get_symbol_context",
+  "find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice",
   "get_definition", "find_references", "find_implementations", "get_type_definition",
   "get_declaration", "get_hover", "get_incoming_calls", "get_outgoing_calls", "get_supertypes",
   "get_subtypes", "get_diagnostics", "impact_analysis", "onboard"
@@ -159,7 +184,7 @@ tool_timeout_sec = 45
 enabled = true
 ```
 
-In Codex, begin code exploration with `find_symbol` or `get_symbol_outline` once you know roughly what you're looking for, or `search_symbols` / `get_document_symbols` when you don't. For example, to list functions in `src/greeting.ts`, call `get_document_symbols` with `path: "src/greeting.ts"` and `language: "typescript"`; to jump straight to one of them, call `find_symbol` with `symbol_path: "formatGreeting"` and `language: "typescript"`.
+In Codex, begin with `get_semantic_slice` when you need enough code to understand or change one symbol, `get_symbol_context` when you need its immediate neighborhood, or `get_symbol_outline` when you only need structure. `language` is usually unnecessary: `get_document_symbols(path="src/greeting.ts")` infers TypeScript from the path, while `find_symbol(symbol_path="formatGreeting")` can search configured profiles when no path is known.
 
 ## Claude Code configuration
 
@@ -203,23 +228,24 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
 | `list_workspace_symbols` | List workspace symbols for a language | `language` |
-| `get_document_symbols` | Get hierarchical symbols for one file | `path`, `language` |
+| `get_document_symbols` | Get hierarchical symbols for one file | `path` |
 | `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
-| `find_symbol` | Get one symbol by its `symbol_path`, without a prior search | `symbol_path`, `language` |
-| `get_symbol_outline` | List a symbol's direct children, or a file's top-level symbols, without any source text | `language` |
-| `get_symbol_context` | Get a symbol's source, callers, callees, references, and implementations in one call | `language` and target |
-| `get_definition` | Go to a definition | `language` and target |
-| `find_references` | Get reference locations | `language` and target |
-| `find_implementations` | Get implementation locations | `language` and target |
-| `get_type_definition` | Go to a type definition | `language` and target |
-| `get_declaration` | Go to a declaration | `language` and target |
-| `get_hover` | Get the type a language server infers for an expression with no declaration of its own | `language` and target |
-| `get_incoming_calls` | Get direct callers | `language` and target |
-| `get_outgoing_calls` | Get direct callees | `language` and target |
-| `get_supertypes` | Get direct supertypes | `language` and target |
-| `get_subtypes` | Get direct subtypes | `language` and target |
-| `get_diagnostics` | Get diagnostics for a file | `language` when `path` is supplied |
-| `impact_analysis` | Estimate the blast radius of changing a symbol: callers, references, implementations, and affected files | `language` and target |
+| `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
+| `get_symbol_outline` | List a symbol's children or a file's top-level symbols without source | target or `path` |
+| `get_symbol_context` | Source, callers, callees, references, and implementations in one call | target |
+| `get_semantic_slice` | Token-budgeted root + dependency source + compact dependents | target |
+| `get_definition` | Go to a definition | target |
+| `find_references` | Get reference locations | target |
+| `find_implementations` | Get implementation locations | target |
+| `get_type_definition` | Go to a type definition | target |
+| `get_declaration` | Go to a declaration | target |
+| `get_hover` | Get the type inferred for an expression | target |
+| `get_incoming_calls` | Get direct callers | target |
+| `get_outgoing_calls` | Get direct callees | target |
+| `get_supertypes` | Get direct supertypes | target |
+| `get_subtypes` | Get direct subtypes | target |
+| `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
+| `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
 | `onboard` | Scan workspace and generate configuration | None |
 
 ### Finding a symbol by name
@@ -229,6 +255,20 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 A `symbol_path` reflects whatever shape the language server's own `documentSymbol` response has — it is never inferred or restructured. Methods commonly nest under their type (`UserService/createUser`), but some language servers report them as one flat, already-qualified name instead (for example Go's `gopls`, which reports `(*UserService).CreateUser` as a single segment). Call `get_symbol_outline` or `get_document_symbols` first if you are unsure which form a given server uses.
 
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
+
+## Context-efficiency benchmark
+
+A reproducible benchmark runner is included so performance claims can be measured against a real repository instead of guessed:
+
+```sh
+go run ./cmd/simple-lsp-bench \
+  --workspace . \
+  --symbol 'UserService/createUser' \
+  --depth 2 \
+  --max-tokens 6000
+```
+
+It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, serialized bytes, and an approximate response-token count. See [docs/benchmark.md](docs/benchmark.md) for methodology and publishing guidance.
 
 ## Server options
 

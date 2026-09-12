@@ -21,6 +21,7 @@ const maxProbeFiles = 8
 // symbolLocation is one resolved symbol_path hit, holding everything needed
 // to target it exactly like a symbol_id or a path+line+column would be.
 type symbolLocation struct {
+	Profile  language.Profile
 	Session  *session.Session
 	Document document.Document
 	Node     symbolNode
@@ -106,7 +107,7 @@ func (e *Engine) resolveSymbolPath(ctx context.Context, p language.Profile, symb
 		if err != nil {
 			return nil, nil, err
 		}
-		return locationsFor(s, d, matchNodes(nodes, segments, anchored)), nil, nil
+		return locationsFor(p, s, d, matchNodes(nodes, segments, anchored)), nil, nil
 	}
 	leaf := segments[len(segments)-1]
 	files, err := e.candidateFiles(ctx, p, leaf)
@@ -124,15 +125,93 @@ func (e *Engine) resolveSymbolPath(ctx context.Context, p language.Profile, symb
 		if err != nil {
 			continue
 		}
-		hits = append(hits, locationsFor(s, d, matchNodes(nodes, segments, anchored))...)
+		hits = append(hits, locationsFor(p, s, d, matchNodes(nodes, segments, anchored))...)
 	}
 	return hits, warnings, nil
 }
 
-func locationsFor(s *session.Session, d document.Document, nodes []symbolNode) []symbolLocation {
+// resolveSymbolPathAcrossLanguages searches each configured LSP profile once
+// when the caller provides only a symbol_path. Candidate files are then
+// reclassified by extension so shared sessions (TypeScript/JavaScript) use
+// the correct document language identifier.
+func (e *Engine) resolveSymbolPathAcrossLanguages(ctx context.Context, symbolPath string) ([]symbolLocation, []string, error) {
+	segments, anchored, err := parseSymbolPath(symbolPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	leaf := segments[len(segments)-1]
+	seenSession := map[string]bool{}
+	seenLocation := map[string]bool{}
+	var hits []symbolLocation
+	var warnings []string
+	configured := 0
+
+	for _, base := range language.Profiles {
+		if seenSession[base.SessionKey] || !e.Sessions.Configured(base.SessionKey) {
+			continue
+		}
+		seenSession[base.SessionKey] = true
+		configured++
+		files, err := e.candidateFiles(ctx, base, leaf)
+		if err != nil {
+			warnings = append(warnings, base.SessionKey+": "+err.Error())
+			continue
+		}
+		if len(files) > maxProbeFiles {
+			warnings = append(warnings, fmt.Sprintf("%s: more than %d files match %q; specify language or path to narrow the search", base.SessionKey, maxProbeFiles, leaf))
+			files = files[:maxProbeFiles]
+		}
+		for _, f := range files {
+			p := base
+			if inferred, inferErr := language.FromPath(f); inferErr == nil && inferred.SessionKey == base.SessionKey {
+				p = inferred
+			}
+			s, d, nodes, err := e.documentNodes(ctx, p, f)
+			if err != nil {
+				continue
+			}
+			for _, hit := range locationsFor(p, s, d, matchNodes(nodes, segments, anchored)) {
+				key := relativeMust(e, hit.Document.Path) + "#" + fmt.Sprint(hit.Node.SelectionRange)
+				if seenLocation[key] {
+					continue
+				}
+				seenLocation[key] = true
+				hits = append(hits, hit)
+			}
+		}
+	}
+	if configured == 0 {
+		return nil, warnings, core.NewError(core.InvalidArgument, "no language server profiles are configured")
+	}
+	return hits, warnings, nil
+}
+
+// resolveSymbolInput chooses the narrowest safe language strategy for a
+// symbol_path request. Explicit language wins, path enables extension-based
+// inference, and a bare symbol_path searches all configured profiles.
+func (e *Engine) resolveSymbolInput(ctx context.Context, in map[string]any, symbolPath string) (language.Profile, []symbolLocation, []string, error) {
+	if stringVal(in, "language") == "" && stringVal(in, "path") == "" {
+		hits, warnings, err := e.resolveSymbolPathAcrossLanguages(ctx, symbolPath)
+		if err != nil {
+			return language.Profile{}, nil, warnings, err
+		}
+		if len(hits) == 1 {
+			return hits[0].Profile, hits, warnings, nil
+		}
+		return language.Profile{}, hits, warnings, nil
+	}
+	p, err := e.profileForInput(in)
+	if err != nil {
+		return language.Profile{}, nil, nil, err
+	}
+	hits, warnings, err := e.resolveSymbolPath(ctx, p, symbolPath, stringVal(in, "path"))
+	return p, hits, warnings, err
+}
+
+func locationsFor(p language.Profile, s *session.Session, d document.Document, nodes []symbolNode) []symbolLocation {
 	out := make([]symbolLocation, len(nodes))
 	for i, n := range nodes {
-		out[i] = symbolLocation{Session: s, Document: d, Node: n}
+		out[i] = symbolLocation{Profile: p, Session: s, Document: d, Node: n}
 	}
 	return out
 }
@@ -161,12 +240,8 @@ const defaultSourceLines = 200
 // error; more than one match returns a normal result carrying candidates
 // instead of symbol, since an ambiguous outcome is not itself an error.
 func (e *Engine) FindSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
-	p, err := language.Require(stringVal(in, "language"))
-	if err != nil {
-		return nil, err
-	}
 	symbolPath := stringVal(in, "symbol_path")
-	hits, warnings, err := e.resolveSymbolPath(ctx, p, symbolPath, stringVal(in, "path"))
+	p, hits, warnings, err := e.resolveSymbolInput(ctx, in, symbolPath)
 	if err != nil {
 		return nil, err
 	}
@@ -178,9 +253,10 @@ func (e *Engine) FindSymbol(ctx context.Context, in map[string]any) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		return e.ambiguousResult(p, symbolPath, hits, limit, warnings), nil
+		return e.ambiguousResult(symbolPath, hits, limit, warnings), nil
 	}
 	hit := hits[0]
+	p = hit.Profile
 	path := relativeMust(e, hit.Document.Path)
 	id := e.registerNode(p, path, hit.Document.URI, hit.Document.Hash, hit.Node)
 	sym := map[string]any{
@@ -221,7 +297,7 @@ func sourceFor(text []byte, r core.Range, maxLines int) (string, bool) {
 // tools when a symbol_path matches more than one symbol. Each candidate
 // carries its own symbol_id, so the next call can target it directly
 // instead of repeating the ambiguous search.
-func (e *Engine) ambiguousResult(p language.Profile, symbolPath string, hits []symbolLocation, limit int, warnings []string) map[string]any {
+func (e *Engine) ambiguousResult(symbolPath string, hits []symbolLocation, limit int, warnings []string) map[string]any {
 	tr := len(hits) > limit
 	if tr {
 		hits = hits[:limit]
@@ -229,13 +305,14 @@ func (e *Engine) ambiguousResult(p language.Profile, symbolPath string, hits []s
 	candidates := make([]map[string]any, len(hits))
 	for i, h := range hits {
 		path := relativeMust(e, h.Document.Path)
+		p := h.Profile
 		id := e.registerNode(p, path, h.Document.URI, h.Document.Hash, h.Node)
 		candidates[i] = map[string]any{
 			"symbol_id": id, "symbol_path": h.Node.SymbolPath, "name": h.Node.Name, "kind": h.Node.Kind,
-			"path": path, "range": h.Node.Range, "selection_range": h.Node.SelectionRange,
+			"language": p.Name, "path": path, "range": h.Node.Range, "selection_range": h.Node.SelectionRange,
 		}
 	}
-	warnings = append(warnings, fmt.Sprintf("%q matches %d symbols; pass a more specific symbol_path, a path, or the symbol_id of one candidate", symbolPath, len(hits)))
+	warnings = append(warnings, fmt.Sprintf("%q matches %d symbols; pass a more specific symbol_path, a path, language, or the symbol_id of one candidate", symbolPath, len(hits)))
 	return map[string]any{"symbol": nil, "ambiguous": true, "candidates": candidates, "meta": core.Meta{Complete: true, Truncated: tr, Warnings: warnings}}
 }
 
@@ -248,10 +325,6 @@ const maxOutlineDepth = 3
 // returns source text: get_symbol or get_symbol_context can, once the
 // caller has decided which child is worth reading.
 func (e *Engine) SymbolOutline(ctx context.Context, in map[string]any) (map[string]any, error) {
-	p, err := language.Require(stringVal(in, "language"))
-	if err != nil {
-		return nil, err
-	}
 	depth, err := core.ClampLimit(intVal(in, "depth"), maxOutlineDepth, 1)
 	if err != nil {
 		return nil, err
@@ -267,6 +340,10 @@ func (e *Engine) SymbolOutline(ctx context.Context, in map[string]any) (map[stri
 		if path == "" {
 			return nil, core.NewError(core.InvalidArgument, "specify symbol_path, path, or both")
 		}
+		p, err := e.profileForInput(in)
+		if err != nil {
+			return nil, err
+		}
 		_, d, nodes, err := e.documentNodes(ctx, p, path)
 		if err != nil {
 			return nil, err
@@ -276,7 +353,7 @@ func (e *Engine) SymbolOutline(ctx context.Context, in map[string]any) (map[stri
 		return map[string]any{"children": children, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
 	}
 
-	hits, warnings, err := e.resolveSymbolPath(ctx, p, symbolPath, path)
+	p, hits, warnings, err := e.resolveSymbolInput(ctx, in, symbolPath)
 	if err != nil {
 		return nil, err
 	}
@@ -284,14 +361,15 @@ func (e *Engine) SymbolOutline(ctx context.Context, in map[string]any) (map[stri
 		return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+symbolPath)
 	}
 	if len(hits) > 1 {
-		return e.ambiguousResult(p, symbolPath, hits, limit, warnings), nil
+		return e.ambiguousResult(symbolPath, hits, limit, warnings), nil
 	}
 	hit := hits[0]
+	p = hit.Profile
 	docPath := relativeMust(e, hit.Document.Path)
 	parentID := e.registerNode(p, docPath, hit.Document.URI, hit.Document.Hash, hit.Node)
 	parent := map[string]any{
 		"symbol_id": parentID, "symbol_path": hit.Node.SymbolPath, "name": hit.Node.Name,
-		"kind": hit.Node.Kind, "detail": hit.Node.Detail, "path": docPath,
+		"kind": hit.Node.Kind, "detail": hit.Node.Detail, "language": p.Name, "path": docPath,
 		"range": hit.Node.Range, "selection_range": hit.Node.SelectionRange,
 	}
 	children, tr := e.outlineChildren(p, docPath, hit.Document.URI, hit.Document.Hash, hit.Node.Children, depth, limit)
@@ -361,24 +439,23 @@ func includeSection(in map[string]any, name string) bool {
 // that section and records why in meta.warnings, rather than failing the
 // whole call. Only a failure to resolve the symbol itself is a hard error.
 func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[string]any, error) {
-	p, err := language.Require(stringVal(in, "language"))
-	if err != nil {
-		return nil, err
-	}
-
 	var (
+		p                                            language.Profile
 		d                                            document.Document
 		name, kind, containerName, detail, symbolPth string
 		symRange, symSelRange                        core.Range
 		hasRange                                     bool
 		warnings                                     []string
+		targetSymbolID                               string
 	)
-	subIn := map[string]any{"language": p.Name}
 
 	switch {
 	case stringVal(in, "symbol_path") != "":
 		symbolPath := stringVal(in, "symbol_path")
-		hits, w, err := e.resolveSymbolPath(ctx, p, symbolPath, stringVal(in, "path"))
+		var hits []symbolLocation
+		var w []string
+		var err error
+		p, hits, w, err = e.resolveSymbolInput(ctx, in, symbolPath)
 		if err != nil {
 			return nil, err
 		}
@@ -390,13 +467,14 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 			if err != nil {
 				return nil, err
 			}
-			return e.ambiguousResult(p, symbolPath, hits, limit, w), nil
+			return e.ambiguousResult(symbolPath, hits, limit, w), nil
 		}
 		hit := hits[0]
+		p = hit.Profile
 		d = hit.Document
 		warnings = w
 		docPath := relativeMust(e, d.Path)
-		subIn["symbol_id"] = e.registerNode(p, docPath, d.URI, d.Hash, hit.Node)
+		targetSymbolID = e.registerNode(p, docPath, d.URI, d.Hash, hit.Node)
 		name, kind, containerName, detail, symbolPth = hit.Node.Name, hit.Node.Kind, hit.Node.ContainerName, hit.Node.Detail, hit.Node.SymbolPath
 		symRange, symSelRange, hasRange = hit.Node.Range, hit.Node.SelectionRange, true
 
@@ -406,21 +484,27 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		if err != nil {
 			return nil, err
 		}
-		_, _, dd, _, err := e.target(ctx, in)
+		pp, _, dd, _, err := e.target(ctx, in)
 		if err != nil {
 			return nil, err
 		}
-		d = dd
-		subIn["symbol_id"] = id
+		p, d = pp, dd
+		targetSymbolID = id
 		name, kind, containerName, detail, symbolPth = rec.Name, rec.Kind, rec.ContainerName, rec.Detail, rec.SymbolPath
 		symRange, symSelRange, hasRange = rec.Range, rec.SelectionRange, true
 
 	default:
-		_, _, dd, _, err := e.target(ctx, in)
+		pp, _, dd, _, err := e.target(ctx, in)
 		if err != nil {
 			return nil, err
 		}
-		d = dd
+		p, d = pp, dd
+	}
+
+	subIn := map[string]any{"language": p.Name}
+	if targetSymbolID != "" {
+		subIn["symbol_id"] = targetSymbolID
+	} else {
 		subIn["path"] = stringVal(in, "path")
 		subIn["line"] = intVal(in, "line")
 		subIn["column"] = intVal(in, "column")
@@ -433,8 +517,8 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 			symbol[k] = v
 		}
 	}
-	if id, ok := subIn["symbol_id"]; ok {
-		symbol["symbol_id"] = id
+	if targetSymbolID != "" {
+		symbol["symbol_id"] = targetSymbolID
 	}
 	if hasRange {
 		symbol["range"] = symRange
@@ -450,7 +534,6 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 
 	out := map[string]any{"symbol": symbol}
 	complete := true
-
 	if includeSection(in, "source") {
 		if hasRange {
 			text, truncated := sourceFor(d.Text, symRange, intVal(in, "max_source_lines"))
@@ -459,36 +542,41 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 			warnings = append(warnings, "source: no declared symbol at this position")
 		}
 	}
+
+	type sectionResult struct {
+		name    string
+		value   any
+		ok      bool
+		warning string
+	}
+	results := make(chan sectionResult, 4)
+	active := 0
+	launch := func(name string, fn func() (any, bool, string)) {
+		active++
+		go func() {
+			v, ok, warning := fn()
+			results <- sectionResult{name: name, value: v, ok: ok, warning: warning}
+		}()
+	}
 	if includeSection(in, "incoming_calls") {
-		v, ok, w := e.contextCalls(rootCtx, "get_incoming_calls", subIn, limit)
-		if ok {
-			out["incoming_calls"] = v
-		} else {
-			warnings, complete = append(warnings, w), false
-		}
+		launch("incoming_calls", func() (any, bool, string) { return e.contextCalls(rootCtx, "get_incoming_calls", subIn, limit) })
 	}
 	if includeSection(in, "outgoing_calls") {
-		v, ok, w := e.contextCalls(rootCtx, "get_outgoing_calls", subIn, limit)
-		if ok {
-			out["outgoing_calls"] = v
-		} else {
-			warnings, complete = append(warnings, w), false
-		}
+		launch("outgoing_calls", func() (any, bool, string) { return e.contextCalls(rootCtx, "get_outgoing_calls", subIn, limit) })
 	}
 	if includeSection(in, "references") {
-		v, ok, w := e.contextReferences(rootCtx, subIn, limit)
-		if ok {
-			out["references"] = v
-		} else {
-			warnings, complete = append(warnings, w), false
-		}
+		launch("references", func() (any, bool, string) { return e.contextReferences(rootCtx, subIn, limit) })
 	}
 	if includeSection(in, "implementations") {
-		v, ok, w := e.contextImplementations(rootCtx, subIn, limit)
-		if ok {
-			out["implementations"] = v
+		launch("implementations", func() (any, bool, string) { return e.contextImplementations(rootCtx, subIn, limit) })
+	}
+	for i := 0; i < active; i++ {
+		r := <-results
+		if r.ok {
+			out[r.name] = r.value
 		} else {
-			warnings, complete = append(warnings, w), false
+			warnings = append(warnings, r.warning)
+			complete = false
 		}
 	}
 
