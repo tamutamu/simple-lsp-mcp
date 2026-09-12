@@ -74,7 +74,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 | `html` | `html` | `.html` |
 | `css` | `css` | `.css` |
 
-The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` and `list_workspace_symbols` still require `language` to keep workspace-wide searches bounded.
+The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` and `list_workspace_symbols` require a non-empty `query` and `language` to keep workspace-wide searches bounded.
 
 ## Onboarding tool & Configuration (`.simple-lsp.yaml`)
 
@@ -227,7 +227,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
-| `list_workspace_symbols` | List workspace symbols for a language | `language` |
+| `list_workspace_symbols` | List workspace symbols matching a query | `query`, `language` |
 | `get_document_symbols` | Get hierarchical symbols for one file | `path` |
 | `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
 | `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
@@ -247,6 +247,8 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
 | `onboard` | Scan workspace and generate configuration | None |
+
+`search_symbols` and `list_workspace_symbols` both require a non-empty `query` because the LSP `workspace/symbol` request is a search operation, not an unfiltered workspace listing. Use `get_document_symbols` to inspect the complete symbol hierarchy of a specific file.
 
 ### Finding a symbol by name
 

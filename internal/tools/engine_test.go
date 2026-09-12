@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,6 +27,36 @@ func TestSearchSymbolsRequiresLanguage(t *testing.T) {
 	engine := New(ws, config.Runtime{Servers: map[string][]config.Server{}, MaxResults: 10})
 	if _, err := engine.SearchSymbols(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("SearchSymbols without language returned nil error")
+	}
+}
+
+func TestSearchSymbolsRequiresNonEmptyQuery(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{Servers: map[string][]config.Server{}, MaxResults: 10})
+
+	for name, input := range map[string]map[string]any{
+		"missing query": {"language": "go"},
+		"empty query":   {"language": "go", "query": ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err = engine.SearchSymbols(context.Background(), input)
+			if err == nil {
+				t.Fatal("SearchSymbols without a non-empty query returned nil error")
+			}
+			var appErr *core.AppError
+			if !errors.As(err, &appErr) {
+				t.Fatalf("error = %T %v, want *core.AppError", err, err)
+			}
+			if appErr.Code != core.InvalidArgument {
+				t.Fatalf("error code = %q, want %q", appErr.Code, core.InvalidArgument)
+			}
+			if appErr.Message != "query must be a non-empty string" {
+				t.Fatalf("error message = %q, want non-empty query message", appErr.Message)
+			}
+		})
 	}
 }
 

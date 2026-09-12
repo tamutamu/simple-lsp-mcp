@@ -49,6 +49,10 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	query := stringVal(in, "query")
+	if query == "" {
+		return nil, core.NewError(core.InvalidArgument, "query must be a non-empty string")
+	}
 	p, err := language.Require(stringVal(in, "language"))
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	callCtx, cancel := e.callContext(ctx)
 	defer cancel()
 	var raw []protocol.WorkspaceSymbol
-	if err := s.Request(callCtx, "workspace/symbol", map[string]string{"query": stringVal(in, "query")}, &raw); err != nil {
+	if err := s.Request(callCtx, "workspace/symbol", map[string]string{"query": query}, &raw); err != nil {
 		return nil, err
 	}
 

@@ -42,10 +42,10 @@ type definition struct {
 // definitions is the stable public tool surface exposed by this server.
 func definitions() []definition {
 	return []definition{
-		{"search_symbols", "Use first to find a code symbol by name before any shell search. language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"search_symbols", "Use first to find a code symbol by name before any shell search. query must be non-empty; language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"list_workspace_symbols", "List methods in Go code or other workspace symbols for one language, optionally filtered by a query. language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"list_workspace_symbols", "List workspace symbols matching a non-empty query. language is required and selects the LSP server; use get_document_symbols for a file's complete symbol hierarchy.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
 		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file; language is inferred from its extension unless explicitly supplied.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -117,7 +117,7 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 // allProperties is the full catalogue of tool input properties, each documented once.
 func allProperties() map[string]any {
 	return map[string]any{
-		"query":                   describe(stringSchema(), "Substring or fuzzy name to search for. Empty matches every symbol."),
+		"query":                   describe(stringSchema(), "Non-empty substring or fuzzy name to search for."),
 		"path":                    describe(stringSchema(), "File path relative to the workspace root."),
 		"symbol_id":               describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
 		"symbol_path":             describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),

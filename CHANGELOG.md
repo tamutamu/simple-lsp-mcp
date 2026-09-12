@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-12
+
+### Fixed
+
+- Require a non-empty query for `search_symbols` and `list_workspace_symbols` instead of sending an empty workspace-symbol query to the language server.
+
 ## [0.7.0] - 2026-09-12
 
 ### Added
@@ -104,7 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing symbol search, definitions, references, implementations, type
   definitions, declarations, call hierarchy, type hierarchy, and diagnostics.
 
-[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.2...v0.5.3

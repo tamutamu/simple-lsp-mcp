@@ -29,8 +29,8 @@ func TestDiscoveryToolDescriptionsGuideCodeInvestigation(t *testing.T) {
 		descriptions[definition.name] = definition.description
 	}
 	for name, phrase := range map[string]string{
-		"search_symbols":         "before any shell search",
-		"list_workspace_symbols": "list methods in go code",
+		"search_symbols":         "non-empty",
+		"list_workspace_symbols": "non-empty query",
 		"get_document_symbols":   "prefer it over reading source text",
 	} {
 		if !strings.Contains(strings.ToLower(descriptions[name]), phrase) {
@@ -42,8 +42,8 @@ func TestDiscoveryToolDescriptionsGuideCodeInvestigation(t *testing.T) {
 			continue
 		}
 		required := definition.schema["required"].([]string)
-		if len(required) != 1 || required[0] != "language" {
-			t.Fatalf("list_workspace_symbols required = %#v, want language", required)
+		if len(required) != 2 || required[0] != "query" || required[1] != "language" {
+			t.Fatalf("list_workspace_symbols required = %#v, want query and language", required)
 		}
 		properties := definition.schema["properties"].(map[string]any)
 		if properties["kinds"].(map[string]any)["type"] != "array" {
