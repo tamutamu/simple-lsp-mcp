@@ -11,3 +11,7 @@ Uses the default five canonical triage labels. See `docs/agents/triage-labels.md
 ### Domain docs
 
 Uses a single-context layout. See `docs/agents/domain.md`.
+
+### Code exploration
+
+Use the simple-lsp MCP for code exploration.
