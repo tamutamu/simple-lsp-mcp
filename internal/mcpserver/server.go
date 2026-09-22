@@ -45,9 +45,6 @@ func definitions() []definition {
 		{"search_symbols", "Use first to find a code symbol by name before any shell search. query must be non-empty; language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"list_workspace_symbols", "List workspace symbols matching a non-empty query. language is required and selects the LSP server; use get_document_symbols for a file's complete symbol hierarchy.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.SearchSymbols(c, i)
-		}},
 		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file; language is inferred from its extension unless explicitly supplied.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},

@@ -10,16 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `simple-lsp-mcp doctor` for configuration/executable checks and opt-in real-LSP probing; `setup claude|codex` for preview-first MCP registration.
-- Real `gopls`, TypeScript Language Server, and Pyright integration tests in CI, plus a coding-task evaluation protocol.
+- Real `gopls`, TypeScript Language Server, and Pyright integration tests in CI.
 - Type-definition locations and reference-backed test-file candidates in `get_semantic_slice`.
-- An opt-in baseline/MCP agent-task evaluator with isolated workspaces, hidden acceptance tests, and offline self-tests; a real-gopls semantic-content integration test.
+- A real-`gopls` semantic-content integration test.
 
 ### Changed
 
 - Remove the misleading `estimated_tokens` response field and `max_tokens` input; use an explicitly serialized-JSON `max_bytes` limit instead.
 - Search all configured LSP instances in monorepos, exhaust up to 128 candidate files, and fail with `INCOMPLETE_SEARCH` rather than presenting partial searches as complete.
 - Clarify source-code read-only behavior and the explicitly opt-in configuration writes from onboarding/setup.
-- Benchmark warmed runs repeatedly in rotating order and mark failures/incomplete results as non-comparable instead of reporting biased medians.
+
+### Removed
+
+- Remove `simple-lsp-bench` and the unvalidated agent-evaluation harness; neither established real coding-task benefits. Keep focused real-LSP integration tests instead.
+- Remove the obsolete Codex smoke-test script and its unused fixtures.
+- Remove `list_workspace_symbols`, an exact duplicate of `search_symbols`; clients should call `search_symbols` instead (breaking tool-name change).
 
 
 ## [0.7.1] - 2026-09-12

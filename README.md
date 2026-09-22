@@ -75,7 +75,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 | `html` | `html` | `.html` |
 | `css` | `css` | `.css` |
 
-The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` and `list_workspace_symbols` require a non-empty `query` and `language` to keep workspace-wide searches bounded.
+The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` requires a non-empty `query` and `language` to keep workspace-wide searches bounded.
 
 ## Onboarding tool & Configuration (`.simple-lsp.yaml`)
 
@@ -186,17 +186,6 @@ Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` o
 ```toml
 [mcp_servers.simple-lsp]
 command = "simple-lsp-mcp"
-enabled_tools = [
-  "search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol",
-  "find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice",
-  "get_definition", "find_references", "find_implementations", "get_type_definition",
-  "get_declaration", "get_hover", "get_incoming_calls", "get_outgoing_calls", "get_supertypes",
-  "get_subtypes", "get_diagnostics", "impact_analysis", "onboard"
-]
-default_tools_approval_mode = "approve"
-startup_timeout_sec = 20
-tool_timeout_sec = 45
-enabled = true
 ```
 
 In Codex, begin with `get_semantic_slice` when you need enough code to understand or change one symbol, `get_symbol_context` when you need its immediate neighborhood, or `get_symbol_outline` when you only need structure. `language` is usually unnecessary: `get_document_symbols(path="src/greeting.ts")` infers TypeScript from the path, while `find_symbol(symbol_path="formatGreeting")` can search configured profiles when no path is known.
@@ -242,7 +231,6 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
-| `list_workspace_symbols` | List workspace symbols matching a query | `query`, `language` |
 | `get_document_symbols` | Get hierarchical symbols for one file | `path` |
 | `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
 | `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
@@ -263,7 +251,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
 | `onboard` | Scan workspace and generate configuration | None |
 
-`search_symbols` and `list_workspace_symbols` both require a non-empty `query` because the LSP `workspace/symbol` request is a search operation, not an unfiltered workspace listing. Use `get_document_symbols` to inspect the complete symbol hierarchy of a specific file.
+`search_symbols` requires a non-empty `query` because the LSP `workspace/symbol` request searches by name; it does not list every workspace symbol. Use `get_document_symbols` to inspect the complete symbol hierarchy of a specific file.
 
 ### Finding a symbol by name
 
@@ -275,22 +263,13 @@ When no file is specified, the server searches every configured LSP instance for
 
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
 
-## Context-efficiency benchmark
+## Verification
 
-A reproducible benchmark runner is included so performance claims can be measured against a real repository instead of guessed:
-
-```sh
-go run ./cmd/simple-lsp-bench \
-  --workspace . \
-  --symbol 'UserService/createUser' \
-  --depth 2 \
-  --max-bytes 24576 \
-  --warmups 1 --runs 6
-```
-
-It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, serialized JSON bytes and whether results were incomplete. Warmed trials rotate method order; failed/partial results are never marked comparable. See [docs/benchmark.md](docs/benchmark.md) for methodology.
-
-For actual agent coding outcomes, an **opt-in paired evaluation harness** with hidden acceptance tests is provided in [docs/agent-evaluation.md](docs/agent-evaluation.md). It does not call paid agents unless you explicitly run it with `--execute`. No Claude/Codex success measurements have been collected yet.
+Run `go test ./...` and `go test -race ./...` before contributing. CI also runs
+integration tests against actual Go, TypeScript, and Python language servers.
+These tests verify code navigation and semantic results; they do **not** prove
+that an AI agent completes tasks faster or more accurately. No such claim is
+made without real agent-task results.
 
 ## Server options
 
