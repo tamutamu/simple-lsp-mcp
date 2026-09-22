@@ -168,3 +168,74 @@ func TestRealGoMonorepoSearchesEveryServer(t *testing.T) {
 		t.Fatalf("workspace search missed second server: %#v", workspaceResult)
 	}
 }
+
+// TestRealGoSemanticSlice validates semantic context content rather than only
+// successful LSP initialization. This is a deterministic offline quality gate.
+func TestRealGoSemanticSlice(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") != "1" && os.Getenv("SIMPLE_LSP_REAL_LSP") != "go" {
+		t.Skip("requires real gopls")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":          "module example.com/semantics\n\ngo 1.26.0\n",
+		"service.go":      "package semantics\nfunc Add(a, b int) int { return a+b }\nfunc Twice(v int) int { return Add(v,v) }\n",
+		"service_test.go": "package semantics\nimport \"testing\"\nfunc TestTwice(t *testing.T) { if Twice(2) != 4 { t.Fatal(\"bad\") } }\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(ws, config.Runtime{Workspace: root, MaxResults: 100, RequestTimeout: 30 * time.Second, Servers: map[string][]config.Server{
+		"go": {{Command: "gopls", Directory: "."}},
+	}})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		e.Sessions.Shutdown(ctx)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := e.DocumentSymbols(ctx, map[string]any{"path": "service_test.go"}); err != nil {
+		t.Fatalf("test file document symbols: %v", err)
+	}
+	slice, err := e.SemanticSlice(ctx, map[string]any{"path": "service.go", "symbol_path": "Twice", "max_bytes": 24576, "depth": 2})
+	if err != nil {
+		t.Fatalf("semantic slice: %v", err)
+	}
+	rootSymbol, ok := slice["root"].(map[string]any)
+	if !ok || rootSymbol["name"] != "Twice" || !strings.Contains(rootSymbol["source"].(string), "Add(v,v)") {
+		t.Fatalf("root source was not recovered: %#v", slice)
+	}
+	deps, ok := slice["dependencies"].([]any)
+	if !ok {
+		t.Fatalf("dependencies: %#v", slice)
+	}
+	foundAdd := false
+	for _, raw := range deps {
+		dep, ok := raw.(map[string]any)
+		if ok && dep["name"] == "Add" && strings.Contains(dep["source"].(string), "a+b") {
+			foundAdd = true
+		}
+	}
+	if !foundAdd {
+		t.Fatalf("semantic slice omitted callee source: %#v", slice)
+	}
+	if got := encodedSize(slice); got > 24576 {
+		t.Fatalf("JSON response size %d exceeded max_bytes", got)
+	}
+	for _, raw := range slice["related_tests"].([]any) {
+		candidate := raw.(map[string]any)
+		if candidate["path"] == "service_test.go" {
+			return
+		}
+	}
+	t.Fatalf("semantic slice omitted reference-backed test file: %#v", slice)
+}

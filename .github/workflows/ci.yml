@@ -10,6 +10,8 @@ jobs:
       - run: go test ./...
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Offline agent evaluation harness tests (no API calls)
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Install real language servers
         run: |
           go install golang.org/x/tools/gopls@latest
@@ -21,4 +23,4 @@ jobs:
       - name: Real LSP integration tests (Go, TypeScript, Python)
         env:
           SIMPLE_LSP_REAL_LSP: '1'
-        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer)$' -count=1 -v -timeout=6m
+        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice)$' -count=1 -v -timeout=6m

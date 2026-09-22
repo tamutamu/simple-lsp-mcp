@@ -10,3 +10,7 @@ coverage.out
 
 # OS metadata
 .DS_Store
+
+# Optional Python evaluation harness cache
+__pycache__/
+*.py[cod]

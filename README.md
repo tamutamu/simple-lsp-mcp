@@ -284,10 +284,13 @@ go run ./cmd/simple-lsp-bench \
   --workspace . \
   --symbol 'UserService/createUser' \
   --depth 2 \
-  --max-bytes 24576
+  --max-bytes 24576 \
+  --warmups 1 --runs 6
 ```
 
-It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, and serialized JSON bytes. See [docs/benchmark.md](docs/benchmark.md) for methodology and [docs/agent-evaluation.md](docs/agent-evaluation.md) for task-success comparisons.
+It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, serialized JSON bytes and whether results were incomplete. Warmed trials rotate method order; failed/partial results are never marked comparable. See [docs/benchmark.md](docs/benchmark.md) for methodology.
+
+For actual agent coding outcomes, an **opt-in paired evaluation harness** with hidden acceptance tests is provided in [docs/agent-evaluation.md](docs/agent-evaluation.md). It does not call paid agents unless you explicitly run it with `--execute`. No Claude/Codex success measurements have been collected yet.
 
 ## Server options
 
