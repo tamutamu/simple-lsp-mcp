@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 20 {
+	if len(ds) != 21 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}
@@ -38,12 +38,24 @@ func TestDiscoveryToolDescriptionsGuideCodeInvestigation(t *testing.T) {
 	}
 }
 
-func TestRemovedDuplicateToolIsNotRegistered(t *testing.T) {
-	for _, definition := range definitions() {
-		if definition.name == "list_workspace_symbols" {
-			t.Fatal("duplicate workspace search tool must not be registered")
+func TestWorkspaceListingIsDistinctFromSearch(t *testing.T) {
+	for _, d := range definitions() {
+		if d.name != "list_workspace_symbols" {
+			continue
 		}
+		if required, _ := d.schema["required"].([]string); len(required) != 0 {
+			t.Fatal("workspace listing must not require a query or language")
+		}
+		props := d.schema["properties"].(map[string]any)
+		if _, hasQuery := props["query"]; hasQuery {
+			t.Fatal("workspace listing must not accept query")
+		}
+		if _, hasCursor := props["cursor"]; !hasCursor {
+			t.Fatal("workspace listing needs pagination")
+		}
+		return
 	}
+	t.Fatal("workspace enumeration tool not registered")
 }
 
 func TestTargetToolsAcceptSymbolPath(t *testing.T) {

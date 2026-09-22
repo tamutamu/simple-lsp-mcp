@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,6 +81,23 @@ func TestRealLanguageServers(t *testing.T) {
 			src, _ := symbol["source"].(string)
 			if id == "" || !strings.Contains(src, tc.original) {
 				t.Fatalf("symbol source = %#v", symbol)
+			}
+			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{})
+			if err != nil {
+				t.Fatalf("real workspace enumeration: %v", err)
+			}
+			list, ok := listed["symbols"].([]core.SymbolSummary)
+			if !ok || !listed["meta"].(core.Meta).Complete {
+				t.Fatalf("unexpected workspace enumeration: %#v", listed)
+			}
+			foundAdd := false
+			for _, item := range list {
+				if item.Name == "Add" && item.Path == tc.filename && item.SymbolPath != "" {
+					foundAdd = true
+				}
+			}
+			if !foundAdd {
+				t.Fatalf("workspace enumeration missed Add: %#v", listed)
 			}
 			modified := strings.Replace(tc.source, tc.original, tc.changed, 1)
 			if err := os.WriteFile(filepath.Join(root, tc.filename), []byte(modified), 0600); err != nil {
@@ -243,4 +261,111 @@ func TestRealGoSemanticSlice(t *testing.T) {
 		}
 	}
 	t.Fatalf("semantic slice omitted reference-backed test file: %#v", slice)
+}
+
+// TestRealWorkspaceEnumeration verifies that listing works without a name query,
+// includes multiple module roots, and resumes after a symbol-level page break.
+func TestRealWorkspaceEnumeration(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") != "1" && os.Getenv("SIMPLE_LSP_REAL_LSP") != "go" {
+		t.Skip("requires real gopls")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for name, source := range map[string]string{
+		"a": "package a\nfunc Alpha() {}\nfunc Middle() {}\n",
+		"b": "package b\nfunc Omega() {}\n",
+	} {
+		dir := filepath.Join(root, "apps", name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/"+name+"\n\ngo 1.26.0\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".go"), []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Dependency trees are not part of the source inventory.
+	ignored := filepath.Join(root, "node_modules")
+	if err := os.MkdirAll(ignored, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ignored, "ignore.go"), []byte("package ignored\nfunc MustNotAppear() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(ws, config.Runtime{Workspace: root, MaxResults: 100, RequestTimeout: 30 * time.Second, Servers: map[string][]config.Server{
+		"go": {{Command: "gopls", Directory: "apps/a"}, {Command: "gopls", Directory: "apps/b"}},
+	}})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		e.Sessions.Shutdown(ctx)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	seen := map[string]string{}
+	cursor := ""
+	for iteration := 0; iteration < 12; iteration++ {
+		in := map[string]any{"limit": 1}
+		if cursor != "" {
+			in["cursor"] = cursor
+		}
+		page, err := e.ListWorkspaceSymbols(ctx, in)
+		if err != nil {
+			t.Fatalf("list page %d: %v", iteration, err)
+		}
+		symbols, ok := page["symbols"].([]core.SymbolSummary)
+		if !ok || len(symbols) > 1 {
+			t.Fatalf("invalid page: %#v", page)
+		}
+		for _, symbol := range symbols {
+			if symbol.Name == "MustNotAppear" || symbol.SymbolPath == "" || symbol.SymbolID == "" {
+				t.Fatalf("incorrect symbol: %#v", symbol)
+			}
+			if _, duplicate := seen[symbol.Name]; duplicate {
+				t.Fatalf("repeated symbol on subsequent page: %s", symbol.Name)
+			}
+			seen[symbol.Name] = symbol.Path
+			if _, err := e.GetSymbol(ctx, map[string]any{"symbol_id": symbol.SymbolID}); err != nil {
+				t.Fatalf("listed symbol cannot be retrieved: %v", err)
+			}
+		}
+		next, more := page["next_cursor"].(string)
+		meta := page["meta"].(core.Meta)
+		if !more {
+			if !meta.Complete || meta.Truncated {
+				t.Fatalf("final page meta=%#v", meta)
+			}
+			break
+		}
+		if meta.Complete || !meta.Truncated {
+			t.Fatalf("continuation page meta=%#v", meta)
+		}
+		cursor = next
+		if iteration == 11 {
+			t.Fatal("listing never terminated")
+		}
+	}
+	if seen["Alpha"] != "apps/a/a.go" || seen["Middle"] != "apps/a/a.go" || seen["Omega"] != "apps/b/b.go" {
+		t.Fatalf("workspace enumeration missed symbols: %#v", seen)
+	}
+	first, err := e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 1, "language": "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "apps/a/a.go"), []byte("package a\nfunc Alpha() {}\nfunc Middle() {}\nfunc Later() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 1, "language": "go", "cursor": first["next_cursor"]})
+	var appErr *core.AppError
+	if !errors.As(err, &appErr) || appErr.Code != core.InvalidArgument {
+		t.Fatalf("stale in-file cursor accepted: %v", err)
+	}
 }

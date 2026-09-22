@@ -45,6 +45,9 @@ func definitions() []definition {
 		{"search_symbols", "Use first to find a code symbol by name before any shell search. query must be non-empty; language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
+		{"list_workspace_symbols", "Enumerate all source symbols across configured languages without a name query. Uses per-file LSP document symbols and returns bounded pages; follow next_cursor until absent. Optional language and kinds filter the list.", objSchema(props("language", "kinds", "limit", "cursor")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.ListWorkspaceSymbols(c, i)
+		}},
 		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file; language is inferred from its extension unless explicitly supplied.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},
@@ -115,6 +118,7 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 func allProperties() map[string]any {
 	return map[string]any{
 		"query":                   describe(stringSchema(), "Non-empty substring or fuzzy name to search for."),
+		"cursor":                  describe(stringSchema(), "Pass next_cursor from a previous list_workspace_symbols response to continue enumerating. Restart without cursor if the workspace changes."),
 		"path":                    describe(stringSchema(), "File path relative to the workspace root."),
 		"symbol_id":               describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
 		"symbol_path":             describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),

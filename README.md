@@ -231,6 +231,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
+| `list_workspace_symbols` | Enumerate all configured source symbols, page by page (no name required) | None |
 | `get_document_symbols` | Get hierarchical symbols for one file | `path` |
 | `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
 | `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
@@ -251,7 +252,9 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
 | `onboard` | Scan workspace and generate configuration | None |
 
-`search_symbols` requires a non-empty `query` because the LSP `workspace/symbol` request searches by name; it does not list every workspace symbol. Use `get_document_symbols` to inspect the complete symbol hierarchy of a specific file.
+`search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
+
+To enumerate, call `list_workspace_symbols(limit=100)` and repeat with `cursor=<next_cursor>` until `next_cursor` is absent. Optional `language` and `kinds` filter the results; without `language`, all configured language profiles are included. Each call visits at most 32 files and returns at most 100 symbols, including nested symbols, with paths, ranges, and reusable `symbol_id`/`symbol_path` values. `meta.complete=false` and `meta.truncated=true` mean more pages remain, not a failed search. A page may contain no symbols when files have none; continue while `next_cursor` exists. `.git`, dependency, cache, and generated-output directories (for example `node_modules`, `dist`, `build`) and symlinks are excluded. This is a live traversal, not a snapshot: restart without a cursor if the workspace changes during pagination. Errors are returned explicitly rather than silently skipping failed LSP requests.
 
 ### Finding a symbol by name
 

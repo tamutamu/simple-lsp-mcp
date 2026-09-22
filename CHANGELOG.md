@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Restore `list_workspace_symbols` as a real, paginated, query-free enumeration of configured source files via per-document LSP symbols (including nested symbols).
 - `simple-lsp-mcp doctor` for configuration/executable checks and opt-in real-LSP probing; `setup claude|codex` for preview-first MCP registration.
 - Real `gopls`, TypeScript Language Server, and Pyright integration tests in CI.
 - Type-definition locations and reference-backed test-file candidates in `get_semantic_slice`.
@@ -25,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove `simple-lsp-bench` and the unvalidated agent-evaluation harness; neither established real coding-task benefits. Keep focused real-LSP integration tests instead.
 - Remove the obsolete Codex smoke-test script and its unused fixtures.
-- Remove `list_workspace_symbols`, an exact duplicate of `search_symbols`; clients should call `search_symbols` instead (breaking tool-name change).
 
 
 ## [0.7.1] - 2026-09-12
