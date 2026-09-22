@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove the misleading `estimated_tokens` response field and `max_tokens` input; use an explicitly serialized-JSON `max_bytes` limit instead.
 - Search all configured LSP instances in monorepos, exhaust up to 128 candidate files, and fail with `INCOMPLETE_SEARCH` rather than presenting partial searches as complete.
 - Clarify source-code read-only behavior and the explicitly opt-in configuration writes from onboarding/setup.
+- Pin TypeScript 6 for the TypeScript Language Server in CI and installation docs; the newer TypeScript 7 package does not provide its expected `tsserver.js`.
 
 ### Removed
 

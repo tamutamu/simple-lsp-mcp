@@ -138,7 +138,7 @@ Install and configure only the LSP servers you need. Each server starts lazily, 
 | Language | LSP server | Example installation |
 | --- | --- | --- |
 | Python | `pyright-langserver` | `npm install -g pyright` |
-| TypeScript / JavaScript | `typescript-language-server` | `npm install -g typescript typescript-language-server` |
+| TypeScript / JavaScript | `typescript-language-server` | `npm install -g typescript@6 typescript-language-server` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | HTML / CSS | `vscode-html-language-server`, `vscode-css-language-server` | `npm install -g vscode-langservers-extracted` |
 
