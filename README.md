@@ -7,16 +7,16 @@
 
 **Stop making coding agents grep your whole repository.**
 
-`simple-lsp-mcp` turns the LSP servers you already use into **precise, token-efficient semantic context** for Claude Code, Codex, and other MCP clients.
+`simple-lsp-mcp` turns the LSP servers you already use into **precise, bounded semantic context** for Claude Code, Codex, and other MCP clients.
 
 Instead of making an agent search strings, read whole files, and stitch relationships together itself, it can ask one semantic question and get a bounded answer from the language server:
 
 ```text
 ❌ grep → read → grep → read → infer relationships
-✅ get_semantic_slice("UserService/createUser", max_tokens=6000)
+✅ get_semantic_slice("UserService/createUser", max_bytes=24576)
 ```
 
-`get_semantic_slice` returns the root source, the source of code it calls, compact callers, and implementations under a strict depth/node/token budget. For a shallower view, `get_symbol_context` returns source + callers + callees + references + implementations in one call.
+`get_semantic_slice` returns root and callee source, type-definition locations, compact callers and implementations, and test-file candidates backed by LSP references under a depth/node/serialized-JSON-byte budget. For a shallower view, `get_symbol_context` returns source + callers + callees + references + implementations in one call.
 
 ## ⭐ Flagship: `get_semantic_slice`
 
@@ -25,25 +25,26 @@ Instead of making an agent search strings, read whole files, and stitch relation
 ```text
 get_semantic_slice(
   symbol_path="UserService/createUser",
-  max_tokens=6000,
+  max_bytes=24576,
   depth=2
 )
 
 → root source
 → direct + transitive callee source
 → compact callers
-→ implementations
-→ bounded by token, depth, and node budgets
+→ type definitions + implementations
+→ test-file candidates supported by reference locations
+→ bounded by JSON bytes, depth, and node counts
 ```
 
 Instead of making the agent perform several navigation calls and assemble the relationships itself, `get_semantic_slice` performs that semantic traversal inside the MCP server and returns one bounded result. The goal is simple: **fewer tool calls, less irrelevant code, more room for reasoning.**
 
 The project stays deliberately narrow:
 
-- **Read-only.** It understands code; it never edits it.
+- **Source-code read-only.** Navigation tools never edit source files. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
 - **No hidden index or embeddings.** Answers come live from your local LSP server.
 - **No external indexing service.** The server reads your workspace locally and only returns requested results to your configured MCP client.
-- **Token-budgeted context.** High-level tools bound how much code is returned.
+- **Byte-budgeted context.** High-level tools bound how much code is returned.
 - **Language inference.** For most target-based tools, `language` can be omitted; it is inferred from `symbol_id`, file extension, or configured LSP profiles.
 - **Lazy.** A language server starts only when a request needs it.
 
@@ -56,7 +57,7 @@ Coding agents are very good at reasoning about code once they have the right con
 - `find_symbol` — resolve a human-readable symbol without first knowing its file or position.
 - `get_symbol_outline` — inspect structure without returning source text.
 - `get_symbol_context` — source, callers, callees, references, and implementations in one call.
-- `get_semantic_slice` — gather the minimum useful source neighborhood under a token budget.
+- `get_semantic_slice` — gather the minimum useful source neighborhood under a byte budget.
 - `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
 
 That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding task**.
@@ -164,6 +165,20 @@ go build -o simple-lsp-mcp ./cmd/simple-lsp-mcp
 
 Place the resulting executable on the MCP client's `PATH`, or specify its absolute path as the configured `command`.
 
+## One-command setup and diagnostics
+
+Install the binary and use the clients' own MCP registration commands without manually editing JSON or TOML:
+
+```sh
+simple-lsp-mcp doctor --workspace .
+simple-lsp-mcp doctor --workspace . --probe internal/tools/semantic.go
+simple-lsp-mcp setup claude           # preview only
+simple-lsp-mcp setup claude --apply   # explicitly register
+simple-lsp-mcp setup codex --apply
+```
+
+`doctor` reads the existing `.simple-lsp.yaml` and reports missing executables. It never creates the configuration; use the `onboard` MCP tool when one is needed. `--probe` performs an actual LSP document-symbol request. `setup` defaults to a preview, does not install software, and refuses to silently overwrite an existing registration. `--apply` modifies only the selected MCP client's configuration through that client's CLI.
+
 ## Codex configuration
 
 Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` or an absolute path to the built executable. `--workspace` is optional and defaults to the process current working directory.
@@ -233,7 +248,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
 | `get_symbol_outline` | List a symbol's children or a file's top-level symbols without source | target or `path` |
 | `get_symbol_context` | Source, callers, callees, references, and implementations in one call | target |
-| `get_semantic_slice` | Token-budgeted root + dependency source + compact dependents | target |
+| `get_semantic_slice` | Byte-bounded source, types, references-backed test candidates, callers and implementations | target |
 | `get_definition` | Go to a definition | target |
 | `find_references` | Get reference locations | target |
 | `find_implementations` | Get implementation locations | target |
@@ -256,6 +271,8 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 
 A `symbol_path` reflects whatever shape the language server's own `documentSymbol` response has — it is never inferred or restructured. Methods commonly nest under their type (`UserService/createUser`), but some language servers report them as one flat, already-qualified name instead (for example Go's `gopls`, which reports `(*UserService).CreateUser` as a single segment). Call `get_symbol_outline` or `get_document_symbols` first if you are unsure which form a given server uses.
 
+When no file is specified, the server searches every configured LSP instance for the selected language and inspects every server-returned candidate up to a 128-file safety limit. If the lookup cannot finish, it raises `INCOMPLETE_SEARCH` rather than reporting a false unique result or false not-found. Supply `path` to narrow an incomplete search. Completeness refers to the LSP-returned candidate set: language-server indexes may themselves omit unindexed files.
+
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
 
 ## Context-efficiency benchmark
@@ -267,10 +284,10 @@ go run ./cmd/simple-lsp-bench \
   --workspace . \
   --symbol 'UserService/createUser' \
   --depth 2 \
-  --max-tokens 6000
+  --max-bytes 24576
 ```
 
-It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, serialized bytes, and an approximate response-token count. See [docs/benchmark.md](docs/benchmark.md) for methodology and publishing guidance.
+It compares five separate navigation calls with `get_symbol_context` and `get_semantic_slice`, reporting agent-visible tool calls, elapsed time, and serialized JSON bytes. See [docs/benchmark.md](docs/benchmark.md) for methodology and [docs/agent-evaluation.md](docs/agent-evaluation.md) for task-success comparisons.
 
 ## Server options
 

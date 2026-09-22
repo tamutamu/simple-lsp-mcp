@@ -11,7 +11,7 @@ go run ./cmd/simple-lsp-bench \
   --workspace . \
   --symbol 'UserService/createUser' \
   --depth 2 \
-  --max-tokens 6000
+  --max-bytes 24576
 ```
 
 If the symbol name is ambiguous, add `--path`. `--language` is optional and should normally be unnecessary.
@@ -22,9 +22,9 @@ The command compares three approaches on the same target:
 | --- | ---: | --- |
 | `separate_navigation_calls` | 5 | symbol/source + callers + callees + references + implementations |
 | `get_symbol_context` | 1 | the same neighborhood through one aggregate tool |
-| `get_semantic_slice` | 1 | root source + bounded callee source + compact dependents + implementations |
+| `get_semantic_slice` | 1 | root source + bounded callee source + type definitions + reference-backed test candidates + compact dependents + implementations |
 
-It reports elapsed time, serialized response bytes, and an approximate token count (`JSON bytes / 4`). The token estimate is for relative comparison only; it is not a billing-token measurement.
+It reports elapsed time and serialized response bytes. `max_bytes` is a strict JSON byte cap, not a token estimate.
 
 ## Methodology notes
 
@@ -33,3 +33,7 @@ It reports elapsed time, serialized response bytes, and an approximate token cou
 - Prefer a symbol with non-trivial callers and callees; tiny leaf functions are not representative.
 - Do not compare only latency. A single aggregate call may do several LSP round trips internally; the primary metrics are agent-visible calls and returned context size.
 - Keep raw output when publishing benchmark claims so results are reproducible.
+
+## Evaluation of actual coding outcomes
+
+This microbenchmark reports tool calls, latency and JSON bytes, **not** successful changes or proof that an agent uses fewer model tokens. For a controlled baseline-vs-MCP coding evaluation, follow [agent-evaluation.md](agent-evaluation.md). Never publish numbers without the repository revision, language-server versions and raw measurements.

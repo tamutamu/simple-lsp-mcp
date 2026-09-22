@@ -66,8 +66,7 @@ languages table in `README.md`.
 These are deliberate. A pull request that breaks one of them will be asked to
 change, so it is worth knowing them up front:
 
-- **Read-only.** The server never edits files and never executes shell commands
-  on a tool's behalf. `command` and `args` are passed directly to the process
+- **Read-only source navigation.** Navigation never edits source or executes shell commands on a tool's behalf. The explicit `onboard` tool is allowed to write `.simple-lsp.yaml`. `command` and `args` are passed directly to the process
   launcher, never through a shell.
 - **Symbol-first.** No text search, no grep fallback, no persistent source
   index. If the LSP server cannot answer it, the tool returns an error rather

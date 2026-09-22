@@ -14,24 +14,23 @@ import (
 )
 
 type measurement struct {
-	Name            string `json:"name"`
-	ToolCalls       int    `json:"tool_calls"`
-	ElapsedMS       int64  `json:"elapsed_ms"`
-	ResponseBytes   int    `json:"response_bytes"`
-	EstimatedTokens int    `json:"estimated_tokens"`
-	Error           string `json:"error,omitempty"`
+	Name          string `json:"name"`
+	ToolCalls     int    `json:"tool_calls"`
+	ElapsedMS     int64  `json:"elapsed_ms"`
+	ResponseBytes int    `json:"response_bytes"`
+	Error         string `json:"error,omitempty"`
 }
 
 func main() {
 	var root, symbolPath, path, language string
-	var depth, maxTokens int
+	var depth, maxBytes int
 	var timeout time.Duration
 	flag.StringVar(&root, "workspace", ".", "workspace root")
 	flag.StringVar(&symbolPath, "symbol", "", "symbol_path to benchmark")
 	flag.StringVar(&path, "path", "", "optional workspace-relative source path")
 	flag.StringVar(&language, "language", "", "optional language override")
 	flag.IntVar(&depth, "depth", 1, "semantic-slice dependency depth")
-	flag.IntVar(&maxTokens, "max-tokens", 6000, "semantic-slice approximate token budget")
+	flag.IntVar(&maxBytes, "max-bytes", 24576, "semantic-slice maximum serialized JSON bytes")
 	flag.DurationVar(&timeout, "timeout", 90*time.Second, "total benchmark timeout")
 	flag.Parse()
 	if symbolPath == "" {
@@ -72,14 +71,13 @@ func main() {
 		measureOne("get_semantic_slice", ctx, func() (map[string]any, error) {
 			in := copyTarget(target)
 			in["depth"] = depth
-			in["max_tokens"] = maxTokens
+			in["max_bytes"] = maxBytes
 			return engine.SemanticSlice(ctx, in)
 		}),
 	}
 	out := map[string]any{
 		"target":  target,
 		"results": results,
-		"note":    "estimated_tokens is response JSON bytes / 4; use it for relative comparison, not billing",
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -135,7 +133,7 @@ func measureOne(name string, ctx context.Context, call func() (map[string]any, e
 
 func measured(name string, calls int, start time.Time, value any) measurement {
 	b, _ := json.Marshal(value)
-	return measurement{Name: name, ToolCalls: calls, ElapsedMS: time.Since(start).Milliseconds(), ResponseBytes: len(b), EstimatedTokens: (len(b) + 3) / 4}
+	return measurement{Name: name, ToolCalls: calls, ElapsedMS: time.Since(start).Milliseconds(), ResponseBytes: len(b)}
 }
 
 func failed(name string, calls int, start time.Time, err error) measurement {

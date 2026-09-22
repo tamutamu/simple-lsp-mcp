@@ -20,7 +20,7 @@ steps to reproduce. You can expect an initial response within 7 days.
 following properties are intentional and are treated as security boundaries —
 a bug that breaks one of them is a vulnerability, not a feature request:
 
-- **No writes.** No tool modifies, creates, or deletes a file.
+- **Source navigation does not write.** Navigation, analysis and diagnostic tools never modify source files. `onboard` is an explicit configuration-generation exception that creates or overwrites `.simple-lsp.yaml` only when requested. The `setup` CLI can change Claude/Codex registration only with `--apply`.
 - **No shell.** `command` and `args` from `.simple-lsp.yaml` are passed directly
   to the process launcher. There is no shell interpretation, so `~`,
   environment-variable expansion, pipes, globbing, and shell argument splitting
@@ -30,8 +30,7 @@ a bug that breaks one of them is a vulnerability, not a feature request:
   is under the user's control in the workspace.
 - **Workspace confinement.** Paths in tool arguments are resolved relative to
   the workspace root. Escaping the workspace root is a bug.
-- **No network access.** The server speaks stdio to the MCP client and stdio to
-  local language servers. It makes no outbound network requests.
+- **No direct network requests by navigation tools.** The server speaks stdio to the MCP client and local language servers. Configured child processes (for example `npx`) may independently download software or access the network; review `.simple-lsp.yaml` first.
 
 ## What is trusted
 

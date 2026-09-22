@@ -63,7 +63,7 @@ func definitions() []definition {
 		{"get_symbol_context", "Get everything about one symbol in a single call: its source, callers, callees, references, and implementations. Prefer this over separate navigation calls. Target it with symbol_path, symbol_id, or path+line+column. Use include to narrow sections. language is optional and inferred when possible.", objSchema(props("symbol_path", "symbol_id", "path", "line", "column", "language", "include", "limit", "max_source_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SymbolContext(c, i)
 		}},
-		{"get_semantic_slice", "Build a token-budgeted semantic code slice for one symbol: root source, callee source across a bounded depth, compact callers, and implementations. Use this when an agent needs enough code to understand or change a symbol in one call. language is optional and inferred when possible.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_tokens")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_semantic_slice", "Build a byte-budgeted semantic code slice for one symbol: root source, bounded callee source, type definitions, test-file candidates proven by references, callers, and implementations. Use this when an agent needs enough code to understand or change a symbol in one call. language is optional and inferred when possible.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_bytes")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SemanticSlice(c, i)
 		}},
 		{"get_definition", "Get definition locations. language is optional and inferred when possible.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
@@ -132,7 +132,7 @@ func allProperties() map[string]any {
 		"overwrite":               describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
 		"workspace":               describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
 		"max_source_lines":        describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
-		"max_tokens":              describe(positiveIntegerSchema(), "Approximate maximum output-token budget for get_semantic_slice. Defaults to 6000; valid range 512-20000."),
+		"max_bytes":               describe(positiveIntegerSchema(), "Maximum serialized JSON response size in bytes for get_semantic_slice. Defaults to 24576; valid range 2048-81920. This is not a token count."),
 		"depth":                   describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
 		"include":                 describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
 		"include_references":      describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),

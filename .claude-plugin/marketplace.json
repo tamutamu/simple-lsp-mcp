@@ -9,7 +9,7 @@
     {
       "name": "simple-lsp-mcp",
       "source": "./",
-      "description": "Read-only semantic context for coding agents via local LSP servers — token-budgeted code slices, symbol context, impact analysis, definitions, references, and hierarchies.",
+      "description": "Read-only semantic context for coding agents via local LSP servers — byte-bounded code slices, symbol context, impact analysis, definitions, references, and hierarchies.",
       "version": "0.7.1",
       "author": {
         "name": "tamutamu",

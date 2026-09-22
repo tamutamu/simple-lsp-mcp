@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -301,38 +303,57 @@ func (m *Manager) Configured(key string) bool {
 	return len(m.servers[key]) > 0
 }
 
+// ForAll returns every configured server for a language, including separate
+// monorepo roots. Workspace-wide symbol lookups must not query only the
+// default/first server and silently omit the other projects.
+func (m *Manager) ForAll(key string) ([]*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	servers := m.servers[key]
+	if len(servers) == 0 {
+		return nil, core.NewError(core.UnsupportedLanguage, "no language server profile")
+	}
+	sessions := make([]*Session, 0, len(servers))
+	for i, server := range servers {
+		sessions = append(sessions, m.forServer(key, server, i))
+	}
+	return sessions, nil
+}
+
 func (m *Manager) ForPath(key string, targetPath string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	serverList, ok := m.servers[key]
-	if !ok || len(serverList) == 0 {
+	servers := m.servers[key]
+	if len(servers) == 0 {
 		return nil, core.NewError(core.UnsupportedLanguage, "no language server profile")
 	}
-
-	srv := config.SelectServer(serverList, targetPath)
-
-	cacheKey := key
-	if srv.Directory != "" && srv.Directory != "." {
-		cacheKey = key + ":" + srv.Directory
-	}
-
-	if s := m.sessions[cacheKey]; s != nil {
-		return s, nil
-	}
-
-	sessionRoot := m.root
-	if srv.Directory != "" && srv.Directory != "." {
-		if filepath.IsAbs(srv.Directory) {
-			sessionRoot = srv.Directory
-		} else {
-			sessionRoot = filepath.Join(m.root, srv.Directory)
+	chosen := config.SelectServer(servers, targetPath)
+	for i, server := range servers {
+		if reflect.DeepEqual(server, chosen) {
+			return m.forServer(key, server, i), nil
 		}
 	}
+	return nil, core.NewError(core.InternalError, "selected server is not configured")
+}
 
-	s := New(key, sessionRoot, srv)
+// forServer must be called with m.mu held. An index is part of the key so
+// profiles with two servers under one directory never share the wrong LSP.
+func (m *Manager) forServer(key string, srv config.Server, index int) *Session {
+	cacheKey := fmt.Sprintf("%s:%d:%s", key, index, srv.Directory)
+	if s := m.sessions[cacheKey]; s != nil {
+		return s
+	}
+	root := m.root
+	if srv.Directory != "" && srv.Directory != "." {
+		if filepath.IsAbs(srv.Directory) {
+			root = srv.Directory
+		} else {
+			root = filepath.Join(m.root, srv.Directory)
+		}
+	}
+	s := New(key, root, srv)
 	m.sessions[cacheKey] = s
-	return s, nil
+	return s
 }
 
 func (m *Manager) Shutdown(ctx context.Context) {
