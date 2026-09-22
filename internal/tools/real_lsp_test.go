@@ -49,8 +49,13 @@ func TestRealLanguageServers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			server := config.Server{Command: tc.binary, Args: tc.args, Directory: "."}
+			// The CI fixture is outside node_modules; use its installed TypeScript.
+			if tc.name == "typescript" && os.Getenv("SIMPLE_LSP_TSSERVER_PATH") != "" {
+				server.InitializationOptions = map[string]any{"tsserver": map[string]any{"path": os.Getenv("SIMPLE_LSP_TSSERVER_PATH")}}
+			}
 			cfg := config.Runtime{Workspace: root, RequestTimeout: 30 * time.Second, MaxResults: 100, Servers: map[string][]config.Server{
-				tc.profile: {{Command: tc.binary, Args: tc.args, Directory: "."}},
+				tc.profile: {server},
 			}}
 			engine := New(ws, cfg)
 			t.Cleanup(func() {

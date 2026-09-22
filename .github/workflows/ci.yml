@@ -17,7 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
       - name: Install TypeScript and Python language servers
-        run: npm install -g typescript typescript-language-server pyright
+        run: |
+          npm install -g typescript typescript-language-server pyright
+          echo "SIMPLE_LSP_TSSERVER_PATH=$(npm root -g)/typescript/lib/tsserver.js" >> "$GITHUB_ENV"
       - name: Real LSP integration tests (Go, TypeScript, Python)
         env:
           SIMPLE_LSP_REAL_LSP: '1'
