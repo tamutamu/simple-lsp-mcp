@@ -90,6 +90,7 @@ const (
 	MethodNotSupported        ErrorCode = "METHOD_NOT_SUPPORTED"
 	SymbolNotFound            ErrorCode = "SYMBOL_NOT_FOUND"
 	AmbiguousSymbol           ErrorCode = "AMBIGUOUS_SYMBOL"
+	IncompleteSearch          ErrorCode = "INCOMPLETE_SEARCH"
 	StaleSymbol               ErrorCode = "STALE_SYMBOL"
 	RequestTimeout            ErrorCode = "REQUEST_TIMEOUT"
 	LSPServerCrashed          ErrorCode = "LSP_SERVER_CRASHED"

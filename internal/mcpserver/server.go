@@ -45,8 +45,8 @@ func definitions() []definition {
 		{"search_symbols", "Use first to find a code symbol by name before any shell search. query must be non-empty; language is required and selects the LSP server.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"list_workspace_symbols", "List workspace symbols matching a non-empty query. language is required and selects the LSP server; use get_document_symbols for a file's complete symbol hierarchy.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.SearchSymbols(c, i)
+		{"list_workspace_symbols", "Enumerate all source symbols across configured languages without a name query. Uses per-file LSP document symbols and returns bounded pages; follow next_cursor until absent. Optional language and kinds filter the list.", objSchema(props("language", "kinds", "limit", "cursor")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.ListWorkspaceSymbols(c, i)
 		}},
 		{"get_document_symbols", "Get hierarchical document symbols; prefer it over reading source text. path identifies the file; language is inferred from its extension unless explicitly supplied.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
@@ -63,7 +63,7 @@ func definitions() []definition {
 		{"get_symbol_context", "Get everything about one symbol in a single call: its source, callers, callees, references, and implementations. Prefer this over separate navigation calls. Target it with symbol_path, symbol_id, or path+line+column. Use include to narrow sections. language is optional and inferred when possible.", objSchema(props("symbol_path", "symbol_id", "path", "line", "column", "language", "include", "limit", "max_source_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SymbolContext(c, i)
 		}},
-		{"get_semantic_slice", "Build a token-budgeted semantic code slice for one symbol: root source, callee source across a bounded depth, compact callers, and implementations. Use this when an agent needs enough code to understand or change a symbol in one call. language is optional and inferred when possible.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_tokens")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_semantic_slice", "Build a byte-budgeted semantic code slice for one symbol: root source, bounded callee source, type definitions, test-file candidates proven by references, callers, and implementations. Use this when an agent needs enough code to understand or change a symbol in one call. language is optional and inferred when possible.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_bytes")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SemanticSlice(c, i)
 		}},
 		{"get_definition", "Get definition locations. language is optional and inferred when possible.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
@@ -118,6 +118,7 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 func allProperties() map[string]any {
 	return map[string]any{
 		"query":                   describe(stringSchema(), "Non-empty substring or fuzzy name to search for."),
+		"cursor":                  describe(stringSchema(), "Pass next_cursor from a previous list_workspace_symbols response to continue enumerating. Restart without cursor if the workspace changes."),
 		"path":                    describe(stringSchema(), "File path relative to the workspace root."),
 		"symbol_id":               describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
 		"symbol_path":             describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
@@ -132,7 +133,7 @@ func allProperties() map[string]any {
 		"overwrite":               describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
 		"workspace":               describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
 		"max_source_lines":        describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
-		"max_tokens":              describe(positiveIntegerSchema(), "Approximate maximum output-token budget for get_semantic_slice. Defaults to 6000; valid range 512-20000."),
+		"max_bytes":               describe(positiveIntegerSchema(), "Maximum serialized JSON response size in bytes for get_semantic_slice. Defaults to 24576; valid range 2048-81920. This is not a token count."),
 		"depth":                   describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
 		"include":                 describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
 		"include_references":      describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),

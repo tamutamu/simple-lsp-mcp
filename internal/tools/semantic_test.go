@@ -2,20 +2,23 @@ package tools
 
 import "testing"
 
-func TestSemanticTokenLimitDefaultsAndValidates(t *testing.T) {
-	got, err := semanticTokenLimit(map[string]any{})
-	if err != nil || got != semanticDefaultTokens {
-		t.Fatalf("default max_tokens = %d, %v", got, err)
+func TestSemanticByteLimitDefaultsAndValidates(t *testing.T) {
+	if _, err := semanticByteLimit(map[string]any{"max_tokens": 6000}); err == nil {
+		t.Fatal("legacy max_tokens should be rejected, not silently ignored")
 	}
-	got, err = semanticTokenLimit(map[string]any{"max_tokens": float64(1200)})
-	if err != nil || got != 1200 {
-		t.Fatalf("explicit max_tokens = %d, %v", got, err)
+	got, err := semanticByteLimit(map[string]any{})
+	if err != nil || got != semanticDefaultBytes {
+		t.Fatalf("default max_bytes = %d, %v", got, err)
 	}
-	if _, err := semanticTokenLimit(map[string]any{"max_tokens": float64(semanticMinTokens - 1)}); err == nil {
-		t.Fatal("expected max_tokens below minimum to fail")
+	got, err = semanticByteLimit(map[string]any{"max_bytes": float64(12000)})
+	if err != nil || got != 12000 {
+		t.Fatalf("explicit max_bytes = %d, %v", got, err)
 	}
-	if _, err := semanticTokenLimit(map[string]any{"max_tokens": float64(semanticMaxTokens + 1)}); err == nil {
-		t.Fatal("expected max_tokens above hard cap to fail")
+	if _, err := semanticByteLimit(map[string]any{"max_bytes": float64(semanticMinBytes - 1)}); err == nil {
+		t.Fatal("expected max_bytes below minimum to fail")
+	}
+	if _, err := semanticByteLimit(map[string]any{"max_bytes": float64(semanticMaxBytes + 1)}); err == nil {
+		t.Fatal("expected max_bytes above hard cap to fail")
 	}
 }
 
@@ -43,12 +46,38 @@ func TestEnforceSemanticBudgetCompactsLargeSources(t *testing.T) {
 			map[string]any{"name": "a", "source": string(make([]byte, 5000))},
 		},
 		"dependents": []any{map[string]any{"name": "caller"}},
-		"meta":       map[string]any{"max_tokens": 512},
+		"meta":       map[string]any{"max_bytes": 2048},
 	}
-	if !enforceSemanticBudget(result, 512*4) {
+	if !enforceSemanticBudget(result, 2048) {
 		t.Fatal("expected result to be compacted")
 	}
-	if got := encodedSize(result); got > 512*4 {
+	if got := encodedSize(result); got > 2048 {
 		t.Fatalf("compacted result is %d bytes, exceeds budget", got)
+	}
+}
+
+func TestRelatedTestsRequiresLSPReference(t *testing.T) {
+	refs := []any{
+		map[string]any{"path": "internal/user/user_test.go", "lines": []int{12}},
+		map[string]any{"path": "internal/user/user.go", "lines": []int{4}},
+		map[string]any{"path": "src/user.spec.ts", "lines": []int{8}},
+	}
+	got := semanticRelatedTests(refs, 8)
+	if len(got) != 2 {
+		t.Fatalf("related tests = %#v", got)
+	}
+	if got[0].(map[string]any)["reason"] != "symbol_reference" {
+		t.Fatalf("missing provenance: %#v", got[0])
+	}
+	if semanticTestFile("src/application.ts") {
+		t.Fatal("ordinary source must not be a test")
+	}
+}
+
+func TestSemanticBudgetErrorsIfIdentityCannotFit(t *testing.T) {
+	oversized := map[string]any{"root": map[string]any{"symbol_path": string(make([]byte, 10000))}, "meta": map[string]any{"max_bytes": 2048}}
+	enforceSemanticBudget(oversized, 2048)
+	if encodedSize(oversized) <= 2048 {
+		t.Fatal("test identity is supposed to be oversized")
 	}
 }

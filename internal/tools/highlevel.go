@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
@@ -14,9 +16,9 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 )
 
-// maxProbeFiles bounds how many candidate files a workspace-wide
-// symbol_path search will open when no path narrows the search to one file.
-const maxProbeFiles = 8
+// maxProbeFiles prevents unbounded LSP fan-out. Searches exceeding it fail
+// explicitly rather than returning a false unique match or false not-found.
+const maxProbeFiles = 128
 
 // symbolLocation is one resolved symbol_path hit, holding everything needed
 // to target it exactly like a symbol_id or a path+line+column would be.
@@ -69,34 +71,65 @@ func (e *Engine) documentNodes(ctx context.Context, p language.Profile, path str
 // registered in the symbol registry: most of them will never be used, and
 // registering unused candidates would only grow the registry for nothing.
 func (e *Engine) candidateFiles(ctx context.Context, p language.Profile, leaf string) ([]string, error) {
-	s, err := e.Sessions.For(p.SessionKey)
-	if err != nil {
-		return nil, err
-	}
-	var raw []protocol.WorkspaceSymbol
-	callCtx, cancel := e.callContext(ctx)
-	err = s.Request(callCtx, "workspace/symbol", map[string]string{"query": leaf}, &raw)
-	cancel()
+	servers, err := e.Sessions.ForAll(p.SessionKey)
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
 	var files []string
-	for _, v := range raw {
-		path, err := normalize.URIPath(e.WS, v.Location.URI)
-		if err != nil || seen[path] {
-			continue
+	for _, s := range servers {
+		var raw []protocol.WorkspaceSymbol
+		callCtx, cancel := e.callContext(ctx)
+		err := s.Request(callCtx, "workspace/symbol", map[string]string{"query": leaf}, &raw)
+		cancel()
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, p.SessionKey+" workspace-symbol query failed; specify path to narrow the search", err)
 		}
-		seen[path] = true
-		files = append(files, path)
+		for _, v := range raw {
+			path, err := normalize.URIPath(e.WS, v.Location.URI)
+			if err != nil || seen[path] {
+				continue
+			}
+			seen[path] = true
+			files = append(files, path)
+		}
 	}
+	sort.Strings(files)
 	return files, nil
+}
+
+// scanCandidateFiles exhausts the server-returned candidate files, or fails
+// closed. A partial scan must never be mistaken for a unique symbol lookup.
+func scanCandidateFiles(ctx context.Context, files []string, scan func(string) ([]symbolLocation, error)) ([]symbolLocation, error) {
+	if len(files) > maxProbeFiles {
+		return nil, core.NewError(core.IncompleteSearch, fmt.Sprintf("%d candidate files exceed the %d-file search budget; provide path to narrow the query", len(files), maxProbeFiles))
+	}
+	var hits []symbolLocation
+	for _, f := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "symbol search was interrupted; provide path to narrow the query", err)
+		}
+		result, err := scan(f)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "failed to inspect candidate file "+f+"; provide path or retry", err)
+		}
+		hits = append(hits, result...)
+	}
+	return hits, nil
+}
+
+func (e *Engine) symbolSearchContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	total := e.Timeout * 4
+	if total <= 0 || total > time.Minute {
+		total = time.Minute
+	}
+	return context.WithTimeout(ctx, total)
 }
 
 // resolveSymbolPath finds every symbol matching symbolPath. When path is
 // set, it searches only that file (one LSP request). Otherwise it asks
 // workspace/symbol for candidate files by the path's leaf name and
-// searches each of them, up to maxProbeFiles.
+// searches each of them. When the bounded search cannot finish, it errors.
 func (e *Engine) resolveSymbolPath(ctx context.Context, p language.Profile, symbolPath, path string) ([]symbolLocation, []string, error) {
 	segments, anchored, err := parseSymbolPath(symbolPath)
 	if err != nil {
@@ -109,25 +142,25 @@ func (e *Engine) resolveSymbolPath(ctx context.Context, p language.Profile, symb
 		}
 		return locationsFor(p, s, d, matchNodes(nodes, segments, anchored)), nil, nil
 	}
+	searchCtx, cancel := e.symbolSearchContext(ctx)
+	defer cancel()
 	leaf := segments[len(segments)-1]
-	files, err := e.candidateFiles(ctx, p, leaf)
+	files, err := e.candidateFiles(searchCtx, p, leaf)
 	if err != nil {
 		return nil, nil, err
 	}
-	var warnings []string
-	if len(files) > maxProbeFiles {
-		warnings = append(warnings, fmt.Sprintf("more than %d files match %q; pass path to narrow the search", maxProbeFiles, leaf))
-		files = files[:maxProbeFiles]
-	}
-	var hits []symbolLocation
-	for _, f := range files {
-		s, d, nodes, err := e.documentNodes(ctx, p, f)
-		if err != nil {
-			continue
+	hits, err := scanCandidateFiles(searchCtx, files, func(f string) ([]symbolLocation, error) {
+		profile := p
+		if inferred, inferErr := language.FromPath(f); inferErr == nil && inferred.SessionKey == p.SessionKey {
+			profile = inferred
 		}
-		hits = append(hits, locationsFor(p, s, d, matchNodes(nodes, segments, anchored))...)
-	}
-	return hits, warnings, nil
+		s, d, nodes, err := e.documentNodes(searchCtx, profile, f)
+		if err != nil {
+			return nil, err
+		}
+		return locationsFor(profile, s, d, matchNodes(nodes, segments, anchored)), nil
+	})
+	return hits, nil, err
 }
 
 // resolveSymbolPathAcrossLanguages searches each configured LSP profile once
@@ -139,6 +172,8 @@ func (e *Engine) resolveSymbolPathAcrossLanguages(ctx context.Context, symbolPat
 	if err != nil {
 		return nil, nil, err
 	}
+	searchCtx, cancel := e.symbolSearchContext(ctx)
+	defer cancel()
 	leaf := segments[len(segments)-1]
 	seenSession := map[string]bool{}
 	seenLocation := map[string]bool{}
@@ -152,32 +187,31 @@ func (e *Engine) resolveSymbolPathAcrossLanguages(ctx context.Context, symbolPat
 		}
 		seenSession[base.SessionKey] = true
 		configured++
-		files, err := e.candidateFiles(ctx, base, leaf)
+		files, err := e.candidateFiles(searchCtx, base, leaf)
 		if err != nil {
-			warnings = append(warnings, base.SessionKey+": "+err.Error())
-			continue
+			return nil, warnings, core.WithCause(core.IncompleteSearch, "could not search "+base.SessionKey+"; supply language or path", err)
 		}
-		if len(files) > maxProbeFiles {
-			warnings = append(warnings, fmt.Sprintf("%s: more than %d files match %q; specify language or path to narrow the search", base.SessionKey, maxProbeFiles, leaf))
-			files = files[:maxProbeFiles]
-		}
-		for _, f := range files {
+		matches, err := scanCandidateFiles(searchCtx, files, func(f string) ([]symbolLocation, error) {
 			p := base
 			if inferred, inferErr := language.FromPath(f); inferErr == nil && inferred.SessionKey == base.SessionKey {
 				p = inferred
 			}
-			s, d, nodes, err := e.documentNodes(ctx, p, f)
+			s, d, nodes, err := e.documentNodes(searchCtx, p, f)
 			if err != nil {
+				return nil, err
+			}
+			return locationsFor(p, s, d, matchNodes(nodes, segments, anchored)), nil
+		})
+		if err != nil {
+			return nil, warnings, err
+		}
+		for _, hit := range matches {
+			key := relativeMust(e, hit.Document.Path) + "#" + fmt.Sprint(hit.Node.SelectionRange)
+			if seenLocation[key] {
 				continue
 			}
-			for _, hit := range locationsFor(p, s, d, matchNodes(nodes, segments, anchored)) {
-				key := relativeMust(e, hit.Document.Path) + "#" + fmt.Sprint(hit.Node.SelectionRange)
-				if seenLocation[key] {
-					continue
-				}
-				seenLocation[key] = true
-				hits = append(hits, hit)
-			}
+			seenLocation[key] = true
+			hits = append(hits, hit)
 		}
 	}
 	if configured == 0 {
@@ -575,6 +609,9 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		if r.ok {
 			out[r.name] = r.value
 		} else {
+			complete = false
+		}
+		if r.warning != "" {
 			warnings = append(warnings, r.warning)
 			complete = false
 		}
@@ -596,7 +633,7 @@ func (e *Engine) contextCalls(ctx context.Context, name string, subIn map[string
 	for _, c := range calls {
 		out = append(out, compactCall(c))
 	}
-	return out, true, ""
+	return out, true, contextMetaWarning(res, name)
 }
 
 // compactCall projects a call-hierarchy item down to symbol_id,
@@ -629,7 +666,7 @@ func (e *Engine) contextReferences(ctx context.Context, subIn map[string]any, li
 		return nil, false, "references: " + err.Error()
 	}
 	locs, _ := res["locations"].([]core.Location)
-	return groupReferences(locs), true, ""
+	return groupReferences(locs), true, contextMetaWarning(res, "references")
 }
 
 // groupReferences collapses a flat location list into one entry per file.
@@ -664,7 +701,14 @@ func (e *Engine) contextImplementations(ctx context.Context, subIn map[string]an
 		return nil, false, "implementations: " + err.Error()
 	}
 	locs, _ := res["locations"].([]core.Location)
-	return locs, true, ""
+	return locs, true, contextMetaWarning(res, "implementations")
+}
+
+func contextMetaWarning(res map[string]any, section string) string {
+	if meta, ok := res["meta"].(core.Meta); ok && meta.Truncated {
+		return section + ": result truncated by limit"
+	}
+	return ""
 }
 
 // withLimit copies a sub-call's target arguments and applies one section's limit.

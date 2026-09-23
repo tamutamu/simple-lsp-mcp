@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-23
+
+### Breaking changes
+
+- Replace `get_semantic_slice.max_tokens` with `max_bytes`; clients must update arguments to use a serialized-JSON byte limit.
+- `list_workspace_symbols` no longer accepts a name query: it now enumerates configured source symbols page by page. Use `search_symbols` for name-based searches, and follow `next_cursor` to continue listing.
+
+### Added
+
+- Restore `list_workspace_symbols` as a real, paginated, query-free enumeration of configured source files via per-document LSP symbols (including nested symbols).
+- `simple-lsp-mcp doctor` for configuration/executable checks and opt-in real-LSP probing; `setup claude|codex` for preview-first MCP registration.
+- Real `gopls`, TypeScript Language Server, and Pyright integration tests in CI.
+- Type-definition locations and reference-backed test-file candidates in `get_semantic_slice`.
+- A real-`gopls` semantic-content integration test.
+
+### Changed
+
+- Remove the misleading `estimated_tokens` response field and `max_tokens` input; use an explicitly serialized-JSON `max_bytes` limit instead.
+- Search all configured LSP instances in monorepos, exhaust up to 128 candidate files, and fail with `INCOMPLETE_SEARCH` rather than presenting partial searches as complete.
+- Clarify source-code read-only behavior and the explicitly opt-in configuration writes from onboarding/setup.
+- Pin TypeScript 6 for the TypeScript Language Server in CI and installation docs; the newer TypeScript 7 package does not provide its expected `tsserver.js`.
+
+### Removed
+
+- Remove `simple-lsp-bench` and the unvalidated agent-evaluation harness; neither established real coding-task benefits. Keep focused real-LSP integration tests instead.
+- Remove the obsolete Codex smoke-test script and its unused fixtures.
+
+
 ## [0.7.1] - 2026-09-12
 
 ### Fixed
@@ -110,7 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing symbol search, definitions, references, implementations, type
   definitions, declarations, call hierarchy, type hierarchy, and diagnostics.
 
-[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.3...v0.6.0

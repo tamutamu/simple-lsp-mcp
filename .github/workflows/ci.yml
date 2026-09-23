@@ -10,3 +10,18 @@ jobs:
       - run: go test ./...
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Install real language servers
+        run: |
+          go install golang.org/x/tools/gopls@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install TypeScript and Python language servers
+        run: |
+          npm install -g typescript@6 typescript-language-server pyright
+          test -f "$(npm root -g)/typescript/lib/tsserver.js"
+          echo "SIMPLE_LSP_TSSERVER_PATH=$(npm root -g)/typescript/lib/tsserver.js" >> "$GITHUB_ENV"
+      - name: Real LSP integration tests (Go, TypeScript, Python)
+        env:
+          SIMPLE_LSP_REAL_LSP: '1'
+        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration)$' -count=1 -v -timeout=6m

@@ -34,18 +34,18 @@ go vet ./...
 gofmt -l .          # must print nothing
 ```
 
-### Testing against a real client
+### Testing with actual language servers
 
-`testdata/codex-exec/` holds small Go, Python, TypeScript and web fixtures used
-to exercise the server end to end. `scripts/test-codex-exec.sh` drives them
-through Codex.
-
-To try a build in Claude Code without installing it globally:
+The opt-in integration tests use real LSP subprocesses instead of mocks.
+Install `gopls` to run the Go tests locally:
 
 ```sh
-go build -o /tmp/simple-lsp-mcp ./cmd/simple-lsp-mcp
-claude mcp add simple-lsp -- /tmp/simple-lsp-mcp
+SIMPLE_LSP_REAL_LSP=go go test ./internal/tools -run '^TestReal' -count=1 -v
 ```
+
+CI installs `gopls`, TypeScript Language Server, and Pyright and runs the full
+integration suite. For manual MCP client testing, install the binary and follow
+the [client setup instructions](README.md#one-command-setup-and-diagnostics).
 
 ## Adding a language
 
@@ -66,8 +66,7 @@ languages table in `README.md`.
 These are deliberate. A pull request that breaks one of them will be asked to
 change, so it is worth knowing them up front:
 
-- **Read-only.** The server never edits files and never executes shell commands
-  on a tool's behalf. `command` and `args` are passed directly to the process
+- **Read-only source navigation.** Navigation never edits source or executes shell commands on a tool's behalf. The explicit `onboard` tool is allowed to write `.simple-lsp.yaml`. `command` and `args` are passed directly to the process
   launcher, never through a shell.
 - **Symbol-first.** No text search, no grep fallback, no persistent source
   index. If the LSP server cannot answer it, the tool returns an error rather

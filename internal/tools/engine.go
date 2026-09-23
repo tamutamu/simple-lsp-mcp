@@ -4,7 +4,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -43,7 +45,9 @@ func New(ws *workspace.Workspace, cfg config.Runtime) *Engine {
 	}
 }
 
-// SearchSymbols delegates workspace symbol lookup to the selected LSP server.
+// SearchSymbols queries every configured LSP for the selected language, not
+// just the first monorepo root. Failure of one server is an incomplete search
+// and must not masquerade as a successful empty or unique result.
 func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
 	limit, err := e.limit(in)
 	if err != nil {
@@ -57,45 +61,55 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	s, err := e.Sessions.For(p.SessionKey)
+	servers, err := e.Sessions.ForAll(p.SessionKey)
 	if err != nil {
-		return e.workspaceSymbols(nil, p, false, true, []string{err.Error()}), nil
-	}
-
-	callCtx, cancel := e.callContext(ctx)
-	defer cancel()
-	var raw []protocol.WorkspaceSymbol
-	if err := s.Request(callCtx, "workspace/symbol", map[string]string{"query": query}, &raw); err != nil {
 		return nil, err
 	}
-
-	out := make([]core.SymbolSummary, 0, len(raw))
-	for _, candidate := range raw {
-		if !kindAllowed(normalize.Kind(candidate.Kind), in) {
-			continue
-		}
-		summary, err := e.symbolFromWorkspace(p, candidate, s)
+	seen := map[string]bool{}
+	all := make([]core.SymbolSummary, 0)
+	for _, server := range servers {
+		callCtx, cancel := e.callContext(ctx)
+		var raw []protocol.WorkspaceSymbol
+		err := server.Request(callCtx, "workspace/symbol", map[string]string{"query": query}, &raw)
+		cancel()
 		if err != nil {
-			continue
+			return nil, core.WithCause(core.IncompleteSearch, "workspace symbol query failed in "+p.SessionKey, err)
 		}
-		out = append(out, summary)
-		if len(out) >= limit {
-			return e.workspaceSymbols(out, p, true, false, nil), nil
+		for _, candidate := range raw {
+			if !kindAllowed(normalize.Kind(candidate.Kind), in) {
+				continue
+			}
+			// LSP workspace results can include standard-library and dependency
+			// symbols outside our workspace. They are intentionally out of scope.
+			if _, err := normalize.URIPath(e.WS, candidate.Location.URI); err != nil {
+				continue
+			}
+			summary, err := e.symbolFromWorkspace(p, candidate, server)
+			if err != nil {
+				return nil, core.WithCause(core.IncompleteSearch, "could not decode workspace symbol", err)
+			}
+			key := fmt.Sprintf("%s:%v:%s", summary.Path, summary.SelectionRange, summary.Name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			all = append(all, summary)
 		}
 	}
-	return e.workspaceSymbols(out, p, false, true, nil), nil
-}
-
-// workspaceSymbols keeps the common result metadata in one place.
-func (e *Engine) workspaceSymbols(symbols []core.SymbolSummary, profile language.Profile, truncated, includeServers bool, warnings []string) map[string]any {
-	meta := core.Meta{Complete: true, Truncated: truncated, Warnings: warnings}
-	if includeServers {
-		meta.Servers = []string{profile.SessionKey}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Path != all[j].Path {
+			return all[i].Path < all[j].Path
+		}
+		if all[i].Range.Start.Line != all[j].Range.Start.Line {
+			return all[i].Range.Start.Line < all[j].Range.Start.Line
+		}
+		return all[i].Name < all[j].Name
+	})
+	truncated := len(all) > limit
+	if truncated {
+		all = all[:limit]
 	}
-	return map[string]any{
-		"symbols": symbols,
-		"meta":    meta,
-	}
+	return map[string]any{"symbols": all, "meta": core.Meta{Complete: true, Truncated: truncated, Servers: []string{p.SessionKey}}}, nil
 }
 
 // DocumentSymbols returns hierarchical symbols when supported by the server.

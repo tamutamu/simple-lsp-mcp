@@ -29,28 +29,35 @@ func TestDiscoveryToolDescriptionsGuideCodeInvestigation(t *testing.T) {
 		descriptions[definition.name] = definition.description
 	}
 	for name, phrase := range map[string]string{
-		"search_symbols":         "non-empty",
-		"list_workspace_symbols": "non-empty query",
-		"get_document_symbols":   "prefer it over reading source text",
+		"search_symbols":       "non-empty",
+		"get_document_symbols": "prefer it over reading source text",
 	} {
 		if !strings.Contains(strings.ToLower(descriptions[name]), phrase) {
 			t.Fatalf("%s description does not guide MCP selection: %q", name, descriptions[name])
 		}
 	}
-	for _, definition := range definitions() {
-		if definition.name != "list_workspace_symbols" {
+}
+
+func TestWorkspaceListingIsDistinctFromSearch(t *testing.T) {
+	for _, d := range definitions() {
+		if d.name != "list_workspace_symbols" {
 			continue
 		}
-		required := definition.schema["required"].([]string)
-		if len(required) != 2 || required[0] != "query" || required[1] != "language" {
-			t.Fatalf("list_workspace_symbols required = %#v, want query and language", required)
+		if required, _ := d.schema["required"].([]string); len(required) != 0 {
+			t.Fatal("workspace listing must not require a query or language")
 		}
-		properties := definition.schema["properties"].(map[string]any)
-		if properties["kinds"].(map[string]any)["type"] != "array" {
-			t.Fatalf("list_workspace_symbols kinds schema = %#v", properties["kinds"])
+		props := d.schema["properties"].(map[string]any)
+		if _, hasQuery := props["query"]; hasQuery {
+			t.Fatal("workspace listing must not accept query")
 		}
+		if _, hasCursor := props["cursor"]; !hasCursor {
+			t.Fatal("workspace listing needs pagination")
+		}
+		return
 	}
+	t.Fatal("workspace enumeration tool not registered")
 }
+
 func TestTargetToolsAcceptSymbolPath(t *testing.T) {
 	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover"} {
 		found := false

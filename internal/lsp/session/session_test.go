@@ -96,3 +96,23 @@ func writeMessage(t *testing.T, message transport.Message) {
 		t.Fatal(err)
 	}
 }
+
+func TestForAllIncludesEveryMonorepoServer(t *testing.T) {
+	root := t.TempDir()
+	manager := NewManager(root, map[string][]config.Server{"go": {
+		{Command: "gopls", Directory: "apps/a"},
+		{Command: "gopls", Directory: "apps/b"},
+	}})
+	sessions, err := manager.ForAll("go")
+	if err != nil || len(sessions) != 2 || sessions[0] == sessions[1] {
+		t.Fatalf("ForAll = %v, %v", sessions, err)
+	}
+	a, err := manager.ForPath("go", "apps/a/x.go")
+	if err != nil || a != sessions[0] {
+		t.Fatalf("ForPath(a) = %v, %v", a, err)
+	}
+	b, err := manager.ForPath("go", "apps/b/x.go")
+	if err != nil || b != sessions[1] {
+		t.Fatalf("ForPath(b) = %v, %v", b, err)
+	}
+}
