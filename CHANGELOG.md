@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-23
+
+### Breaking changes
+
+- Replace `get_semantic_slice.max_tokens` with `max_bytes`; clients must update arguments to use a serialized-JSON byte limit.
+- `list_workspace_symbols` no longer accepts a name query: it now enumerates configured source symbols page by page. Use `search_symbols` for name-based searches, and follow `next_cursor` to continue listing.
+
 ### Added
 
 - Restore `list_workspace_symbols` as a real, paginated, query-free enumeration of configured source files via per-document LSP symbols (including nested symbols).
@@ -131,7 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing symbol search, definitions, references, implementations, type
   definitions, declarations, call hierarchy, type hierarchy, and diagnostics.
 
-[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/tamutamu/simple-lsp-mcp/compare/v0.5.3...v0.6.0
