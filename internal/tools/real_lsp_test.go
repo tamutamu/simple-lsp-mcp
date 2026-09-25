@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -367,5 +368,131 @@ func TestRealWorkspaceEnumeration(t *testing.T) {
 	var appErr *core.AppError
 	if !errors.As(err, &appErr) || appErr.Code != core.InvalidArgument {
 		t.Fatalf("stale in-file cursor accepted: %v", err)
+	}
+}
+
+// TestRealReactFastAPIMonorepoExample is the executable proof behind
+// examples/react-fastapi-monorepo. It intentionally uses two real language
+// servers from one Engine to verify mixed-language routing rather than testing
+// each LSP in isolation.
+func TestRealReactFastAPIMonorepoExample(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") != "1" {
+		t.Skip("requires real TypeScript Language Server and Pyright")
+	}
+	for _, binary := range []string{"typescript-language-server", "pyright-langserver"} {
+		if _, err := exec.LookPath(binary); err != nil {
+			t.Fatalf("%s not installed: %v", binary, err)
+		}
+	}
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", "examples", "react-fastapi-monorepo"))
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 30 * time.Second, MaxResults: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Servers["typescript-javascript"]) != 1 || len(cfg.Servers["python"]) != 1 {
+		t.Fatalf("example did not load both language profiles: %#v", cfg.Servers)
+	}
+	tsServer := cfg.Servers["typescript-javascript"][0]
+	if len(tsServer.Settings) == 0 || len(tsServer.InitializationOptions) == 0 {
+		t.Fatalf("TypeScript example lost settings or initialization_options: %#v", tsServer)
+	}
+	pyServer := cfg.Servers["python"][0]
+	if pyServer.Env["PYTHONPATH"] != "." || len(pyServer.Settings) == 0 {
+		t.Fatalf("Python example lost env or settings: %#v", pyServer)
+	}
+	// CI exposes the exact TypeScript installation path for deterministic real-LSP tests.
+	// Preserve the example's own initialization options while adding that runtime-only hint.
+	if path := os.Getenv("SIMPLE_LSP_TSSERVER_PATH"); path != "" {
+		if tsServer.InitializationOptions == nil {
+			tsServer.InitializationOptions = map[string]any{}
+		}
+		tsServer.InitializationOptions["tsserver"] = map[string]any{"path": path}
+		cfg.Servers["typescript-javascript"][0] = tsServer
+	}
+
+	e := New(ws, cfg)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		e.Sessions.Shutdown(ctx)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	tsPath := "apps/web/src/components/UserList.tsx"
+	tsFound, err := e.FindSymbol(ctx, map[string]any{"path": tsPath, "symbol_path": "loadUsers"})
+	if err != nil {
+		t.Fatalf("TypeScript symbol lookup: %v", err)
+	}
+	tsSymbol, ok := tsFound["symbol"].(map[string]any)
+	if !ok || tsSymbol["language"] != "typescriptreact" || !strings.Contains(tsSymbol["source"].(string), "fetchUsers(apiBase)") {
+		t.Fatalf("wrong TypeScript symbol: %#v", tsFound)
+	}
+
+	pyPath := "apps/api/app/routes/users.py"
+	pyFound, err := e.FindSymbol(ctx, map[string]any{"path": pyPath, "symbol_path": "list_users"})
+	if err != nil {
+		t.Fatalf("Python symbol lookup: %v", err)
+	}
+	pySymbol, ok := pyFound["symbol"].(map[string]any)
+	if !ok || pySymbol["language"] != "python" || !strings.Contains(pySymbol["source"].(string), "get_users()") {
+		t.Fatalf("wrong Python symbol: %#v", pyFound)
+	}
+
+	listed, err := e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 200})
+	if err != nil {
+		t.Fatalf("mixed-language workspace enumeration: %v", err)
+	}
+	symbols, ok := listed["symbols"].([]core.SymbolSummary)
+	if !ok || !listed["meta"].(core.Meta).Complete {
+		t.Fatalf("unexpected mixed-language workspace page: %#v", listed)
+	}
+	foundTS, foundPython := false, false
+	languages := map[string]bool{}
+	for _, symbol := range symbols {
+		languages[symbol.Language] = true
+		if symbol.Name == "loadUsers" && symbol.Path == tsPath {
+			foundTS = true
+		}
+		if symbol.Name == "list_users" && symbol.Path == pyPath {
+			foundPython = true
+		}
+	}
+	if !foundTS || !foundPython || !languages["typescriptreact"] || !languages["python"] {
+		t.Fatalf("one workspace listing did not cover both projects: languages=%v symbols=%#v", languages, symbols)
+	}
+
+	for _, tc := range []struct {
+		name, path, symbol, dependency string
+	}{
+		{"typescript", tsPath, "loadUsers", "fetchUsers"},
+		{"python", pyPath, "list_users", "get_users"},
+	} {
+		t.Run(tc.name+"_semantic_slice", func(t *testing.T) {
+			slice, err := e.SemanticSlice(ctx, map[string]any{"path": tc.path, "symbol_path": tc.symbol, "depth": 1, "max_bytes": 24576})
+			if err != nil {
+				t.Fatalf("semantic slice: %v", err)
+			}
+			rootSymbol, ok := slice["root"].(map[string]any)
+			if !ok || rootSymbol["name"] != tc.symbol {
+				t.Fatalf("wrong semantic root: %#v", slice)
+			}
+			deps, _ := slice["dependencies"].([]any)
+			for _, raw := range deps {
+				dep, _ := raw.(map[string]any)
+				if dep["name"] == tc.dependency && strings.TrimSpace(dep["source"].(string)) != "" {
+					return
+				}
+			}
+			t.Fatalf("semantic slice did not follow %s -> %s across files: %#v", tc.symbol, tc.dependency, slice)
+		})
 	}
 }

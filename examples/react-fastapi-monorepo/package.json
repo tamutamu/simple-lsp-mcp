@@ -1,0 +1,5 @@
+{
+  "name": "simple-lsp-react-fastapi-example",
+  "private": true,
+  "workspaces": ["apps/web"]
+}

@@ -283,11 +283,11 @@ When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_ou
 
 ## Verification
 
-Run `go test ./...` and `go test -race ./...` before contributing. CI also runs
-integration tests against actual Go, TypeScript, and Python language servers.
-These tests verify code navigation and semantic results; they do **not** prove
-that an AI agent completes tasks faster or more accurately. No such claim is
-made without real agent-task results.
+Run `go test ./...` and `go test -race ./...` before contributing. CI also runs integration tests against actual Go, TypeScript, and Python language servers.
+
+For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and follows cross-file calls with `get_semantic_slice` on both sides. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
+
+See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify code navigation and semantic results; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
 
 ## Server options
 
