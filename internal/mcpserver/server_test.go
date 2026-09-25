@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 21 {
+	if len(ds) != 22 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}
@@ -78,7 +78,7 @@ func TestTargetToolsAcceptSymbolPath(t *testing.T) {
 }
 
 func TestTargetToolsInferLanguage(t *testing.T) {
-	for _, name := range []string{"find_symbol", "get_symbol_context", "get_semantic_slice", "get_definition", "find_references", "get_hover", "impact_analysis"} {
+	for _, name := range []string{"find_symbol", "get_symbol_context", "get_semantic_slice", "get_definition", "find_references", "get_hover", "impact_analysis", "rename_symbol"} {
 		for _, d := range definitions() {
 			if d.name != name {
 				continue
@@ -109,7 +109,7 @@ func TestResultStructuredAndTextContentMatch(t *testing.T) {
 }
 
 func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
-	for _, phrase := range []string{"get_semantic_slice", "get_symbol_outline", "impact_analysis", "symbol_id", "INCOMPLETE_SEARCH"} {
+	for _, phrase := range []string{"get_semantic_slice", "get_symbol_outline", "impact_analysis", "rename_symbol", "symbol_id", "INCOMPLETE_SEARCH"} {
 		if !strings.Contains(serverInstructions, phrase) {
 			t.Fatalf("server instructions missing %q: %s", phrase, serverInstructions)
 		}
@@ -125,9 +125,9 @@ func TestToolAnnotationsMarkNavigationReadOnlyAndOnboardAsWrite(t *testing.T) {
 		if a.OpenWorldHint == nil || *a.OpenWorldHint {
 			t.Fatalf("%s must be closed-world", d.name)
 		}
-		if d.name == "onboard" {
+		if d.name == "onboard" || d.name == "rename_symbol" {
 			if a.ReadOnlyHint || a.DestructiveHint == nil || !*a.DestructiveHint {
-				t.Fatalf("onboard annotations must declare an explicit configuration write: %#v", a)
+				t.Fatalf("%s annotations must declare an explicit write: %#v", d.name, a)
 			}
 			continue
 		}
