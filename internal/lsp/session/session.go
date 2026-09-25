@@ -303,6 +303,13 @@ func clientCapabilities() map[string]any {
 			"formatting": map[string]any{
 				"dynamicRegistration": false,
 			},
+			"codeAction": map[string]any{
+				"dynamicRegistration": false,
+				"dataSupport":         true,
+				"resolveSupport": map[string]any{
+					"properties": []string{"edit"},
+				},
+			},
 		},
 	}
 }
@@ -320,13 +327,25 @@ func decodeCaps(m map[string]json.RawMessage, encoding string) protocol.Capabili
 			}
 		}
 	}
+	codeAction, codeActionResolve := false, false
+	if raw := m["codeActionProvider"]; len(raw) > 0 && string(raw) != "false" && string(raw) != "null" {
+		codeAction = true
+		if string(raw) != "true" {
+			var options struct {
+				ResolveProvider bool `json:"resolveProvider"`
+			}
+			if json.Unmarshal(raw, &options) == nil {
+				codeActionResolve = options.ResolveProvider
+			}
+		}
+	}
 	return protocol.Capabilities{
 		PositionEncoding: encoding, WorkspaceSymbol: has("workspaceSymbolProvider"), DocumentSymbol: has("documentSymbolProvider"),
 		Hover: has("hoverProvider"), Definition: has("definitionProvider"), References: has("referencesProvider"),
 		Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"),
 		CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"),
 		WorkspaceDiagnostics: has("diagnosticProvider"), Rename: rename, PrepareRename: prepareRename,
-		Formatting: has("documentFormattingProvider"),
+		Formatting: has("documentFormattingProvider"), CodeAction: codeAction, CodeActionResolve: codeActionResolve,
 	}
 }
 
