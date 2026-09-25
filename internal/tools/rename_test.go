@@ -43,7 +43,7 @@ func TestWorkspaceEditPlanAndApply(t *testing.T) {
 	if got, err := os.ReadFile(full); err != nil || string(got) != original {
 		t.Fatalf("preview modified source: %q %v", got, err)
 	}
-	if _, err := engine.applyRenamePlan(context.Background(), plan); err != nil {
+	if _, err := engine.applyWorkspaceEditPlan(context.Background(), plan); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(full)
