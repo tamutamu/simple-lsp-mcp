@@ -41,7 +41,7 @@ Instead of making the agent perform several navigation calls and assemble the re
 
 The project stays deliberately narrow:
 
-- **Source-code read-only.** Navigation tools never edit source files. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
+- **Semantic writes are explicit.** Navigation remains read-only. `rename_symbol` delegates rename calculation to the language server, previews by default, and writes only with `apply=true`; workspace escapes and unsafe edit shapes are rejected. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
 - **No hidden index or embeddings.** Answers come live from your local LSP server.
 - **No external indexing service.** The server reads your workspace locally and only returns requested results to your configured MCP client.
 - **Byte-budgeted context.** High-level tools bound how much code is returned.
@@ -59,6 +59,7 @@ Coding agents are very good at reasoning about code once they have the right con
 - `get_symbol_context` — source, callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather the minimum useful source neighborhood under a byte budget.
 - `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
+- `rename_symbol` — let the language server compute a cross-file semantic rename, preview it, then explicitly apply the validated WorkspaceEdit.
 
 That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding task**.
 
@@ -265,6 +266,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `get_subtypes` | Get direct subtypes | target |
 | `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
+| `rename_symbol` | Preview/apply an LSP semantic rename across files | target, `new_name` |
 | `onboard` | Scan workspace and generate configuration | None |
 
 `search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
@@ -280,6 +282,37 @@ A `symbol_path` reflects whatever shape the language server's own `documentSymbo
 When no file is specified, the server searches every configured LSP instance for the selected language and inspects every server-returned candidate up to a 128-file safety limit. If the lookup cannot finish, it raises `INCOMPLETE_SEARCH` rather than reporting a false unique result or false not-found. Supply `path` to narrow an incomplete search. Completeness refers to the LSP-returned candidate set: language-server indexes may themselves omit unindexed files.
 
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
+
+
+### Semantic rename
+
+`rename_symbol` uses the language server's `textDocument/prepareRename` and `textDocument/rename` support. It does **not** grep and replace text.
+
+Preview first:
+
+```text
+rename_symbol(
+  symbol_path="UserService/createUser",
+  new_name="registerUser"
+)
+
+→ applied: false
+→ file_count: 3
+→ edit_count: 7
+→ files: [...]
+```
+
+Apply the same semantic operation explicitly:
+
+```text
+rename_symbol(
+  symbol_path="UserService/createUser",
+  new_name="registerUser",
+  apply=true
+)
+```
+
+The returned `WorkspaceEdit` is validated before any write. Only regular files inside the running workspace are eligible; resource operations such as file create/delete/move and overlapping edits are rejected. All edits are validated before the first file is written, and write failures trigger best-effort rollback.
 
 ## Verification
 
