@@ -1,0 +1,14 @@
+{
+  "name": "web",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^6.0.0"
+  },
+  "dependencies": {
+    "react": "^19.0.0"
+  }
+}

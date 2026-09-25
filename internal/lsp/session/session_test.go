@@ -50,6 +50,31 @@ func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	}
 }
 
+func TestSessionPassesConfiguredEnvSettingsAndInitializationOptions(t *testing.T) {
+	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
+	t.Setenv("SIMPLE_LSP_FAKE_SERVER_ASSERT_CONFIG", "1")
+	tempDir := t.TempDir()
+	s := New("go", tempDir, config.Server{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=^TestFakeLanguageServer$", "--"},
+		Env:     map[string]string{"SIMPLE_LSP_CHILD_OPTION": "configured"},
+		Settings: map[string]any{
+			"analysis": map[string]any{"mode": "strict"},
+		},
+		InitializationOptions: map[string]any{
+			"semanticTokens": true,
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManagerRejectsUnconfiguredProfile(t *testing.T) {
 	_, err := NewManager(t.TempDir(), map[string][]config.Server{}).For("go")
 	var appErr *core.AppError
@@ -67,9 +92,37 @@ func TestFakeLanguageServer(t *testing.T) {
 	if err != nil || request.Method != "initialize" || request.ID == nil {
 		t.Fatalf("initialize = %#v, %v", request, err)
 	}
+	if os.Getenv("SIMPLE_LSP_FAKE_SERVER_ASSERT_CONFIG") == "1" {
+		if os.Getenv("SIMPLE_LSP_CHILD_OPTION") != "configured" {
+			t.Fatalf("configured child environment was not propagated")
+		}
+		var params map[string]any
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			t.Fatal(err)
+		}
+		init, _ := params["initializationOptions"].(map[string]any)
+		if init["semanticTokens"] != true {
+			t.Fatalf("initializationOptions = %#v", init)
+		}
+	}
 	writeMessage(t, transport.Message{JSONRPC: "2.0", ID: request.ID, Result: json.RawMessage(`{"capabilities":{}}`)})
 	if notification, err := readMessage(r); err != nil || notification.Method != "initialized" {
 		t.Fatalf("initialized = %#v, %v", notification, err)
+	}
+	if os.Getenv("SIMPLE_LSP_FAKE_SERVER_ASSERT_CONFIG") == "1" {
+		configuration, err := readMessage(r)
+		if err != nil || configuration.Method != "workspace/didChangeConfiguration" {
+			t.Fatalf("configuration = %#v, %v", configuration, err)
+		}
+		var params map[string]any
+		if err := json.Unmarshal(configuration.Params, &params); err != nil {
+			t.Fatal(err)
+		}
+		settings, _ := params["settings"].(map[string]any)
+		analysis, _ := settings["analysis"].(map[string]any)
+		if analysis["mode"] != "strict" {
+			t.Fatalf("settings = %#v", settings)
+		}
 	}
 }
 

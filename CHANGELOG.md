@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an executable React/TypeScript + FastAPI/Python monorepo proof under `examples/react-fastapi-monorepo`, backed by real TypeScript Language Server and Pyright integration tests.
+- Add evidence documentation that separates verified semantic capabilities from the still-unproven agent-level speed/accuracy hypothesis.
+- Verify that per-LSP `env`, `settings`, and `initialization_options` are actually forwarded to the child language-server process and protocol messages.
+
 ## [0.9.0] - 2026-09-25
 
 ### Added
