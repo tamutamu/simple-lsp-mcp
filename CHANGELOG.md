@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Verify that per-LSP `env`, `settings`, and `initialization_options` are actually forwarded to the child language-server process and protocol messages.
 - Add `rename_symbol`: preview by default, optionally apply the language server's semantic `WorkspaceEdit`, with workspace confinement, regular-file checks, overlap validation, and best-effort rollback.
 - Advertise LSP rename/workspace-edit client capabilities and exercise cross-file semantic rename against real `gopls` in CI.
+- Add `format_document`, reusing the validated WorkspaceEdit preview/apply path, and verify it against real `gopls`.
 
 ## [0.9.0] - 2026-09-25
 
