@@ -60,6 +60,7 @@ Coding agents are very good at reasoning about code once they have the right con
 - `get_semantic_slice` — gather the minimum useful source neighborhood under a byte budget.
 - `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
 - `rename_symbol` — let the language server compute a cross-file semantic rename, preview it, then explicitly apply the validated WorkspaceEdit.
+- `format_document` — preview/apply the language server's formatter without giving the MCP arbitrary text-edit authority.
 
 That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding task**.
 
@@ -267,6 +268,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
 | `rename_symbol` | Preview/apply an LSP semantic rename across files | target, `new_name` |
+| `format_document` | Preview/apply LSP document formatting | `path` |
 | `onboard` | Scan workspace and generate configuration | None |
 
 `search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
@@ -313,6 +315,11 @@ rename_symbol(
 ```
 
 The returned `WorkspaceEdit` is validated before any write. Only regular files inside the running workspace are eligible; resource operations such as file create/delete/move and overlapping edits are rejected. All edits are validated before the first file is written, and write failures trigger best-effort rollback.
+
+
+### Document formatting
+
+`format_document(path="src/app.go")` asks the language server for `textDocument/formatting`, validates every returned edit, and previews the change. Add `apply=true` to write it. Formatting uses the same workspace confinement, overlap checks, preview-first behavior, and rollback path as semantic rename.
 
 ## Verification
 
