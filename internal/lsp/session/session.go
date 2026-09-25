@@ -300,6 +300,9 @@ func clientCapabilities() map[string]any {
 				"dynamicRegistration": false,
 				"prepareSupport":      true,
 			},
+			"formatting": map[string]any{
+				"dynamicRegistration": false,
+			},
 		},
 	}
 }
@@ -323,6 +326,7 @@ func decodeCaps(m map[string]json.RawMessage, encoding string) protocol.Capabili
 		Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"),
 		CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"),
 		WorkspaceDiagnostics: has("diagnosticProvider"), Rename: rename, PrepareRename: prepareRename,
+		Formatting: has("documentFormattingProvider"),
 	}
 }
 
