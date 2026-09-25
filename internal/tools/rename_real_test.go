@@ -80,13 +80,20 @@ func TestRealRenameSymbol(t *testing.T) {
 	if applied["applied"] != true {
 		t.Fatalf("rename not applied: %#v", applied)
 	}
-	for _, path := range []string{mainPath, testPath} {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(content), "OldName") || !strings.Contains(string(content), "NewName") {
-			t.Fatalf("semantic rename incomplete in %s: %s", path, content)
-		}
+	mainContent, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(mainContent), "OldName") || !strings.Contains(string(mainContent), "func NewName()") || !strings.Contains(string(mainContent), "return NewName()") {
+		t.Fatalf("semantic rename incomplete in main.go: %s", mainContent)
+	}
+	testContent, err := os.ReadFile(testPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ExampleOldName is a different symbol and must not be textually replaced;
+	// only its reference to the renamed function should change.
+	if !strings.Contains(string(testContent), "func ExampleOldName()") || strings.Contains(string(testContent), "_ = OldName()") || !strings.Contains(string(testContent), "_ = NewName()") {
+		t.Fatalf("semantic rename was not reference-aware in main_test.go: %s", testContent)
 	}
 }
