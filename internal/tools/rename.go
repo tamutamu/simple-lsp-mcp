@@ -18,29 +18,29 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 )
 
-type renameEditPreview struct {
+type workspaceEditPreview struct {
 	Range   core.Range `json:"range"`
 	NewText string     `json:"new_text"`
 }
 
-type renameFilePreview struct {
+type workspaceEditFilePreview struct {
 	Path  string              `json:"path"`
-	Edits []renameEditPreview `json:"edits"`
+	Edits []workspaceEditPreview `json:"edits"`
 }
 
-type plannedRenameFile struct {
+type plannedWorkspaceFile struct {
 	path     string
 	full     string
 	mode     fs.FileMode
 	original []byte
 	updated  []byte
-	edits    []renameEditPreview
+	edits    []workspaceEditPreview
 }
 
-type computedRenameEdit struct {
+type computedWorkspaceEdit struct {
 	start   int
 	end     int
-	preview renameEditPreview
+	preview workspaceEditPreview
 }
 
 // RenameSymbol asks the selected language server to compute a semantic rename.
@@ -112,7 +112,7 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 		return result, nil
 	}
 
-	warnings, err := e.applyRenamePlan(ctx, plan)
+	warnings, err := e.applyWorkspaceEditPlan(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func renamePreparation(text []byte, raw json.RawMessage, encoding string) (map[s
 	return out, nil
 }
 
-func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string) ([]plannedRenameFile, []renameFilePreview, int, error) {
+func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string) ([]plannedWorkspaceFile, []workspaceEditFilePreview, int, error) {
 	byPath := map[string][]protocol.TextEdit{}
 	add := func(uri string, edits []protocol.TextEdit) error {
 		path, err := normalize.URIPath(e.WS, uri)
@@ -212,8 +212,8 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 	}
 	sort.Strings(paths)
 
-	plan := make([]plannedRenameFile, 0, len(paths))
-	preview := make([]renameFilePreview, 0, len(paths))
+	plan := make([]plannedWorkspaceFile, 0, len(paths))
+	preview := make([]workspaceEditFilePreview, 0, len(paths))
 	editCount := 0
 	for _, path := range paths {
 		lexical := filepath.Join(e.WS.Root(), filepath.FromSlash(path))
@@ -236,7 +236,7 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 			return nil, nil, 0, core.NewError(core.InvalidArgument, "rename target is not valid UTF-8: "+path)
 		}
 
-		computed := make([]computedRenameEdit, 0, len(byPath[path]))
+		computed := make([]computedWorkspaceEdit, 0, len(byPath[path]))
 		for _, textEdit := range byPath[path] {
 			r, err := rangeFromText(original, textEdit.Range, encoding)
 			if err != nil {
@@ -253,10 +253,10 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 			if end < start {
 				return nil, nil, 0, core.NewError(core.InvalidArgument, "rename edit range is reversed in "+path)
 			}
-			computed = append(computed, computedRenameEdit{
+			computed = append(computed, computedWorkspaceEdit{
 				start: start,
 				end:   end,
-				preview: renameEditPreview{
+				preview: workspaceEditPreview{
 					Range:   r,
 					NewText: textEdit.NewText,
 				},
@@ -284,21 +284,21 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 			next = append(next, updated[edit.end:]...)
 			updated = next
 		}
-		edits := make([]renameEditPreview, len(computed))
+		edits := make([]workspaceEditPreview, len(computed))
 		for i, edit := range computed {
 			edits[i] = edit.preview
 		}
-		plan = append(plan, plannedRenameFile{
+		plan = append(plan, plannedWorkspaceFile{
 			path: path, full: full, mode: info.Mode(), original: original, updated: updated, edits: edits,
 		})
-		preview = append(preview, renameFilePreview{Path: path, Edits: edits})
+		preview = append(preview, workspaceEditFilePreview{Path: path, Edits: edits})
 		editCount += len(edits)
 	}
 	return plan, preview, editCount, nil
 }
 
-func (e *Engine) applyRenamePlan(ctx context.Context, plan []plannedRenameFile) ([]string, error) {
-	written := make([]plannedRenameFile, 0, len(plan))
+func (e *Engine) applyWorkspaceEditPlan(ctx context.Context, plan []plannedWorkspaceFile) ([]string, error) {
+	written := make([]plannedWorkspaceFile, 0, len(plan))
 	for _, file := range plan {
 		if err := os.WriteFile(file.full, file.updated, file.mode.Perm()); err != nil {
 			rollbackFailures := make([]string, 0)
