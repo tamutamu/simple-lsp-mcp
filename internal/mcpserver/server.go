@@ -10,8 +10,8 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/tools"
 )
 
-// New registers the read-only tool surface on an MCP server.
-const serverInstructions = "Use simple-lsp before shell text search when investigating code. For a known symbol or change, start with get_semantic_slice; for structure use get_symbol_outline; for a name use find_symbol or search_symbols; before a refactor use impact_analysis. Prefer symbol_id from results for follow-up calls. Results come live from local LSP servers and source navigation is read-only. If meta.complete=false, next_cursor is present, or INCOMPLETE_SEARCH is returned, continue or narrow by path instead of assuming absence."
+// New registers the semantic navigation and explicit LSP edit tool surface.
+const serverInstructions = "Use simple-lsp before shell text search when investigating code. For a known symbol or change, start with get_semantic_slice; for structure use get_symbol_outline; for a name use find_symbol or search_symbols; before a refactor use impact_analysis. Use rename_symbol for semantic renames and format_document for LSP formatting: both preview by default and write only when apply=true. Prefer symbol_id from results for follow-up calls. Navigation remains read-only; write tools are explicit. If meta.complete=false, next_cursor is present, or INCOMPLETE_SEARCH is returned, continue or narrow by path instead of assuming absence."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
@@ -36,7 +36,7 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 
 func toolAnnotations(name string) *mcp.ToolAnnotations {
 	closedWorld := false
-	if name == "onboard" {
+	if name == "onboard" || name == "rename_symbol" || name == "format_document" {
 		destructive := true
 		return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &closedWorld}
 	}
@@ -95,6 +95,12 @@ func definitions() []definition {
 		{"impact_analysis", "Estimate the blast radius of changing a symbol: direct and transitive callers, references, implementations, and affected files. Prefer this over grepping before a refactor. Traversal is budgeted and language is inferred when omitted.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ImpactAnalysis(c, i)
 		}},
+		{"rename_symbol", "Preview or apply an LSP semantic rename. The language server computes the WorkspaceEdit across references and files; simple-lsp validates workspace confinement and edit ranges before any write. apply defaults to false. Set apply=true only when the previewed semantic rename should be written.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.RenameSymbol(c, i)
+		}},
+		{"format_document", "Preview or apply document formatting from the configured language server. The server computes TextEdit ranges; simple-lsp validates them through the same WorkspaceEdit safety checks used by semantic rename. apply defaults to false.", objSchema(props("path", "language", "tab_size", "insert_spaces", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.FormatDocument(c, i)
+		}},
 		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", objSchema(props("workspace", "overwrite")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Onboard(c, i)
 		}},
@@ -149,6 +155,10 @@ func allProperties() map[string]any {
 		"include":                 describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
 		"include_references":      describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),
 		"include_implementations": describe(map[string]any{"type": "boolean"}, "Include implementation locations in the impact set. Defaults to true."),
+		"new_name":                describe(stringSchema(), "New symbol name passed verbatim to the language server for textDocument/rename."),
+		"apply":                   describe(map[string]any{"type": "boolean"}, "Apply the validated WorkspaceEdit to source files. Defaults to false, which returns a preview only."),
+		"tab_size":                describe(positiveIntegerSchema(), "Formatting tab size. Defaults to 4."),
+		"insert_spaces":           describe(map[string]any{"type": "boolean"}, "Use spaces instead of tabs when formatting. Defaults to true."),
 	}
 }
 

@@ -20,7 +20,7 @@ steps to reproduce. You can expect an initial response within 7 days.
 following properties are intentional and are treated as security boundaries —
 a bug that breaks one of them is a vulnerability, not a feature request:
 
-- **Source navigation does not write.** Navigation, analysis and diagnostic tools never modify source files. `onboard` is an explicit configuration-generation exception that creates or overwrites `.simple-lsp.yaml` only when requested and only within the running workspace. Missing configuration is never created on startup. The `setup` CLI can change Claude/Codex registration only with `--apply`.
+- **Reads stay read-only; writes are explicit LSP operations.** Navigation, analysis and diagnostic tools never modify source files. `rename_symbol` and `format_document` are explicit source-writing tools: they ask the language server for semantic edits, preview by default, and write only with `apply=true`. Every edit URI and range is validated before writing; workspace escapes, symlink targets, overlapping edits, and resource operations are rejected. `onboard` is a separate explicit configuration-generation write limited to the running workspace. Missing configuration is never created on startup. The `setup` CLI can change Claude/Codex registration only with `--apply`.
 - **No shell.** `command` and `args` from `.simple-lsp.yaml` are passed directly
   to the process launcher. There is no shell interpretation, so `~`,
   environment-variable expansion, pipes, globbing, and shell argument splitting
