@@ -143,4 +143,5 @@ type Capabilities struct {
 	WorkspaceDiagnostics bool
 	Rename               bool
 	PrepareRename        bool
+	Formatting           bool
 }
