@@ -6,20 +6,19 @@ import (
 	"testing"
 )
 
-func TestLoadCreatesDefaultConfigFileWhenMissing(t *testing.T) {
+func TestLoadWithoutConfigIsReadOnlyAndLeavesProfilesUnconfigured(t *testing.T) {
 	tempDir := t.TempDir()
 	runtime, err := Load(Runtime{Workspace: tempDir})
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-
-	configPath := filepath.Join(tempDir, ConfigFile)
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("expected config file %s to be created, got %v", configPath, err)
+	for _, name := range []string{ConfigFile, ConfigFileAlt} {
+		if _, err := os.Lstat(filepath.Join(tempDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("Load unexpectedly created %s: %v", name, err)
+		}
 	}
-
-	if len(runtime.Servers) == 0 {
-		t.Fatalf("expected default servers to be loaded, got empty map")
+	if len(runtime.Servers) != 0 {
+		t.Fatalf("configuration was implicitly enabled: %#v", runtime.Servers)
 	}
 }
 

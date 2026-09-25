@@ -39,7 +39,7 @@ func TestDoctorReportsAvailableExecutable(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if !report.OK || len(report.Servers) != 1 || !report.Servers[0].Available {
+	if !report.OK || report.Version == "" || report.Binary == "" || len(report.Servers) != 1 || !report.Servers[0].Available {
 		t.Fatalf("report: %+v", report)
 	}
 }

@@ -11,11 +11,13 @@ import (
 )
 
 // New registers the read-only tool surface on an MCP server.
+const serverInstructions = "Use simple-lsp before shell text search when investigating code. For a known symbol or change, start with get_semantic_slice; for structure use get_symbol_outline; for a name use find_symbol or search_symbols; before a refactor use impact_analysis. Prefer symbol_id from results for follow-up calls. Results come live from local LSP servers and source navigation is read-only. If meta.complete=false, next_cursor is present, or INCOMPLETE_SEARCH is returned, continue or narrow by path instead of assuming absence."
+
 func New(engine *tools.Engine, version string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
 	for _, d := range definitions() {
 		def := d
-		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: objectSchema()}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: objectSchema(), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var in map[string]any
 			if len(req.Params.Arguments) > 0 {
 				if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
@@ -30,6 +32,15 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 		})
 	}
 	return s
+}
+
+func toolAnnotations(name string) *mcp.ToolAnnotations {
+	closedWorld := false
+	if name == "onboard" {
+		destructive := true
+		return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &closedWorld}
+	}
+	return &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &closedWorld}
 }
 
 // definition binds MCP metadata to an engine operation.
@@ -131,7 +142,7 @@ func allProperties() map[string]any {
 		"include_source":          describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
 		"include_declaration":     describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
 		"overwrite":               describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
-		"workspace":               describe(stringSchema(), "Target workspace directory to scan. Defaults to the server's configured workspace root."),
+		"workspace":               describe(stringSchema(), "Running server workspace root to scan. Omit it in normal use; a different root or subdirectory is rejected so configuration cannot be written outside the active project."),
 		"max_source_lines":        describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
 		"max_bytes":               describe(positiveIntegerSchema(), "Maximum serialized JSON response size in bytes for get_semantic_slice. Defaults to 24576; valid range 2048-81920. This is not a token count."),
 		"depth":                   describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),

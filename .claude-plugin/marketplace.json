@@ -4,13 +4,13 @@
     "name": "tamutamu",
     "url": "https://github.com/tamutamu"
   },
-  "description": "Marketplace for the simple-lsp-mcp plugin: a read-only, symbol-first MCP bridge to local LSP servers.",
+  "description": "Marketplace for simple-lsp-mcp: precise, bounded semantic code context for coding agents via local LSP servers.",
   "plugins": [
     {
       "name": "simple-lsp-mcp",
       "source": "./",
-      "description": "Read-only semantic context for coding agents via local LSP servers — byte-bounded code slices, symbol context, impact analysis, definitions, references, and hierarchies.",
-      "version": "0.8.0",
+      "description": "Precise, bounded semantic code context for Claude Code, Codex, and other MCP clients via local LSP servers.",
+      "version": "0.9.0",
       "author": {
         "name": "tamutamu",
         "url": "https://github.com/tamutamu"
@@ -18,7 +18,14 @@
       "homepage": "https://github.com/tamutamu/simple-lsp-mcp#readme",
       "repository": "https://github.com/tamutamu/simple-lsp-mcp",
       "license": "MIT",
-      "keywords": ["lsp", "language-server", "code-navigation", "go", "python", "typescript"]
+      "keywords": [
+        "lsp",
+        "language-server",
+        "code-navigation",
+        "go",
+        "python",
+        "typescript"
+      ]
     }
   ]
 }

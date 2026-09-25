@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-25
+
+### Added
+
+- Add Codex plugin packaging metadata and MCP server-level usage instructions so compatible agents receive concise guidance toward `get_semantic_slice`, outlines, impact analysis, pagination, and incomplete-search handling.
+- Advertise MCP tool safety annotations: navigation/analysis tools are read-only and closed-world, while `onboard` is explicitly marked as a configuration write.
+- `doctor` now reports the exact running binary/version and warns when the `simple-lsp-mcp` found on `PATH` is a different executable, making stale installations visible.
+
+### Fixed
+
+- Loading a workspace without configuration no longer creates `.simple-lsp.yaml` implicitly or enables language servers; the `onboard` tool is the explicit way to configure them.
+- Restrict onboarding to the running workspace root, reject escaping paths and symlinks, and protect configuration writes against accidental or symlink-target overwrites.
+- Report `restart_required: true` after onboarding because a running server does not hot-reload its configuration.
+- Document how to detect stale binaries on the MCP client's `PATH`.
+
 ## [0.8.0] - 2026-09-23
 
 ### Breaking changes

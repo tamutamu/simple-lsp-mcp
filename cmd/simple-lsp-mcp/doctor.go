@@ -27,13 +27,17 @@ type doctorServer struct {
 }
 
 type doctorReport struct {
-	Workspace string         `json:"workspace"`
-	Config    string         `json:"config"`
-	Servers   []doctorServer `json:"servers"`
-	ProbeFile string         `json:"probe_file,omitempty"`
-	ProbeOK   bool           `json:"probe_ok,omitempty"`
-	Issues    []string       `json:"issues,omitempty"`
-	OK        bool           `json:"ok"`
+	Version    string         `json:"version"`
+	Binary     string         `json:"binary"`
+	PATHBinary string         `json:"path_binary,omitempty"`
+	Warnings   []string       `json:"warnings,omitempty"`
+	Workspace  string         `json:"workspace"`
+	Config     string         `json:"config"`
+	Servers    []doctorServer `json:"servers"`
+	ProbeFile  string         `json:"probe_file,omitempty"`
+	ProbeOK    bool           `json:"probe_ok,omitempty"`
+	Issues     []string       `json:"issues,omitempty"`
+	OK         bool           `json:"ok"`
 }
 
 // runDoctor reads an existing configuration and checks executable availability.
@@ -54,7 +58,24 @@ func runDoctor(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	report := doctorReport{Workspace: ws.Root(), Servers: []doctorServer{}}
+	report := doctorReport{Version: getVersion(), Workspace: ws.Root(), Servers: []doctorServer{}}
+	if executable, executableErr := os.Executable(); executableErr == nil {
+		report.Binary = executable
+		current := executable
+		if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
+			current = resolved
+		}
+		if pathBinary, lookErr := exec.LookPath("simple-lsp-mcp"); lookErr == nil {
+			report.PATHBinary = pathBinary
+			pathResolved := pathBinary
+			if resolved, resolveErr := filepath.EvalSymlinks(pathBinary); resolveErr == nil {
+				pathResolved = resolved
+			}
+			if pathResolved != current {
+				report.Warnings = append(report.Warnings, fmt.Sprintf("PATH resolves simple-lsp-mcp to %s, not the running binary %s; clients configured by command name may launch a different version", pathBinary, executable))
+			}
+		}
+	}
 	configPath := filepath.Join(ws.Root(), config.ConfigFile)
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 		configPath = filepath.Join(ws.Root(), config.ConfigFileAlt)

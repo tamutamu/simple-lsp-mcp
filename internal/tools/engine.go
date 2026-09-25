@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -304,21 +306,40 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete, Truncated: tr}}, nil
 }
 
-// Onboard scans the workspace and generates .simple-lsp.yaml configuration.
+// Onboard writes configuration only within the current workspace, on an explicit
+// tool call. The running engine does not hot-reload server profiles.
 func (e *Engine) Onboard(ctx context.Context, in map[string]any) (map[string]any, error) {
 	wsDir := stringVal(in, "workspace")
 	if wsDir == "" {
 		wsDir = e.WS.Root()
+	} else if !filepath.IsAbs(wsDir) {
+		wsDir = filepath.Join(e.WS.Root(), wsDir)
+	}
+	target, err := workspace.Open(wsDir)
+	if err != nil {
+		return nil, core.WithCause(core.InvalidPath, "onboard workspace must be an existing directory inside the current workspace", err)
+	}
+	rel, err := filepath.Rel(e.WS.Root(), target.Root())
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, core.NewError(core.InvalidPath, "onboard workspace escapes the current workspace")
+	}
+	if rel != "." {
+		return nil, core.NewError(core.InvalidPath, "onboard must target the running workspace root; start with --workspace to configure another project")
+	}
+	info, err := os.Stat(target.Root())
+	if err != nil || !info.IsDir() {
+		return nil, core.NewError(core.InvalidPath, "onboard workspace must be a directory")
 	}
 	res, err := onboard.Run(onboard.Options{
-		Workspace: wsDir,
+		Workspace: target.Root(),
 		Overwrite: boolValDefault(in, "overwrite", false),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"config_path": res.ConfigPath,
-		"detected":    res.Detected,
+		"config_path":      res.ConfigPath,
+		"detected":         res.Detected,
+		"restart_required": true,
 	}, nil
 }

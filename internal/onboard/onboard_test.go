@@ -100,3 +100,46 @@ func TestScanWorkspaceProfiles(t *testing.T) {
 		t.Errorf("detected = %#v, want %#v", detected, expected)
 	}
 }
+
+// A dangling or external symlink must never be followed or replaced by an
+// onboarding request, even when the caller explicitly opts into overwrite.
+func TestOnboardNeverFollowsConfigurationSymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "external.yaml")
+	original := []byte("do not overwrite me\n")
+	if err := os.WriteFile(target, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, config.ConfigFile)
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+	for _, overwrite := range []bool{false, true} {
+		if _, err := Run(Options{Workspace: root, Overwrite: overwrite}); err == nil {
+			t.Fatalf("accepted config symlink, overwrite=%v", overwrite)
+		}
+		actual, err := os.ReadFile(target)
+		if err != nil || string(actual) != string(original) {
+			t.Fatalf("external config changed: %q, %v", actual, err)
+		}
+	}
+}
+
+func TestOnboardOverwriteReplacesRegularConfig(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, config.ConfigFile)
+	if err := os.WriteFile(path, []byte("old content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(Options{Workspace: root, Overwrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(config.Runtime{Workspace: root})
+	if err != nil || len(loaded.Servers["go"]) != 1 {
+		t.Fatalf("generated configuration could not be loaded: %#v %v", loaded.Servers, err)
+	}
+}

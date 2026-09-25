@@ -107,3 +107,32 @@ func TestResultStructuredAndTextContentMatch(t *testing.T) {
 		t.Fatalf("unexpected structured content: %s", b)
 	}
 }
+
+func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
+	for _, phrase := range []string{"get_semantic_slice", "get_symbol_outline", "impact_analysis", "symbol_id", "INCOMPLETE_SEARCH"} {
+		if !strings.Contains(serverInstructions, phrase) {
+			t.Fatalf("server instructions missing %q: %s", phrase, serverInstructions)
+		}
+	}
+	if len(serverInstructions) > 900 {
+		t.Fatalf("server instructions are too verbose for model-visible initialization guidance: %d bytes", len(serverInstructions))
+	}
+}
+
+func TestToolAnnotationsMarkNavigationReadOnlyAndOnboardAsWrite(t *testing.T) {
+	for _, d := range definitions() {
+		a := toolAnnotations(d.name)
+		if a.OpenWorldHint == nil || *a.OpenWorldHint {
+			t.Fatalf("%s must be closed-world", d.name)
+		}
+		if d.name == "onboard" {
+			if a.ReadOnlyHint || a.DestructiveHint == nil || !*a.DestructiveHint {
+				t.Fatalf("onboard annotations must declare an explicit configuration write: %#v", a)
+			}
+			continue
+		}
+		if !a.ReadOnlyHint {
+			t.Fatalf("%s must be marked read-only", d.name)
+		}
+	}
+}

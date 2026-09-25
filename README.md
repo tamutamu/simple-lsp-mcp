@@ -86,8 +86,10 @@ Language server configurations are read from `.simple-lsp.yaml` (or `.simple-lsp
 You can automatically detect project structures (including monorepos) and generate `.simple-lsp.yaml` by executing the `onboard` MCP tool from your AI chat session.
 
 Options:
-- `overwrite` (boolean): Overwrite existing configuration if present.
-- `workspace` (string): Target workspace directory (defaults to process working directory).
+- `overwrite` (boolean): Overwrite an existing configuration when explicitly requested.
+- `workspace` (string): Optional directory identifying the **running server root** (defaults to that root). Other roots and subdirectories are rejected because a restarted server only loads configuration from its own root; use `--workspace` when launching the server to configure a different project.
+
+If no configuration exists, the MCP server starts with no language servers configured; it does **not** write a file or automatically execute any language servers. Call `onboard` to generate the configuration, then **restart/reconnect the MCP server** to load the new profiles. The tool returns `restart_required: true` to make this explicit.
 
 
 ### Configuration Format
@@ -165,6 +167,8 @@ go build -o simple-lsp-mcp ./cmd/simple-lsp-mcp
 
 Place the resulting executable on the MCP client's `PATH`, or specify its absolute path as the configured `command`.
 
+**Verify the binary your client will launch:** run `command -v simple-lsp-mcp` (Windows: `where.exe simple-lsp-mcp`), then `simple-lsp-mcp --version`. If a version is older than the release you installed, update `PATH` or register the new binary by absolute path with `simple-lsp-mcp setup claude|codex --apply` (remove any existing registration first; setup refuses to overwrite it). Restart the client after replacing a running binary. A fresh Git checkout does not upgrade a previously installed executable automatically.
+
 ## One-command setup and diagnostics
 
 Install the binary and use the clients' own MCP registration commands without manually editing JSON or TOML:
@@ -177,11 +181,22 @@ simple-lsp-mcp setup claude --apply   # explicitly register
 simple-lsp-mcp setup codex --apply
 ```
 
-`doctor` reads the existing `.simple-lsp.yaml` and reports missing executables. It never creates the configuration; use the `onboard` MCP tool when one is needed. `--probe` performs an actual LSP document-symbol request. `setup` defaults to a preview, does not install software, and refuses to silently overwrite an existing registration. `--apply` modifies only the selected MCP client's configuration through that client's CLI.
+`doctor` reads the existing `.simple-lsp.yaml`, reports the exact running binary/version and missing executables, and warns when `simple-lsp-mcp` on `PATH` resolves to a different binary. It never creates the configuration; use the `onboard` MCP tool when one is needed. `--probe` performs an actual LSP document-symbol request. `setup` defaults to a preview, does not install software, and refuses to silently overwrite an existing registration. `--apply` modifies only the selected MCP client's configuration through that client's CLI.
 
 ## Codex configuration
 
-Add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` or an absolute path to the built executable. `--workspace` is optional and defaults to the process current working directory.
+### Codex plugin package
+
+The repository is directly installable as a Codex local plugin marketplace. Install the `simple-lsp-mcp` binary on `PATH`, then:
+
+```sh
+codex plugin marketplace add tamutamu/simple-lsp-mcp
+codex plugin add simple-lsp-mcp@simple-lsp-mcp
+```
+
+The package uses `.codex-plugin/plugin.json` plus the root `.mcp.json`; the existing `.claude-plugin/marketplace.json` is also recognized by current Codex plugin tooling as a compatible repository marketplace. Start a new Codex session after installing or updating the plugin so the MCP tool list and server instructions are reloaded.
+
+For direct MCP registration instead of the plugin package, add the following to `~/.codex/config.toml`. `command` may be a name on `PATH` or an absolute path to the built executable. `--workspace` is optional and defaults to the process current working directory.
 
 ```toml
 [mcp_servers.simple-lsp]

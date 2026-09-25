@@ -49,13 +49,24 @@ func Run(opts Options) (*Result, error) {
 	wsDir = filepath.Clean(wsDir)
 	configPath := filepath.Join(wsDir, config.ConfigFile)
 
-	if !opts.Overwrite {
-		if _, err := os.Stat(configPath); err == nil {
-			return nil, fmt.Errorf("%s already exists; use --yes to overwrite", configPath)
+	// Never follow a configuration symlink: overwrite must replace only a
+	// regular file inside the chosen workspace, not its external target.
+	if info, err := os.Lstat(configPath); err == nil {
+		if !opts.Overwrite {
+			return nil, fmt.Errorf("%s already exists; explicitly request overwrite", configPath)
 		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s is not a regular file; refusing to overwrite", configPath)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("cannot inspect %s: %w", configPath, err)
+	}
+	if !opts.Overwrite {
 		altPath := filepath.Join(wsDir, config.ConfigFileAlt)
-		if _, err := os.Stat(altPath); err == nil {
-			return nil, fmt.Errorf("%s already exists; use --yes to overwrite", altPath)
+		if _, err := os.Lstat(altPath); err == nil {
+			return nil, fmt.Errorf("%s already exists; explicitly request overwrite", altPath)
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("cannot inspect %s: %w", altPath, err)
 		}
 	}
 
@@ -91,8 +102,40 @@ func Run(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to generate YAML config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, yamlData, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write %s: %w", configPath, err)
+	if opts.Overwrite {
+		// Rename replaces the config path itself, never a symlink's target.
+		tmp, err := os.CreateTemp(wsDir, ".simple-lsp-*.tmp")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temporary config: %w", err)
+		}
+		defer os.Remove(tmp.Name())
+		if err := tmp.Chmod(0644); err != nil {
+			tmp.Close()
+			return nil, err
+		}
+		if _, err := tmp.Write(yamlData); err != nil {
+			tmp.Close()
+			return nil, err
+		}
+		if err := tmp.Close(); err != nil {
+			return nil, err
+		}
+		if err := os.Rename(tmp.Name(), configPath); err != nil {
+			return nil, fmt.Errorf("failed to replace %s: %w", configPath, err)
+		}
+	} else {
+		file, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s without overwriting: %w", configPath, err)
+		}
+		if _, err := file.Write(yamlData); err != nil {
+			file.Close()
+			os.Remove(configPath)
+			return nil, err
+		}
+		if err := file.Close(); err != nil {
+			return nil, err
+		}
 	}
 
 	resDetected := make(map[string][]string)
