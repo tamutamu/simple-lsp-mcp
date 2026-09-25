@@ -3,7 +3,7 @@
   "name": "io.github.tamutamu/simple-lsp-mcp",
   "description": "A read-only semantic context engine for coding agents, powered by local LSP servers — byte-budgeted code slices, symbol context, impact analysis, definitions, references, and hierarchies without a hidden index or embeddings.",
   "title": "simple-lsp-mcp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "repository": {
     "url": "https://github.com/tamutamu/simple-lsp-mcp",
     "source": "github"

@@ -475,3 +475,50 @@ apps/api:
 	}
 	t.Logf("found %d symbols in subdirectory profile", len(symbols))
 }
+
+func TestOnboardConfinesWritesAndReportsRestart(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	child := filepath.Join(root, "apps", "api")
+	if err := os.MkdirAll(child, 0755); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{MaxResults: 100})
+	for _, path := range []string{"../" + filepath.Base(outside), outside, "apps/api", filepath.Join(root, "missing")} {
+		if _, err := engine.Onboard(context.Background(), map[string]any{"workspace": path}); err == nil {
+			t.Fatalf("accepted wrong workspace root: %q", path)
+		}
+	}
+	link := filepath.Join(root, "outside-link")
+	if err := os.Symlink(outside, link); err == nil {
+		if _, err := engine.Onboard(context.Background(), map[string]any{"workspace": "outside-link"}); err == nil {
+			t.Fatal("accepted symlink outside workspace")
+		}
+	}
+	for _, dir := range []string{outside, child} {
+		if _, err := os.Lstat(filepath.Join(dir, config.ConfigFile)); !os.IsNotExist(err) {
+			t.Fatalf("wrote outside the running workspace root: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/onboard\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Onboard(context.Background(), map[string]any{"workspace": "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["restart_required"] != true || result["config_path"] != filepath.Join(root, config.ConfigFile) {
+		t.Fatalf("onboard failed to require restart: %#v", result)
+	}
+	if engine.Sessions.Configured("go") {
+		t.Fatal("onboard unexpectedly hot-reloaded the running engine")
+	}
+	loaded, err := config.Load(config.Runtime{Workspace: root})
+	if err != nil || len(loaded.Servers["go"]) != 1 {
+		t.Fatalf("restart would not load generated profile: %#v %v", loaded.Servers, err)
+	}
+}

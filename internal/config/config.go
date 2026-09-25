@@ -99,7 +99,7 @@ var DefaultProfiles = map[string][]Server{
 }
 
 // Load applies defaults and reads configured language-server profiles from .simple-lsp.yaml (or .simple-lsp.yml).
-// If neither config file exists in the workspace, .simple-lsp.yaml is automatically created with DefaultProfiles.
+// If neither configuration exists, start without LSP profiles. The explicit onboard tool creates configuration; loading never writes to the workspace.
 func Load(base Runtime) (Runtime, error) {
 	applyDefaults(&base)
 
@@ -110,10 +110,11 @@ func Load(base Runtime) (Runtime, error) {
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 		if _, errAlt := os.Stat(altPath); errAlt == nil {
 			targetPath = altPath
+		} else if errors.Is(errAlt, os.ErrNotExist) {
+			base.Servers = map[string][]Server{}
+			return base, nil
 		} else {
-			if err := WriteDefaultConfig(configPath); err != nil {
-				return base, fmt.Errorf("failed to create default config %s: %w", configPath, err)
-			}
+			return base, fmt.Errorf("could not inspect config %s: %w", altPath, errAlt)
 		}
 	}
 
@@ -143,39 +144,6 @@ func applyDefaults(runtime *Runtime) {
 	if runtime.MaxResults == 0 {
 		runtime.MaxResults = 500
 	}
-}
-
-// WriteDefaultConfig writes the default profile configuration in YAML format.
-func WriteDefaultConfig(path string) error {
-	defaultYaml := map[string]map[string]Server{
-		".": {
-			"python": {
-				Command: "pyright-langserver",
-				Args:    []string{"--stdio"},
-			},
-			"typescript-javascript": {
-				Command: "typescript-language-server",
-				Args:    []string{"--stdio"},
-			},
-			"go": {
-				Command: "gopls",
-				Args:    []string{},
-			},
-			"html": {
-				Command: "npx",
-				Args:    []string{"--yes", "--package=vscode-langservers-extracted", "vscode-html-language-server", "--stdio"},
-			},
-			"css": {
-				Command: "npx",
-				Args:    []string{"--yes", "--package=vscode-langservers-extracted", "vscode-css-language-server", "--stdio"},
-			},
-		},
-	}
-	data, err := yaml.Marshal(defaultYaml)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
 }
 
 func loadServers(data []byte) (map[string][]Server, error) {

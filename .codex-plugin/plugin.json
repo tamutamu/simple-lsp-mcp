@@ -1,8 +1,8 @@
 {
   "name": "simple-lsp-mcp",
-  "displayName": "simple-lsp-mcp",
   "version": "0.9.0",
-  "description": "Precise, bounded semantic code context for Claude Code, Codex, and other MCP clients via local LSP servers.",
+  "description": "Precise, bounded semantic code context for Codex via local LSP servers.",
+  "mcpServers": "./.mcp.json",
   "author": {
     "name": "tamutamu",
     "url": "https://github.com/tamutamu"
@@ -14,9 +14,7 @@
     "lsp",
     "language-server",
     "code-navigation",
-    "go",
-    "python",
-    "typescript"
-  ],
-  "mcpServers": "./.mcp.json"
+    "coding-agent",
+    "codex"
+  ]
 }
