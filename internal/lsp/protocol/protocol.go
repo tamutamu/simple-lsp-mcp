@@ -23,6 +23,22 @@ type TextDocumentItem struct {
 	Version    int32  `json:"version"`
 	Text       string `json:"text"`
 }
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+type OptionalVersionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version *int32 `json:"version,omitempty"`
+}
+type TextDocumentEdit struct {
+	TextDocument OptionalVersionedTextDocumentIdentifier `json:"textDocument"`
+	Edits        []TextEdit                              `json:"edits"`
+}
+type WorkspaceEdit struct {
+	Changes         map[string][]TextEdit `json:"changes,omitempty"`
+	DocumentChanges []json.RawMessage     `json:"documentChanges,omitempty"`
+}
 type Location struct {
 	URI   string `json:"uri"`
 	Range Range  `json:"range"`
@@ -125,4 +141,6 @@ type Capabilities struct {
 	TypeHierarchy        bool
 	Diagnostics          bool
 	WorkspaceDiagnostics bool
+	Rename               bool
+	PrepareRename        bool
 }
