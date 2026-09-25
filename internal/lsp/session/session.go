@@ -251,7 +251,7 @@ func (s *Session) serverRequest(_ context.Context, m transport.Message) (any, *t
 	case "workspace/workspaceFolders":
 		return []map[string]string{{"uri": fileURI(s.root), "name": "workspace"}}, nil
 	case "workspace/applyEdit":
-		return map[string]any{"applied": false, "failureReason": "read-only server"}, nil
+		return map[string]any{"applied": false, "failureReason": "workspace edits are applied only by explicit MCP write tools"}, nil
 	case "client/registerCapability", "client/unregisterCapability", "window/workDoneProgress/create":
 		return map[string]any{}, nil
 	default:
@@ -274,11 +274,56 @@ func (s *Session) notification(m transport.Message) {
 }
 func fileURI(path string) string { return "file://" + path }
 func clientCapabilities() map[string]any {
-	return map[string]any{"workspace": map[string]any{"workspaceFolders": true, "didChangeConfiguration": map[string]any{"dynamicRegistration": false}, "symbol": map[string]any{"dynamicRegistration": false}, "diagnostics": map[string]any{}}, "textDocument": map[string]any{"synchronization": map[string]any{"didSave": true}, "documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}, "hover": map[string]any{"contentFormat": []string{"markdown", "plaintext"}}, "definition": map[string]any{"linkSupport": true}, "references": map[string]any{}, "implementation": map[string]any{"linkSupport": true}, "typeDefinition": map[string]any{"linkSupport": true}, "declaration": map[string]any{"linkSupport": true}, "callHierarchy": map[string]any{}, "typeHierarchy": map[string]any{}, "diagnostic": map[string]any{}}}
+	return map[string]any{
+		"workspace": map[string]any{
+			"workspaceFolders":      true,
+			"didChangeConfiguration": map[string]any{"dynamicRegistration": false},
+			"symbol":                 map[string]any{"dynamicRegistration": false},
+			"diagnostics":            map[string]any{},
+			"workspaceEdit": map[string]any{
+				"documentChanges": true,
+			},
+		},
+		"textDocument": map[string]any{
+			"synchronization": map[string]any{"didSave": true},
+			"documentSymbol":  map[string]any{"hierarchicalDocumentSymbolSupport": true},
+			"hover":           map[string]any{"contentFormat": []string{"markdown", "plaintext"}},
+			"definition":      map[string]any{"linkSupport": true},
+			"references":      map[string]any{},
+			"implementation":  map[string]any{"linkSupport": true},
+			"typeDefinition":  map[string]any{"linkSupport": true},
+			"declaration":     map[string]any{"linkSupport": true},
+			"callHierarchy":   map[string]any{},
+			"typeHierarchy":   map[string]any{},
+			"diagnostic":      map[string]any{},
+			"rename": map[string]any{
+				"dynamicRegistration": false,
+				"prepareSupport":      true,
+			},
+		},
+	}
 }
 func decodeCaps(m map[string]json.RawMessage, encoding string) protocol.Capabilities {
 	has := func(k string) bool { b := m[k]; return len(b) > 0 && string(b) != "false" && string(b) != "null" }
-	return protocol.Capabilities{PositionEncoding: encoding, WorkspaceSymbol: has("workspaceSymbolProvider"), DocumentSymbol: has("documentSymbolProvider"), Hover: has("hoverProvider"), Definition: has("definitionProvider"), References: has("referencesProvider"), Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"), CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"), WorkspaceDiagnostics: has("diagnosticProvider")}
+	rename, prepareRename := false, false
+	if raw := m["renameProvider"]; len(raw) > 0 && string(raw) != "false" && string(raw) != "null" {
+		rename = true
+		if string(raw) != "true" {
+			var options struct {
+				PrepareProvider bool `json:"prepareProvider"`
+			}
+			if json.Unmarshal(raw, &options) == nil {
+				prepareRename = options.PrepareProvider
+			}
+		}
+	}
+	return protocol.Capabilities{
+		PositionEncoding: encoding, WorkspaceSymbol: has("workspaceSymbolProvider"), DocumentSymbol: has("documentSymbolProvider"),
+		Hover: has("hoverProvider"), Definition: has("definitionProvider"), References: has("referencesProvider"),
+		Implementation: has("implementationProvider"), TypeDefinition: has("typeDefinitionProvider"), Declaration: has("declarationProvider"),
+		CallHierarchy: has("callHierarchyProvider"), TypeHierarchy: has("typeHierarchyProvider"), Diagnostics: has("diagnosticProvider"),
+		WorkspaceDiagnostics: has("diagnosticProvider"), Rename: rename, PrepareRename: prepareRename,
+	}
 }
 
 type Manager struct {
