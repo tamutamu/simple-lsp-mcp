@@ -39,6 +39,24 @@ type WorkspaceEdit struct {
 	Changes         map[string][]TextEdit `json:"changes,omitempty"`
 	DocumentChanges []json.RawMessage     `json:"documentChanges,omitempty"`
 }
+type Command struct {
+	Title     string `json:"title"`
+	Command   string `json:"command"`
+	Arguments []any  `json:"arguments,omitempty"`
+}
+type CodeActionDisabled struct {
+	Reason string `json:"reason"`
+}
+type CodeAction struct {
+	Title       string              `json:"title"`
+	Kind        string              `json:"kind,omitempty"`
+	Diagnostics []Diagnostic        `json:"diagnostics,omitempty"`
+	IsPreferred bool                `json:"isPreferred,omitempty"`
+	Disabled    *CodeActionDisabled `json:"disabled,omitempty"`
+	Edit        *WorkspaceEdit      `json:"edit,omitempty"`
+	Command     *Command            `json:"command,omitempty"`
+	Data        any                 `json:"data,omitempty"`
+}
 type Location struct {
 	URI   string `json:"uri"`
 	Range Range  `json:"range"`
@@ -144,4 +162,6 @@ type Capabilities struct {
 	Rename               bool
 	PrepareRename        bool
 	Formatting           bool
+	CodeAction           bool
+	CodeActionResolve    bool
 }
