@@ -24,5 +24,4 @@ jobs:
       - name: Real LSP integration tests (Go, TypeScript, Python, mixed monorepo, edits)
         env:
           SIMPLE_LSP_REAL_LSP: '1'
-        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration|ReactFastAPIMonorepoExample|RenameSymbol|FormatDocument) -count=1 -v -timeout=6m
- -count=1 -v -timeout=6m
+        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration|ReactFastAPIMonorepoExample|RenameSymbol|FormatDocument)$' -count=1 -v -timeout=6m
