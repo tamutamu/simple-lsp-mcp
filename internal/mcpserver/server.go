@@ -10,8 +10,8 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/tools"
 )
 
-// New registers the read-only tool surface on an MCP server.
-const serverInstructions = "Use simple-lsp before shell text search when investigating code. For a known symbol or change, start with get_semantic_slice; for structure use get_symbol_outline; for a name use find_symbol or search_symbols; before a refactor use impact_analysis. Prefer symbol_id from results for follow-up calls. Results come live from local LSP servers and source navigation is read-only. If meta.complete=false, next_cursor is present, or INCOMPLETE_SEARCH is returned, continue or narrow by path instead of assuming absence."
+// New registers semantic navigation plus explicit LSP-backed edit tools on an MCP server.
+const serverInstructions = "Use simple-lsp before shell text search when investigating code. Do not discover a file path with shell first: a bare symbol_path can be resolved across configured LSP profiles. For caller/callee questions use get_symbol_context; use get_semantic_slice when source dependencies are needed; use get_symbol_outline for structure; before a refactor use impact_analysis. For semantic edits prefer rename_symbol, format_document, and WorkspaceEdit-backed code actions. rename_symbol and format_document preview by default and write only with apply=true; apply_code_action is always a write. Prefer symbol_id from results for follow-up calls. Navigation remains read-only. If meta.complete=false, next_cursor is present, or INCOMPLETE_SEARCH is returned, continue or narrow instead of assuming absence."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
@@ -36,7 +36,7 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 
 func toolAnnotations(name string) *mcp.ToolAnnotations {
 	closedWorld := false
-	if name == "onboard" {
+	if name == "onboard" || name == "rename_symbol" || name == "format_document" || name == "apply_code_action" {
 		destructive := true
 		return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &closedWorld}
 	}
@@ -71,7 +71,7 @@ func definitions() []definition {
 		{"get_symbol_outline", "List the direct children of a symbol_path, or the top-level symbols of a file. Returns names, kinds, signatures, and ranges only, never source text. language is optional and inferred when possible.", objSchema(props("symbol_path", "path", "language", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SymbolOutline(c, i)
 		}},
-		{"get_symbol_context", "Get everything about one symbol in a single call: its source, callers, callees, references, and implementations. Prefer this over separate navigation calls. Target it with symbol_path, symbol_id, or path+line+column. Use include to narrow sections. language is optional and inferred when possible.", objSchema(props("symbol_path", "symbol_id", "path", "line", "column", "language", "include", "limit", "max_source_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_symbol_context", "Get selected context for one symbol in a single call. Use include with the exact values source, incoming_calls, outgoing_calls, references, implementations; omit include to get all sections. Prefer this over separate relationship calls. Target it with symbol_path, symbol_id, or path+line+column. language is optional and inferred when possible.", objSchema(props("symbol_path", "symbol_id", "path", "line", "column", "language", "include", "limit", "max_source_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SymbolContext(c, i)
 		}},
 		{"get_semantic_slice", "Build a byte-budgeted semantic code slice for one symbol: root source, bounded callee source, type definitions, test-file candidates proven by references, callers, and implementations. Use this when an agent needs enough code to understand or change a symbol in one call. language is optional and inferred when possible.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_bytes")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -94,6 +94,18 @@ func definitions() []definition {
 		}},
 		{"impact_analysis", "Estimate the blast radius of changing a symbol: direct and transitive callers, references, implementations, and affected files. Prefer this over grepping before a refactor. Traversal is budgeted and language is inferred when omitted.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ImpactAnalysis(c, i)
+		}},
+		{"rename_symbol", "Ask the language server to compute a cross-file semantic rename. Preview by default; set apply=true to write only the validated WorkspaceEdit. Target it like other symbol tools and provide new_name.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.RenameSymbol(c, i)
+		}},
+		{"format_document", "Ask the language server to format one file. Preview by default; set apply=true to write. Supply line,column,end_line,end_column together to use range formatting instead of whole-document formatting.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.FormatDocument(c, i)
+		}},
+		{"get_code_actions", "List language-server code actions for a source range without applying edits or executing commands. Use the returned action_id with apply_code_action.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "code_action_kinds", "limit"), "path", "line", "column"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.GetCodeActions(c, i)
+		}},
+		{"apply_code_action", "Re-query code actions for the same range and apply the selected action_id only when it resolves to the same validated WorkspaceEdit-backed action. LSP commands are deliberately not executed.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "code_action_kinds", "action_id"), "path", "line", "column", "action_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.ApplyCodeAction(c, i)
 		}},
 		{"onboard", "Scan workspace for projects (Go, Python, TypeScript, etc.) and generate .simple-lsp.yaml configuration.", objSchema(props("workspace", "overwrite")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Onboard(c, i)
@@ -128,27 +140,38 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 // allProperties is the full catalogue of tool input properties, each documented once.
 func allProperties() map[string]any {
 	return map[string]any{
-		"query":                   describe(stringSchema(), "Non-empty substring or fuzzy name to search for."),
-		"cursor":                  describe(stringSchema(), "Pass next_cursor from a previous list_workspace_symbols response to continue enumerating. Restart without cursor if the workspace changes."),
-		"path":                    describe(stringSchema(), "File path relative to the workspace root."),
-		"symbol_id":               describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
-		"symbol_path":             describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
-		"line":                    describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
-		"column":                  describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
-		"limit":                   describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
-		"language":                describe(stringSchema(), "Optional for symbol/position tools. One of: python, typescript, typescriptreact, javascript, javascriptreact, go, html, css. When omitted, simple-lsp infers it from symbol_id, path extension, or configured profiles for a bare symbol_path."),
-		"kinds":                   describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: file, module, namespace, package, class, method, property, field, constructor, enum, interface, function, variable, constant, string, number, boolean, array, object, key, null, enum_member, struct, event, operator, type_parameter.")}, "Restrict results to these symbol kinds. Omit or leave empty to allow every kind."),
-		"severities":              describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: error, warning, information, hint.")}, "Restrict results to these diagnostic severities. Omit or leave empty to allow every severity."),
-		"include_source":          describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
-		"include_declaration":     describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
-		"overwrite":               describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
-		"workspace":               describe(stringSchema(), "Running server workspace root to scan. Omit it in normal use; a different root or subdirectory is rejected so configuration cannot be written outside the active project."),
-		"max_source_lines":        describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
-		"max_bytes":               describe(positiveIntegerSchema(), "Maximum serialized JSON response size in bytes for get_semantic_slice. Defaults to 24576; valid range 2048-81920. This is not a token count."),
-		"depth":                   describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
-		"include":                 describe(map[string]any{"type": "array", "items": describe(stringSchema(), "One of: source, incoming_calls, outgoing_calls, references, implementations.")}, "Which sections to gather. Omit or leave empty to get every section."),
-		"include_references":      describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),
-		"include_implementations": describe(map[string]any{"type": "boolean"}, "Include implementation locations in the impact set. Defaults to true."),
+		"query":                    describe(stringSchema(), "Non-empty substring or fuzzy name to search for."),
+		"cursor":                   describe(stringSchema(), "Pass next_cursor from a previous list_workspace_symbols response to continue enumerating. Restart without cursor if the workspace changes."),
+		"path":                     describe(stringSchema(), "File path relative to the workspace root."),
+		"symbol_id":                describe(stringSchema(), "A symbol_id previously returned by another tool call. Fails with a stale-symbol error if the file changed since it was issued."),
+		"symbol_path":              describe(stringSchema(), "Human-readable symbol path such as \"UserService/createUser\": the names of the enclosing symbols and the symbol itself, joined by \"/\". A trailing portion alone (\"createUser\") is accepted when it is unambiguous. Prefix with \"/\" to require an exact match instead of a trailing one. Escape a literal \"/\" inside a name as \"%2F\". Combine with path to restrict the search to one file."),
+		"line":                     describe(positiveIntegerSchema(), "One-based line number of the target position. Requires path and column; ignored if symbol_id is set."),
+		"column":                   describe(positiveIntegerSchema(), "One-based column number of the target position. Requires path and line; ignored if symbol_id is set."),
+		"limit":                    describe(positiveIntegerSchema(), "Maximum number of results to return. Defaults to the server's --max-results."),
+		"language":                 describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Optional for symbol/position tools. When omitted, simple-lsp infers it from symbol_id, path extension, or configured profiles for a bare symbol_path."),
+		"kinds":                    describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Restrict results to these symbol kinds. Omit or leave empty to allow every kind."),
+		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Restrict results to these diagnostic severities. Omit or leave empty to allow every severity."),
+		"include_source":           describe(map[string]any{"type": "boolean"}, "Include the symbol's source text in the result. Defaults to true."),
+		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include the declaration itself among the references. Defaults to false."),
+		"overwrite":                describe(map[string]any{"type": "boolean"}, "Overwrite an existing .simple-lsp.yaml if present. Defaults to false."),
+		"workspace":                describe(stringSchema(), "Running server workspace root to scan. Omit it in normal use; a different root or subdirectory is rejected so configuration cannot be written outside the active project."),
+		"max_source_lines":         describe(positiveIntegerSchema(), "Maximum number of source lines to include. Defaults to 200."),
+		"max_bytes":                describe(positiveIntegerSchema(), "Maximum serialized JSON response size in bytes for get_semantic_slice. Defaults to 24576; valid range 2048-81920. This is not a token count."),
+		"depth":                    describe(positiveIntegerSchema(), "How many levels of children to return. Defaults to 1 (direct children only). Maximum 3."),
+		"include":                  describe(map[string]any{"type": "array", "items": enumStringSchema("source", "incoming_calls", "outgoing_calls", "references", "implementations")}, "Which sections to gather. Omit or leave empty to get every section."),
+		"include_references":       describe(map[string]any{"type": "boolean"}, "Include reference locations in the impact set. Defaults to true."),
+		"include_implementations":  describe(map[string]any{"type": "boolean"}, "Include implementation locations in the impact set. Defaults to true."),
+		"new_name":                 describe(stringSchema(), "New symbol name passed verbatim to textDocument/rename."),
+		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply the validated LSP edit. Defaults to false for preview-capable tools."),
+		"end_line":                 describe(positiveIntegerSchema(), "One-based end line for a source range."),
+		"end_column":               describe(positiveIntegerSchema(), "One-based end column for a source range."),
+		"tab_size":                 describe(positiveIntegerSchema(), "Formatting tab size. Defaults to 4."),
+		"insert_spaces":            describe(map[string]any{"type": "boolean"}, "Formatting option. Defaults to true."),
+		"trim_trailing_whitespace": describe(map[string]any{"type": "boolean"}, "Formatting option forwarded to the language server when set."),
+		"insert_final_newline":     describe(map[string]any{"type": "boolean"}, "Formatting option forwarded to the language server when set."),
+		"trim_final_newlines":      describe(map[string]any{"type": "boolean"}, "Formatting option forwarded to the language server when set."),
+		"code_action_kinds":        describe(map[string]any{"type": "array", "items": stringSchema()}, "Optional LSP code-action kinds to request, such as quickfix or source.organizeImports."),
+		"action_id":                describe(stringSchema(), "Stable content-derived identifier returned by get_code_actions; re-list if it expires."),
 	}
 }
 
@@ -174,6 +197,14 @@ func describe(s map[string]any, description string) map[string]any {
 }
 
 func stringSchema() map[string]any { return map[string]any{"type": "string"} }
+
+func enumStringSchema(values ...string) map[string]any {
+	enum := make([]any, len(values))
+	for i, value := range values {
+		enum[i] = value
+	}
+	return map[string]any{"type": "string", "enum": enum}
+}
 
 func positiveIntegerSchema() map[string]any {
 	return map[string]any{"type": "integer", "minimum": 1}

@@ -141,7 +141,7 @@ func matchNodes(nodes []symbolNode, segments []string, anchored bool) []symbolNo
 			switch {
 			case segmentsEqual(n.Segments, segments):
 				exact = append(exact, n)
-			case !anchored && suffixMatch(n.Segments, segments):
+			case !anchored && (suffixMatch(n.Segments, segments) || qualifiedLeafMatch(n.Segments, segments)):
 				suffix = append(suffix, n)
 			}
 			if len(n.Children) > 0 {
@@ -169,6 +169,19 @@ func segmentsEqual(a, b []string) bool {
 }
 
 // suffixMatch reports whether requested is a trailing subsequence of full.
+// qualifiedLeafMatch accepts the human-facing method name when an LSP reports
+// a flat receiver-qualified symbol such as "(*Engine).FindSymbol". Exact or
+// anchored paths still use the server-provided name, and multiple receiver
+// matches remain ambiguous rather than being guessed.
+func qualifiedLeafMatch(full, requested []string) bool {
+	if len(full) != 1 || len(requested) != 1 {
+		return false
+	}
+	name := full[0]
+	dot := strings.LastIndex(name, ".")
+	return dot >= 0 && dot+1 < len(name) && name[dot+1:] == requested[0]
+}
+
 func suffixMatch(full, requested []string) bool {
 	if len(requested) > len(full) || len(requested) == len(full) {
 		return false

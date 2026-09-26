@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	ds := definitions()
-	if len(ds) != 21 {
+	if len(ds) != 25 {
 		t.Fatalf("got %d tools", len(ds))
 	}
 	seen := map[string]bool{}
@@ -78,7 +78,7 @@ func TestTargetToolsAcceptSymbolPath(t *testing.T) {
 }
 
 func TestTargetToolsInferLanguage(t *testing.T) {
-	for _, name := range []string{"find_symbol", "get_symbol_context", "get_semantic_slice", "get_definition", "find_references", "get_hover", "impact_analysis"} {
+	for _, name := range []string{"find_symbol", "get_symbol_context", "get_semantic_slice", "get_definition", "find_references", "get_hover", "impact_analysis", "rename_symbol"} {
 		for _, d := range definitions() {
 			if d.name != name {
 				continue
@@ -109,7 +109,7 @@ func TestResultStructuredAndTextContentMatch(t *testing.T) {
 }
 
 func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
-	for _, phrase := range []string{"get_semantic_slice", "get_symbol_outline", "impact_analysis", "symbol_id", "INCOMPLETE_SEARCH"} {
+	for _, phrase := range []string{"get_symbol_context", "get_semantic_slice", "get_symbol_outline", "impact_analysis", "symbol_id", "INCOMPLETE_SEARCH"} {
 		if !strings.Contains(serverInstructions, phrase) {
 			t.Fatalf("server instructions missing %q: %s", phrase, serverInstructions)
 		}
@@ -119,20 +119,35 @@ func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
 	}
 }
 
-func TestToolAnnotationsMarkNavigationReadOnlyAndOnboardAsWrite(t *testing.T) {
+func TestToolAnnotationsMarkReadsAndExplicitWrites(t *testing.T) {
 	for _, d := range definitions() {
 		a := toolAnnotations(d.name)
 		if a.OpenWorldHint == nil || *a.OpenWorldHint {
 			t.Fatalf("%s must be closed-world", d.name)
 		}
-		if d.name == "onboard" {
+		if d.name == "onboard" || d.name == "rename_symbol" || d.name == "format_document" || d.name == "apply_code_action" {
 			if a.ReadOnlyHint || a.DestructiveHint == nil || !*a.DestructiveHint {
-				t.Fatalf("onboard annotations must declare an explicit configuration write: %#v", a)
+				t.Fatalf("%s annotations must declare an explicit write: %#v", d.name, a)
 			}
 			continue
 		}
 		if !a.ReadOnlyHint {
 			t.Fatalf("%s must be marked read-only", d.name)
+		}
+	}
+}
+
+func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
+	props := allProperties()
+	languageSchema, _ := props["language"].(map[string]any)
+	if values, ok := languageSchema["enum"].([]any); !ok || len(values) == 0 {
+		t.Fatalf("language schema must advertise enum values: %#v", languageSchema)
+	}
+	for _, name := range []string{"include", "kinds", "severities"} {
+		schema, _ := props[name].(map[string]any)
+		items, _ := schema["items"].(map[string]any)
+		if values, ok := items["enum"].([]any); !ok || len(values) == 0 {
+			t.Fatalf("%s item schema must advertise enum values: %#v", name, schema)
 		}
 	}
 }

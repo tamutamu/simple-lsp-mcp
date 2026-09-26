@@ -204,3 +204,28 @@ func TestMatchNodesReturnsNoneWhenNothingMatches(t *testing.T) {
 		t.Fatalf("matchNodes = %#v, want none", got)
 	}
 }
+
+func TestMatchNodesMatchesFlatReceiverQualifiedMethodByLeaf(t *testing.T) {
+	nodes := []symbolNode{{
+		Name:       "(*Engine).resolveSymbolPathAcrossLanguages",
+		Segments:   []string{"(*Engine).resolveSymbolPathAcrossLanguages"},
+		SymbolPath: "(*Engine).resolveSymbolPathAcrossLanguages",
+	}}
+	got := matchNodes(nodes, []string{"resolveSymbolPathAcrossLanguages"}, false)
+	if len(got) != 1 || got[0].SymbolPath != "(*Engine).resolveSymbolPathAcrossLanguages" {
+		t.Fatalf("matchNodes = %#v", got)
+	}
+	if got := matchNodes(nodes, []string{"resolveSymbolPathAcrossLanguages"}, true); len(got) != 0 {
+		t.Fatalf("anchored leaf unexpectedly matched receiver-qualified symbol: %#v", got)
+	}
+}
+
+func TestMatchNodesReturnsAmbiguousFlatReceiverQualifiedMethods(t *testing.T) {
+	nodes := []symbolNode{
+		{Name: "(*A).Run", Segments: []string{"(*A).Run"}, SymbolPath: "(*A).Run"},
+		{Name: "(*B).Run", Segments: []string{"(*B).Run"}, SymbolPath: "(*B).Run"},
+	}
+	if got := matchNodes(nodes, []string{"Run"}, false); len(got) != 2 {
+		t.Fatalf("matchNodes = %#v, want two ambiguous methods", got)
+	}
+}

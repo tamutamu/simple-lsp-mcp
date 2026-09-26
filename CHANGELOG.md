@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an executable React/TypeScript + FastAPI/Python monorepo proof under `examples/react-fastapi-monorepo`, backed by real TypeScript Language Server and Pyright integration tests.
 - Add evidence documentation that separates verified semantic capabilities from the still-unproven agent-level speed/accuracy hypothesis.
 - Verify that per-LSP `env`, `settings`, and `initialization_options` are actually forwarded to the child language-server process and protocol messages.
+- Make pathless symbol discovery fall back to a bounded per-LSP document-symbol traversal when `workspace/symbol` is unavailable before project indexing, and guide agents to avoid shell path discovery first.
+- Add explicit LSP-backed editing: semantic rename with `prepareRename`/`rename`, whole-file and range formatting, code-action listing/resolution, and validated `WorkspaceEdit` application with preview-first writes.
+- Refuse unsafe edit shapes: workspace escapes, symlink targets, overlapping edits, stale files, resource operations, and code actions that require unbounded `workspace/executeCommand`.
+- Add bounded rename warm-up for project-based TypeScript/Python servers so unopened reference files participate in cross-file semantic rename without exposing extra agent tool calls.
 
 ## [0.9.0] - 2026-09-25
 

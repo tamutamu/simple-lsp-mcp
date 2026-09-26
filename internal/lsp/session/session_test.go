@@ -28,6 +28,18 @@ func TestDecodeCapsDetectsHoverProvider(t *testing.T) {
 	}
 }
 
+func TestDecodeCapsDetectsEditingProviders(t *testing.T) {
+	caps := decodeCaps(map[string]json.RawMessage{
+		"renameProvider":                  json.RawMessage(`{"prepareProvider":true}`),
+		"documentFormattingProvider":      json.RawMessage("true"),
+		"documentRangeFormattingProvider": json.RawMessage("true"),
+		"codeActionProvider":              json.RawMessage(`{"resolveProvider":true}`),
+	}, "utf-16")
+	if !caps.Rename || !caps.PrepareRename || !caps.Formatting || !caps.RangeFormatting || !caps.CodeAction || !caps.CodeActionResolve {
+		t.Fatalf("editing capabilities = %#v", caps)
+	}
+}
+
 func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
 	tempDir := t.TempDir()

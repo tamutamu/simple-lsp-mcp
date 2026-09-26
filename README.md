@@ -7,7 +7,7 @@
 
 **Stop making coding agents grep your whole repository.**
 
-`simple-lsp-mcp` turns the LSP servers you already use into **precise, bounded semantic context** for Claude Code, Codex, and other MCP clients.
+`simple-lsp-mcp` turns the LSP servers you already use into **precise semantic navigation and LSP-computed code edits** for Claude Code, Codex, and other MCP clients.
 
 Instead of making an agent search strings, read whole files, and stitch relationships together itself, it can ask one semantic question and get a bounded answer from the language server:
 
@@ -41,7 +41,7 @@ Instead of making the agent perform several navigation calls and assemble the re
 
 The project stays deliberately narrow:
 
-- **Source-code read-only.** Navigation tools never edit source files. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
+- **Reads stay read-only; writes are explicit LSP operations.** Navigation/analysis tools never edit source. `rename_symbol` and `format_document` preview by default and write only with `apply=true`; `apply_code_action` writes only a validated LSP `WorkspaceEdit`. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
 - **No hidden index or embeddings.** Answers come live from your local LSP server.
 - **No external indexing service.** The server reads your workspace locally and only returns requested results to your configured MCP client.
 - **Byte-budgeted context.** High-level tools bound how much code is returned.
@@ -59,8 +59,11 @@ Coding agents are very good at reasoning about code once they have the right con
 - `get_symbol_context` — source, callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather the minimum useful source neighborhood under a byte budget.
 - `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
+- `rename_symbol` — semantic cross-file rename computed by the language server.
+- `format_document` — whole-file or range formatting from the language server, previewable before apply.
+- `get_code_actions` / `apply_code_action` — inspect LSP quick fixes/refactors and apply only WorkspaceEdit-backed actions.
 
-That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding task**.
+That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding or semantic-change task**.
 
 See [SECURITY.md](SECURITY.md) for the full security model.
 
@@ -265,6 +268,10 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `get_subtypes` | Get direct subtypes | target |
 | `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
 | `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
+| `rename_symbol` | Preview/apply an LSP semantic rename across files | target, `new_name` |
+| `format_document` | Preview/apply whole-file or range LSP formatting | `path` |
+| `get_code_actions` | List LSP code actions for a source range | `path`, `line`, `column` |
+| `apply_code_action` | Re-query and apply one WorkspaceEdit-backed code action | `path`, `line`, `column`, `action_id` |
 | `onboard` | Scan workspace and generate configuration | None |
 
 `search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
@@ -281,13 +288,23 @@ When no file is specified, the server searches every configured LSP instance for
 
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
 
+### LSP-backed editing
+
+`simple-lsp-mcp` never guesses text replacements for semantic edits. It asks the configured language server to calculate them.
+
+- `rename_symbol` calls `textDocument/prepareRename` when advertised, then `textDocument/rename`. It previews the complete cross-file `WorkspaceEdit` by default; `apply=true` writes it.
+- `format_document` calls `textDocument/formatting`, or `textDocument/rangeFormatting` when a full start/end range is supplied. It also previews by default.
+- `get_code_actions` calls `textDocument/codeAction` without writing. `apply_code_action` may use `codeAction/resolve`, then applies only an action backed by a `WorkspaceEdit`. Command-only actions, or actions that also require `workspace/executeCommand`, are refused rather than partially executed.
+
+Before any write, every edit is validated: paths must stay inside the running workspace, targets must be regular non-symlink files, ranges must be valid and non-overlapping, and LSP resource operations such as create/delete/rename-file are rejected. All target files are rechecked for staleness before the first write.
+
 ## Verification
 
 Run `go test ./...` and `go test -race ./...` before contributing. CI also runs integration tests against actual Go, TypeScript, and Python language servers.
 
 For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and follows cross-file calls with `get_semantic_slice` on both sides. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
 
-See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify code navigation and semantic results; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
+See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify semantic navigation and LSP-computed edits; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
 
 ## Server options
 

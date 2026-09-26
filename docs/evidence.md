@@ -6,7 +6,7 @@ This page separates what `simple-lsp-mcp` can currently prove from what is still
 
 ### Real language servers, not protocol mocks
 
-CI launches `gopls`, TypeScript Language Server, and Pyright as real subprocesses. The integration suite verifies document symbols, symbol lookup, stale-symbol handling, monorepo search, semantic slices, and workspace enumeration.
+CI launches `gopls`, TypeScript Language Server, and Pyright as real subprocesses. The integration suite verifies document symbols, symbol lookup, stale-symbol handling, monorepo search, semantic slices, workspace enumeration, semantic rename, formatting, and WorkspaceEdit-backed code actions.
 
 ### One MCP engine can serve a mixed React + FastAPI monorepo
 
@@ -37,6 +37,16 @@ This matters for language servers that need project-specific memory limits, anal
 
 Workspace-wide symbol resolution searches every configured LSP instance for a language. If a bounded search cannot finish, the server reports `INCOMPLETE_SEARCH` instead of turning a partial search into a false not-found or false unique result.
 
+### Semantic edits are executed by real language servers
+
+The edit integration tests verify that source changes come from LSP edit protocols rather than string replacement:
+
+- `TestRealLSPEditing` uses `gopls` to preview and apply a cross-file rename, preview/apply document formatting, and apply a `source.organizeImports` code action backed by `WorkspaceEdit`. It also verifies that an unrelated identifier containing the old symbol text is not renamed.
+- `TestRealTypeScriptRangeFormatting` exercises `textDocument/rangeFormatting` against TypeScript Language Server.
+- `TestRealSemanticRenameAcrossLanguages` runs the same `rename_symbol` operation against TypeScript Language Server and Pyright and verifies that definition and reference files are both updated.
+
+TypeScript/Python rename also exercises the bounded internal warm-up used when project-based servers have not yet attached unopened reference files. The MCP still applies only the `WorkspaceEdit` returned by the language server.
+
 ## Reproduce the mixed-language proof
 
 Install the TypeScript Language Server, TypeScript 6, and Pyright, then run:
@@ -58,4 +68,4 @@ The next evidence layer is agent-level A/B testing. We still need controlled tas
 - elapsed time, and
 - whether the agent touched the correct files and symbols.
 
-Until those experiments exist, the project should claim **semantic capability and bounded context**, not a percentage improvement in agent accuracy or speed.
+Until those experiments exist, the project should claim **verified semantic navigation/edit capability and bounded context**, not a percentage improvement in agent accuracy or speed.

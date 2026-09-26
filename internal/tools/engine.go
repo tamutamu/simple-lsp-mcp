@@ -1,4 +1,4 @@
-// Package tools implements the read-only MCP operations over LSP.
+// Package tools implements semantic navigation and explicit LSP-backed edit operations.
 package tools
 
 import (

@@ -428,6 +428,24 @@ func TestRealReactFastAPIMonorepoExample(t *testing.T) {
 	defer cancel()
 
 	tsPath := "apps/web/src/components/UserList.tsx"
+	// Agent-facing discovery must work before the caller knows a path. tsserver
+	// and Pyright can have an empty/uninitialized workspace-symbol index here.
+	for _, tc := range []struct {
+		language, symbol, wantPath string
+	}{
+		{"typescript", "loadUsers", tsPath},
+		{"python", "list_users", "apps/api/app/routes/users.py"},
+	} {
+		found, err := e.FindSymbol(ctx, map[string]any{"language": tc.language, "symbol_path": tc.symbol})
+		if err != nil {
+			t.Fatalf("pathless %s symbol discovery: %v", tc.language, err)
+		}
+		symbol, _ := found["symbol"].(map[string]any)
+		if symbol["path"] != tc.wantPath {
+			t.Fatalf("pathless %s discovery = %#v", tc.language, found)
+		}
+	}
+
 	tsFound, err := e.FindSymbol(ctx, map[string]any{"path": tsPath, "symbol_path": "loadUsers"})
 	if err != nil {
 		t.Fatalf("TypeScript symbol lookup: %v", err)

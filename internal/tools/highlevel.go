@@ -3,7 +3,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -82,12 +85,32 @@ func (e *Engine) candidateFiles(ctx context.Context, p language.Profile, leaf st
 		callCtx, cancel := e.callContext(ctx)
 		err := s.Request(callCtx, "workspace/symbol", map[string]string{"query": leaf}, &raw)
 		cancel()
-		if err != nil {
-			return nil, core.WithCause(core.IncompleteSearch, p.SessionKey+" workspace-symbol query failed; specify path to narrow the search", err)
+		if err == nil && len(raw) > 0 {
+			for _, v := range raw {
+				path, err := normalize.URIPath(e.WS, v.Location.URI)
+				if err != nil || seen[path] {
+					continue
+				}
+				seen[path] = true
+				files = append(files, path)
+			}
+			continue
 		}
-		for _, v := range raw {
-			path, err := normalize.URIPath(e.WS, v.Location.URI)
-			if err != nil || seen[path] {
+
+		// Some servers (notably tsserver and Pyright) may not populate
+		// workspace/symbol until at least one project document has been opened.
+		// Fall back to a bounded source-file traversal under this exact LSP root;
+		// documentSymbol then provides authoritative symbol structure without a
+		// hidden index. If the root is too large, fail closed and ask for path.
+		fallback, fallbackErr := e.sessionCandidateFiles(ctx, p, s)
+		if fallbackErr != nil {
+			if err != nil {
+				return nil, core.WithCause(core.IncompleteSearch, p.SessionKey+" workspace-symbol query failed and fallback discovery could not complete; specify path to narrow the search", err)
+			}
+			return nil, fallbackErr
+		}
+		for _, path := range fallback {
+			if seen[path] {
 				continue
 			}
 			seen[path] = true
@@ -95,6 +118,50 @@ func (e *Engine) candidateFiles(ctx context.Context, p language.Profile, leaf st
 		}
 	}
 	sort.Strings(files)
+	return files, nil
+}
+
+func (e *Engine) sessionCandidateFiles(ctx context.Context, p language.Profile, s *session.Session) ([]string, error) {
+	root := filepath.Clean(s.Root())
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if path != root && workspaceListExcludedDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(e.WS.Root(), path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		profile, err := language.FromPath(rel)
+		if err != nil || profile.SessionKey != p.SessionKey {
+			return nil
+		}
+		files = append(files, rel)
+		if len(files) > maxProbeFiles {
+			return core.NewError(core.IncompleteSearch, fmt.Sprintf("more than %d source files under %s require fallback discovery; provide path to narrow the query", maxProbeFiles, filepath.ToSlash(root)))
+		}
+		return nil
+	})
+	if err != nil {
+		var appErr *core.AppError
+		if errors.As(err, &appErr) {
+			return nil, err
+		}
+		return nil, core.WithCause(core.IncompleteSearch, "could not enumerate fallback source files; provide path to narrow the query", err)
+	}
 	return files, nil
 }
 
