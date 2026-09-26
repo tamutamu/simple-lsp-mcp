@@ -51,7 +51,22 @@ The edit integration tests verify that source changes come from LSP edit protoco
 - `TestRealTypeScriptRangeFormatting` exercises `textDocument/rangeFormatting` against TypeScript Language Server.
 - `TestRealSemanticRenameAcrossLanguages` runs the same `rename_symbol` operation against TypeScript Language Server and Pyright and verifies that definition and reference files are both updated.
 
-TypeScript/Python semantic operations also exercise the bounded internal project warm-up used when project-based servers have not yet attached unopened reference files. The real-LSP suite verifies cross-file references, incoming callers, and impact-analysis affected files before rename; the MCP still applies only the `WorkspaceEdit` returned by the language server.
+TypeScript/Python semantic operations also exercise the bounded internal project warm-up used when project-based servers have not yet attached unopened reference files. TypeScript additionally performs a semantic call-hierarchy synchronization point because `didOpen` alone can leave path-alias consumers temporarily outside tsserver's project graph. The real-LSP suite verifies cross-file references, incoming callers, impact-analysis affected files, path-alias references, and cross-file rename; the MCP still applies only the `WorkspaceEdit` returned by the language server.
+
+## Manual external-repository check
+
+A local, read-only evaluation was also run against `fastapi/full-stack-fastapi-template` pinned to commit `cb740b656d7a0a6c5e12c7bf8e50343ec94ee9c7` (43 Python files and 109 TypeScript/TSX files in the checkout). This is not part of CI and is reported as an external validation, not a benchmark claim.
+
+Representative results from fresh MCP/LSP processes:
+
+- pathless `find_symbol(symbol_path="authenticate", language="python")` resolved `backend/app/crud.py` without first knowing the file,
+- pathless `find_symbol(symbol_path="create_user", language="python")` returned three distinct candidates instead of pretending the name was unique,
+- `get_semantic_slice` for frontend `useAuth` returned the root plus `useCustomToast`, `isLoggedIn`, generated client methods, and ten direct dependents in about 6.5 KB of structured output,
+- `impact_analysis` for backend `authenticate` found the login route plus three test callers/references after project warm-up,
+- `rename_symbol(authenticate -> authenticate_user)` previewed five LSP-computed edits across the definition, login route, and tests, and
+- a TypeScript path-alias case (`useTheme`) exposed an initialization gap: low-level references initially saw only the declaration. The resulting semantic-prime fix made standalone references return eight locations and rename preview eight edits across four files; a real-LSP regression test now covers this pattern.
+
+Literal `rg` searches on this repository were effectively instantaneous, so `simple-lsp-mcp` should not claim to beat grep for raw string lookup. Its demonstrated value is semantic disambiguation, bounded context, call/impact relationships, and LSP-calculated changes. The timings above include fresh MCP and language-server startup and therefore are not interactive-session latency measurements.
 
 ## Reproduce the mixed-language proof
 

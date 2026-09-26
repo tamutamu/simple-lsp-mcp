@@ -202,6 +202,9 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.targetWarmName(in)); err != nil {
 			return nil, err
 		}
+		if err := e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
+			return nil, err
+		}
 	}
 	var extra map[string]any
 	if name == "find_references" {

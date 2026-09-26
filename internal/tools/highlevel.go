@@ -628,6 +628,14 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		if err := e.warmProjectSymbolCandidates(ctx, p, s, warmName); err != nil {
 			return nil, err
 		}
+		if hasRange {
+			pos, posErr := document.ToLSP(d.Text, symSelRange.Start, s.Capabilities().PositionEncoding)
+			if posErr == nil {
+				if err := e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
+					return nil, err
+				}
+			}
+		}
 		projectWarmed = true
 	}
 

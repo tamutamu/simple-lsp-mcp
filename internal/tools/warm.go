@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -10,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
+	"github.com/tamutamu/simple-lsp-mcp/internal/document"
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 )
 
@@ -33,6 +36,40 @@ const (
 
 func projectWarmSupported(p language.Profile) bool {
 	return p.SessionKey == "typescript-javascript" || p.SessionKey == "python"
+}
+
+// primeProjectSemantics forces project-based TypeScript servers to finish
+// attaching the newly-opened candidate files before a project-wide relation or
+// rename is requested. didOpen alone is asynchronous inside tsserver. A real
+// call-hierarchy round trip proved to be the reliable semantic synchronization
+// point; its result is discarded because the caller will make its own query.
+func (e *Engine) primeProjectSemantics(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position) error {
+	if p.SessionKey != "typescript-javascript" || !s.Capabilities().CallHierarchy {
+		return nil
+	}
+	callCtx, cancel := e.callContext(ctx)
+	var raw json.RawMessage
+	err := s.Request(callCtx, "textDocument/prepareCallHierarchy", map[string]any{
+		"textDocument": protocol.TextDocumentIdentifier{URI: d.URI},
+		"position":     pos,
+	}, &raw)
+	cancel()
+	if err != nil {
+		return core.WithCause(core.IncompleteSearch, "project semantic warm-up could not prepare call hierarchy", err)
+	}
+	var items []protocol.CallHierarchyItem
+	if json.Unmarshal(raw, &items) != nil || len(items) == 0 {
+		return nil
+	}
+	item := items[0]
+	callCtx, cancel = e.callContext(ctx)
+	var ignored json.RawMessage
+	err = s.Request(callCtx, "callHierarchy/incomingCalls", map[string]any{"item": item}, &ignored)
+	cancel()
+	if err != nil {
+		return core.WithCause(core.IncompleteSearch, "project semantic warm-up could not load incoming calls", err)
+	}
+	return nil
 }
 
 func (e *Engine) targetWarmName(in map[string]any) string {

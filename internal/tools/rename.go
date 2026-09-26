@@ -54,6 +54,9 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 			if err := e.warmProjectSymbolCandidates(ctx, p, s, name); err != nil {
 				return nil, err
 			}
+			if err := e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
+				return nil, err
+			}
 		}
 	}
 

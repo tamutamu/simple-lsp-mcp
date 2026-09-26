@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Confine pathless fallback discovery and project warm-up to the active workspace, including symlink-resolved LSP roots.
+- Prime TypeScript project semantics after bounded warm-up so path-alias references and semantic rename include unopened consumer files instead of returning a partial local result.
 
 ## [0.9.0] - 2026-09-25
 

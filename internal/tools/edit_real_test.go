@@ -425,4 +425,61 @@ func TestRealSemanticRenameAcrossLanguages(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("typescript_path_alias_project_semantics", func(t *testing.T) {
+		if _, err := exec.LookPath("typescript-language-server"); err != nil {
+			t.Skip("typescript-language-server is not installed")
+		}
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		tsconfig := `{"compilerOptions":{"strict":true,"moduleResolution":"Bundler","module":"ESNext","paths":{"@/*":["./src/*"]}},"include":["src"]}`
+		if err := os.WriteFile(filepath.Join(root, "tsconfig.json"), []byte(tsconfig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{
+			"src/theme.ts": `export const useTheme = () => ({ theme: "light" })` + "\n",
+			"src/a.ts":     `import { useTheme } from "@/theme"` + "\n" + `export const A = () => useTheme().theme` + "\n",
+			"src/b.ts":     `import { useTheme } from "@/theme"` + "\n" + `export const B = () => useTheme().theme` + "\n",
+		}
+		for name, content := range files {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		server := config.Server{Command: "typescript-language-server", Args: []string{"--stdio"}, Directory: "."}
+		if path := os.Getenv("SIMPLE_LSP_TSSERVER_PATH"); path != "" {
+			server.InitializationOptions = map[string]any{"tsserver": map[string]any{"path": path}}
+		}
+		ws, err := workspace.Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine := New(ws, config.Runtime{RequestTimeout: 30 * time.Second, MaxResults: 100, Servers: map[string][]config.Server{"typescript-javascript": {server}}})
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			engine.Sessions.Shutdown(ctx)
+		})
+		target := map[string]any{"path": "src/theme.ts", "symbol_path": "useTheme", "include_declaration": true, "limit": 100}
+		references, err := engine.Relationship(context.Background(), "find_references", "textDocument/references", "references", target)
+		if err != nil {
+			t.Fatalf("path-alias references: %v", err)
+		}
+		locations, _ := references["locations"].([]core.Location)
+		if len(locations) < 5 {
+			t.Fatalf("TypeScript project semantic prime missed path-alias references: %#v", references)
+		}
+		preview, err := engine.RenameSymbol(context.Background(), map[string]any{
+			"path": "src/theme.ts", "symbol_path": "useTheme", "new_name": "useAppTheme",
+		})
+		if err != nil {
+			t.Fatalf("path-alias rename preview: %v", err)
+		}
+		if preview["file_count"].(int) < 3 || preview["edit_count"].(int) < 5 {
+			t.Fatalf("TypeScript project semantic prime produced partial rename: %#v", preview)
+		}
+	})
+
 }
