@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refuse unsafe edit shapes: workspace escapes, symlink targets, overlapping edits, stale files, resource operations, and code actions that require unbounded `workspace/executeCommand`.
 - Add bounded rename warm-up for project-based TypeScript/Python servers so unopened reference files participate in cross-file semantic rename without exposing extra agent tool calls.
 
+### Changed
+
+- Keep all 25 public MCP tools, order high-level semantic workflows before exact LSP primitives, and compact the serialized model-visible tool catalog from 39,878 bytes to 24,114 bytes. A test enforces a 25 KiB catalog budget.
+
+### Fixed
+
+- Confine pathless fallback discovery and rename warm-up to the active workspace even when a configured LSP root points elsewhere.
+
 ## [0.9.0] - 2026-09-25
 
 ### Added

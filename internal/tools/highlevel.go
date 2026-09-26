@@ -122,9 +122,15 @@ func (e *Engine) candidateFiles(ctx context.Context, p language.Profile, leaf st
 }
 
 func (e *Engine) sessionCandidateFiles(ctx context.Context, p language.Profile, s *session.Session) ([]string, error) {
-	root := filepath.Clean(s.Root())
+	root, err := filepath.EvalSymlinks(filepath.Clean(s.Root()))
+	if err != nil {
+		return nil, core.WithCause(core.IncompleteSearch, "configured language-server root escapes the workspace; provide an in-workspace path/profile", err)
+	}
+	if _, err := e.WS.Relative(root); err != nil {
+		return nil, core.WithCause(core.IncompleteSearch, "configured language-server root escapes the workspace; provide an in-workspace path/profile", err)
+	}
 	var files []string
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -542,6 +548,7 @@ func includeSection(in map[string]any, name string) bool {
 func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[string]any, error) {
 	var (
 		p                                            language.Profile
+		s                                            *session.Session
 		d                                            document.Document
 		name, kind, containerName, detail, symbolPth string
 		symRange, symSelRange                        core.Range
@@ -572,6 +579,7 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		}
 		hit := hits[0]
 		p = hit.Profile
+		s = hit.Session
 		d = hit.Document
 		warnings = w
 		docPath := relativeMust(e, d.Path)
@@ -585,21 +593,21 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		if err != nil {
 			return nil, err
 		}
-		pp, _, dd, _, err := e.target(ctx, in)
+		pp, ss, dd, _, err := e.target(ctx, in)
 		if err != nil {
 			return nil, err
 		}
-		p, d = pp, dd
+		p, s, d = pp, ss, dd
 		targetSymbolID = id
 		name, kind, containerName, detail, symbolPth = rec.Name, rec.Kind, rec.ContainerName, rec.Detail, rec.SymbolPath
 		symRange, symSelRange, hasRange = rec.Range, rec.SelectionRange, true
 
 	default:
-		pp, _, dd, _, err := e.target(ctx, in)
+		pp, ss, dd, _, err := e.target(ctx, in)
 		if err != nil {
 			return nil, err
 		}
-		p, d = pp, dd
+		p, s, d = pp, ss, dd
 	}
 
 	subIn := map[string]any{"language": p.Name}
@@ -609,6 +617,17 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		subIn["path"] = stringVal(in, "path")
 		subIn["line"] = intVal(in, "line")
 		subIn["column"] = intVal(in, "column")
+	}
+	needsProjectWarm := includeSection(in, "incoming_calls") || includeSection(in, "references") || includeSection(in, "implementations")
+	if needsProjectWarm && s != nil {
+		warmName := name
+		if warmName == "" {
+			warmName = e.targetWarmName(subIn)
+		}
+		if err := e.warmProjectSymbolCandidates(ctx, p, s, warmName); err != nil {
+			return nil, err
+		}
+		subIn["_project_warmed"] = true
 	}
 
 	path := relativeMust(e, d.Path)

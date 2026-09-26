@@ -5,67 +5,51 @@
 [![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Stop making coding agents grep your whole repository.**
+**Semantic read/write for coding agents, powered by the language servers you already trust.**
 
-`simple-lsp-mcp` turns the LSP servers you already use into **precise semantic navigation and LSP-computed code edits** for Claude Code, Codex, and other MCP clients.
-
-Instead of making an agent search strings, read whole files, and stitch relationships together itself, it can ask one semantic question and get a bounded answer from the language server:
+`simple-lsp-mcp` gives Claude Code, Codex, and other MCP clients one consistent API to **understand code and make LSP-computed changes** across languages. It keeps the language server's semantic precision, but packages common coding-agent tasks into fewer, bounded tool calls.
 
 ```text
-❌ grep → read → grep → read → infer relationships
-✅ get_semantic_slice("UserService/createUser", max_bytes=24576)
+understand  → get_semantic_slice / get_symbol_context
+assess      → impact_analysis
+rename      → rename_symbol
+format      → format_document
+quick-fix   → get_code_actions → apply_code_action
 ```
 
-`get_semantic_slice` returns root and callee source, type-definition locations, compact callers and implementations, and test-file candidates backed by LSP references under a depth/node/serialized-JSON-byte budget. For a shallower view, `get_symbol_context` returns source + callers + callees + references + implementations in one call.
+The high-level tools come first because they answer complete agent tasks. The precise LSP primitives — definitions, references, implementations, callers/callees, supertypes/subtypes, declarations, and type definitions — **remain available** when a caller needs exactly one relation. Nothing useful is hidden behind a separate mode.
 
-## ⭐ Flagship: `get_semantic_slice`
+### Why this exists
 
-`get_semantic_slice` is the main reason to use `simple-lsp-mcp`. Give it one symbol and it builds the smallest useful semantic code neighborhood an agent needs to understand or change that symbol.
+Coding agents can reason well once they have the right semantic context. The expensive part is often finding that context and changing code without guessing from text. Plain grep produces name collisions and string matches; reading whole files burns context; raw LSP calls can require several model-visible round trips.
 
-```text
-get_semantic_slice(
-  symbol_path="UserService/createUser",
-  max_bytes=24576,
-  depth=2
-)
+`simple-lsp-mcp` turns those primitives into agent-oriented operations:
 
-→ root source
-→ direct + transitive callee source
-→ compact callers
-→ type definitions + implementations
-→ test-file candidates supported by reference locations
-→ bounded by JSON bytes, depth, and node counts
-```
-
-Instead of making the agent perform several navigation calls and assemble the relationships itself, `get_semantic_slice` performs that semantic traversal inside the MCP server and returns one bounded result. The goal is simple: **fewer tool calls, less irrelevant code, more room for reasoning.**
-
-The project stays deliberately narrow:
-
-- **Reads stay read-only; writes are explicit LSP operations.** Navigation/analysis tools never edit source. `rename_symbol` and `format_document` preview by default and write only with `apply=true`; `apply_code_action` writes only a validated LSP `WorkspaceEdit`. The `onboard` tool writes `.simple-lsp.yaml`; `setup --apply` changes the chosen MCP client configuration.
-- **No hidden index or embeddings.** Answers come live from your local LSP server.
-- **No external indexing service.** The server reads your workspace locally and only returns requested results to your configured MCP client.
-- **Byte-budgeted context.** High-level tools bound how much code is returned.
-- **Language inference.** For most target-based tools, `language` can be omitted; it is inferred from `symbol_id`, file extension, or configured LSP profiles.
-- **Lazy.** A language server starts only when a request needs it.
-
-## Why
-
-Coding agents are very good at reasoning about code once they have the right context. The expensive part is often *finding* that context. Text search produces name collisions and string matches; reading entire files burns context; raw LSP primitives are precise but can require several agent-visible round trips.
-
-`simple-lsp-mcp` treats LSP as a semantic context backend. Low-level navigation tools remain available, but the main goal is to answer a whole code-understanding question in as few tool calls as possible:
-
-- `find_symbol` — resolve a human-readable symbol without first knowing its file or position.
+- `find_symbol` — resolve a human-readable symbol without first knowing its file.
 - `get_symbol_outline` — inspect structure without returning source text.
-- `get_symbol_context` — source, callers, callees, references, and implementations in one call.
-- `get_semantic_slice` — gather the minimum useful source neighborhood under a byte budget.
-- `impact_analysis` — estimate refactor blast radius through transitive callers and affected files.
-- `rename_symbol` — semantic cross-file rename computed by the language server.
-- `format_document` — whole-file or range formatting from the language server, previewable before apply.
-- `get_code_actions` / `apply_code_action` — inspect LSP quick fixes/refactors and apply only WorkspaceEdit-backed actions.
+- `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
+- `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
+- `impact_analysis` — estimate refactor blast radius.
+- `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
+- `format_document` — preview/apply document or range formatting.
+- `get_code_actions` / `apply_code_action` — inspect and apply WorkspaceEdit-backed LSP fixes.
 
-That distinction matters: the project is not trying to expose every LSP method. It is trying to reduce **agent tool calls and context consumed per code-understanding or semantic-change task**.
+```text
+❌ grep → read → grep → infer → edit matching text → hope
+✅ semantic context → impact → LSP-computed edit → validate → apply
+```
 
-See [SECURITY.md](SECURITY.md) for the full security model.
+### Design boundaries
+
+- **Reads stay read-only; writes are explicit.** `rename_symbol` and `format_document` preview by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
+- **No hidden index or embeddings.** Results come live from configured local language servers.
+- **No external indexing service.** Workspace code stays local to the MCP/LSP processes.
+- **Bounded context.** High-level responses have result/source/byte budgets and fail closed when a bounded search cannot finish.
+- **Cross-language API.** The same semantic operations work across supported LSP profiles; language is inferred for most target-based tools.
+- **Low-level primitives remain public.** High-level tools guide the common path without removing precise LSP access.
+- **Lazy startup.** A language server starts only when a request needs it.
+
+See [SECURITY.md](SECURITY.md) for the write/confinement model and [docs/evidence.md](docs/evidence.md) for what is proven by real-language-server tests.
 
 ## Supported languages
 
@@ -242,37 +226,58 @@ see [Installation](#installation) above.
 
 ## MCP tools
 
+The complete tool surface is intentionally retained. Tools are exposed in this order: **high-level semantic workflows**, **discovery/inspection**, **precise LSP relationship primitives**, then **setup**. Agents should normally start with the high-level group; direct primitives remain useful for exact queries.
+
 Every tool returns structured data. Symbol, position, and range lines and columns are **one-based**; paths are relative to the workspace.
 
 A **target** identifies one symbol or position, in exactly one of three forms: a `symbol_id` returned by an earlier call, a human-readable `symbol_path` such as `"UserService/createUser"` (optionally scoped to one file with `path`; see [Finding a symbol by name](#finding-a-symbol-by-name) below), or `path` together with `line` and `column`.
 
+### Core semantic operations
+
+| Tool | Purpose | Required input |
+| --- | --- | --- |
+| `find_symbol` | Resolve one symbol by `symbol_path` | `symbol_path` |
+| `get_symbol_outline` | Symbol/file structure without source | target or `path` |
+| `get_symbol_context` | Source plus selected immediate relationships | target |
+| `get_semantic_slice` | Byte-bounded semantic source neighborhood | target |
+| `impact_analysis` | Refactor blast radius and affected files | target |
+| `get_diagnostics` | LSP diagnostics | `path` when file-specific |
+| `rename_symbol` | Preview/apply semantic cross-file rename | target, `new_name` |
+| `format_document` | Preview/apply document or range formatting | `path` |
+| `get_code_actions` | List LSP code actions | `path`, `line`, `column` |
+| `apply_code_action` | Apply one validated WorkspaceEdit-backed action | `path`, `line`, `column`, `action_id` |
+
+### Discovery and direct inspection
+
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
-| `list_workspace_symbols` | Enumerate all configured source symbols, page by page (no name required) | None |
-| `get_document_symbols` | Get hierarchical symbols for one file | `path` |
-| `get_symbol` | Get an acquired `symbol_id` and its source | `symbol_id` |
-| `find_symbol` | Get one symbol by `symbol_path`, without a prior search | `symbol_path` |
-| `get_symbol_outline` | List a symbol's children or a file's top-level symbols without source | target or `path` |
-| `get_symbol_context` | Source, callers, callees, references, and implementations in one call | target |
-| `get_semantic_slice` | Byte-bounded source, types, references-backed test candidates, callers and implementations | target |
-| `get_definition` | Go to a definition | target |
-| `find_references` | Get reference locations | target |
-| `find_implementations` | Get implementation locations | target |
-| `get_type_definition` | Go to a type definition | target |
-| `get_declaration` | Go to a declaration | target |
-| `get_hover` | Get the type inferred for an expression | target |
-| `get_incoming_calls` | Get direct callers | target |
-| `get_outgoing_calls` | Get direct callees | target |
-| `get_supertypes` | Get direct supertypes | target |
-| `get_subtypes` | Get direct subtypes | target |
-| `get_diagnostics` | Get diagnostics for a file | `path` when file-specific |
-| `impact_analysis` | Estimate blast radius: callers, references, implementations, affected files | target |
-| `rename_symbol` | Preview/apply an LSP semantic rename across files | target, `new_name` |
-| `format_document` | Preview/apply whole-file or range LSP formatting | `path` |
-| `get_code_actions` | List LSP code actions for a source range | `path`, `line`, `column` |
-| `apply_code_action` | Re-query and apply one WorkspaceEdit-backed code action | `path`, `line`, `column`, `action_id` |
-| `onboard` | Scan workspace and generate configuration | None |
+| `list_workspace_symbols` | Enumerate configured source symbols page by page | None |
+| `get_document_symbols` | Hierarchical symbols for one file | `path` |
+| `get_symbol` | Retrieve a previously returned `symbol_id` | `symbol_id` |
+| `get_hover` | Exact LSP hover/type information | target |
+
+### Low-level LSP primitives
+
+These remain public for integrations or tasks that need one exact LSP relationship. They are **not deprecated**; aggregate tools are simply the better default for agents.
+
+| Tool | Purpose |
+| --- | --- |
+| `get_definition` | Definition locations |
+| `find_references` | Reference locations |
+| `find_implementations` | Implementation locations |
+| `get_type_definition` | Type-definition locations |
+| `get_declaration` | Declaration locations |
+| `get_incoming_calls` | Direct callers |
+| `get_outgoing_calls` | Direct callees |
+| `get_supertypes` | Direct supertypes |
+| `get_subtypes` | Direct subtypes |
+
+### Configuration
+
+| Tool | Purpose |
+| --- | --- |
+| `onboard` | Detect projects and explicitly generate `.simple-lsp.yaml` |
 
 `search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
 

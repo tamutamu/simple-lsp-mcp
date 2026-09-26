@@ -37,6 +37,12 @@ This matters for language servers that need project-specific memory limits, anal
 
 Workspace-wide symbol resolution searches every configured LSP instance for a language. If a bounded search cannot finish, the server reports `INCOMPLETE_SEARCH` instead of turning a partial search into a false not-found or false unique result.
 
+### Full API retained within a bounded MCP catalog
+
+The public MCP surface still contains all 25 tools, including the exact definition/reference/call/type primitives. High-level semantic workflows are listed first, but low-level primitives are not removed or deprecated.
+
+`TestToolCatalogStaysWithinPromptBudget` serializes the same tool metadata exposed to MCP clients and enforces a 25 KiB upper bound. The current catalog is 24,114 bytes after metadata compaction. This keeps the complete API while limiting model-visible tool-definition overhead.
+
 ### Semantic edits are executed by real language servers
 
 The edit integration tests verify that source changes come from LSP edit protocols rather than string replacement:

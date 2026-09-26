@@ -4,16 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
-	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
-	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 )
 
 // RenameSymbol asks the selected language server to compute a semantic rename.
@@ -57,7 +51,7 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 	if p.SessionKey == "typescript-javascript" || p.SessionKey == "python" {
 		name := e.renameWarmName(in, d.Text, preparation)
 		if name != "" {
-			if err := e.warmRenameCandidates(ctx, p, s, name); err != nil {
+			if err := e.warmProjectSymbolCandidates(ctx, p, s, name); err != nil {
 				return nil, err
 			}
 		}
@@ -97,12 +91,6 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 	return result, nil
 }
 
-const (
-	renameWarmMaxFiles   = 10000
-	renameWarmMaxBytes   = 128 << 20
-	renameWarmMaxMatches = 512
-)
-
 func (e *Engine) renameWarmName(in map[string]any, text []byte, preparation map[string]any) string {
 	if preparation != nil {
 		if placeholder, _ := preparation["placeholder"].(string); placeholder != "" {
@@ -116,80 +104,7 @@ func (e *Engine) renameWarmName(in map[string]any, text []byte, preparation map[
 			}
 		}
 	}
-	if symbolPath := stringVal(in, "symbol_path"); symbolPath != "" {
-		if slash := strings.LastIndex(symbolPath, "/"); slash >= 0 {
-			symbolPath = symbolPath[slash+1:]
-		}
-		return unescapeSegment(symbolPath)
-	}
-	if id := stringVal(in, "symbol_id"); id != "" {
-		if record, err := e.Symbols.Get(id); err == nil {
-			return record.Name
-		}
-	}
-	return ""
-}
-
-func (e *Engine) warmRenameCandidates(ctx context.Context, p language.Profile, s *session.Session, name string) error {
-	root := filepath.Clean(s.Root())
-	needle := []byte(name)
-	filesScanned, bytesScanned, matches := 0, int64(0), 0
-	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return core.WithCause(core.IncompleteSearch, "rename warm-up could not inspect project files", walkErr)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if path != root && workspaceListExcludedDirs[entry.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(e.WS.Root(), path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		candidateProfile, err := language.FromPath(rel)
-		if err != nil || candidateProfile.SessionKey != p.SessionKey {
-			return nil
-		}
-		filesScanned++
-		if filesScanned > renameWarmMaxFiles {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("rename warm-up exceeded %d source files; narrow the workspace/profile before renaming", renameWarmMaxFiles))
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "rename warm-up could not stat "+rel, err)
-		}
-		bytesScanned += info.Size()
-		if bytesScanned > renameWarmMaxBytes {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("rename warm-up exceeded %d MiB of source; narrow the workspace/profile before renaming", renameWarmMaxBytes>>20))
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "rename warm-up could not read "+rel, err)
-		}
-		if !bytes.Contains(content, needle) {
-			return nil
-		}
-		matches++
-		if matches > renameWarmMaxMatches {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("rename warm-up found more than %d candidate files; narrow the workspace/profile before renaming", renameWarmMaxMatches))
-		}
-		syncCtx, cancel := e.callContext(ctx)
-		_, err = e.Docs.Sync(syncCtx, s, path, candidateProfile.LanguageID)
-		cancel()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "rename warm-up could not open "+rel+" in the language server", err)
-		}
-		return nil
-	})
+	return e.targetWarmName(in)
 }
 
 func renamePreparation(text []byte, raw json.RawMessage, encoding string) (map[string]any, error) {

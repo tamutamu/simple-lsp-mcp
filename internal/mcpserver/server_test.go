@@ -4,21 +4,71 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
-	ds := definitions()
-	if len(ds) != 25 {
-		t.Fatalf("got %d tools", len(ds))
+	want := []string{
+		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis",
+		"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
+		"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol", "get_hover",
+		"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration",
+		"get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "onboard",
 	}
-	seen := map[string]bool{}
-	for _, d := range ds {
-		if seen[d.name] {
-			t.Fatalf("duplicate %q", d.name)
+	ds := definitions()
+	if len(ds) != len(want) {
+		t.Fatalf("got %d tools, want %d", len(ds), len(want))
+	}
+	for i, d := range ds {
+		if d.name != want[i] {
+			t.Fatalf("tool[%d] = %q, want %q", i, d.name, want[i])
 		}
-		seen[d.name] = true
 		if d.schema["type"] != "object" {
 			t.Fatalf("%s lacks object schema", d.name)
+		}
+	}
+}
+
+func TestToolCatalogStaysWithinPromptBudget(t *testing.T) {
+	const maxBytes = 25 * 1024
+	catalog := make([]*mcp.Tool, 0, len(definitions()))
+	for _, d := range definitions() {
+		catalog = append(catalog, &mcp.Tool{
+			Name: d.name, Description: d.description, InputSchema: d.schema,
+			OutputSchema: objectSchema(), Annotations: toolAnnotations(d.name),
+		})
+	}
+	encoded, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > maxBytes {
+		t.Fatalf("MCP tool catalog is %d bytes; budget is %d bytes. Keep the full API, but compact metadata before growing the model-visible surface.", len(encoded), maxBytes)
+	}
+}
+
+func TestPreferredAgentWorkflowToolsComeFirstWithoutRemovingPrimitives(t *testing.T) {
+	wantPrefix := []string{
+		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis",
+		"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
+	}
+	ds := definitions()
+	for i, want := range wantPrefix {
+		if ds[i].name != want {
+			t.Fatalf("preferred tool %d = %q, want %q", i, ds[i].name, want)
+		}
+	}
+	for _, primitive := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes"} {
+		found := false
+		for _, d := range ds {
+			if d.name == primitive {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("required low-level primitive %q was removed", primitive)
 		}
 	}
 }
