@@ -149,6 +149,9 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	if !s.Capabilities().CallHierarchy {
 		return nil, e.unsupported(p, "textDocument/prepareCallHierarchy")
 	}
+	if err := e.warmProjectSymbolCandidates(rootCtx, p, s, e.targetWarmName(in)); err != nil {
+		return nil, err
+	}
 
 	b := newImpactBudget(rootCtx)
 	if !b.request() {

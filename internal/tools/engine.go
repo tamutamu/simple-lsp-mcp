@@ -198,6 +198,11 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if !capable(s.Capabilities(), cap) {
 		return nil, e.unsupported(p, method)
 	}
+	if !projectAlreadyWarmed(ctx) && (name == "find_references" || name == "find_implementations") {
+		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.targetWarmName(in)); err != nil {
+			return nil, err
+		}
+	}
 	var extra map[string]any
 	if name == "find_references" {
 		extra = map[string]any{"context": map[string]bool{"includeDeclaration": boolValDefault(in, "include_declaration", false)}}
@@ -242,6 +247,11 @@ func (e *Engine) Hierarchy(ctx context.Context, name string, in map[string]any) 
 		return nil, err
 	}
 	call := name == "get_incoming_calls" || name == "get_outgoing_calls"
+	if !projectAlreadyWarmed(ctx) && (name == "get_incoming_calls" || name == "get_subtypes") {
+		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.targetWarmName(in)); err != nil {
+			return nil, err
+		}
+	}
 	if call && !s.Capabilities().CallHierarchy {
 		return nil, e.unsupported(p, "textDocument/prepareCallHierarchy")
 	}

@@ -619,6 +619,7 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		subIn["column"] = intVal(in, "column")
 	}
 	needsProjectWarm := includeSection(in, "incoming_calls") || includeSection(in, "references") || includeSection(in, "implementations")
+	projectWarmed := false
 	if needsProjectWarm && s != nil {
 		warmName := name
 		if warmName == "" {
@@ -627,7 +628,7 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 		if err := e.warmProjectSymbolCandidates(ctx, p, s, warmName); err != nil {
 			return nil, err
 		}
-		subIn["_project_warmed"] = true
+		projectWarmed = true
 	}
 
 	path := relativeMust(e, d.Path)
@@ -651,6 +652,9 @@ func (e *Engine) SymbolContext(ctx context.Context, in map[string]any) (map[stri
 	}
 	rootCtx, cancel := context.WithTimeout(ctx, 3*e.Timeout)
 	defer cancel()
+	if projectWarmed {
+		rootCtx = markProjectWarmed(rootCtx)
+	}
 
 	out := map[string]any{"symbol": symbol}
 	complete := true

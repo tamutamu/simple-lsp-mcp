@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make pathless symbol discovery fall back to a bounded per-LSP document-symbol traversal when `workspace/symbol` is unavailable before project indexing, and guide agents to avoid shell path discovery first.
 - Add explicit LSP-backed editing: semantic rename with `prepareRename`/`rename`, whole-file and range formatting, code-action listing/resolution, and validated `WorkspaceEdit` application with preview-first writes.
 - Refuse unsafe edit shapes: workspace escapes, symlink targets, overlapping edits, stale files, resource operations, and code actions that require unbounded `workspace/executeCommand`.
-- Add bounded rename warm-up for project-based TypeScript/Python servers so unopened reference files participate in cross-file semantic rename without exposing extra agent tool calls.
+- Add bounded project warm-up for TypeScript/Python so unopened files participate in references, implementations, incoming calls, subtypes, impact analysis, aggregate context, and semantic rename without extra agent tool calls.
 
 ### Changed
 
@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Confine pathless fallback discovery and rename warm-up to the active workspace even when a configured LSP root points elsewhere.
+- Confine pathless fallback discovery and project warm-up to the active workspace, including symlink-resolved LSP roots.
 
 ## [0.9.0] - 2026-09-25
 

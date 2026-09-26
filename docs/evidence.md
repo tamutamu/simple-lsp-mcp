@@ -51,7 +51,7 @@ The edit integration tests verify that source changes come from LSP edit protoco
 - `TestRealTypeScriptRangeFormatting` exercises `textDocument/rangeFormatting` against TypeScript Language Server.
 - `TestRealSemanticRenameAcrossLanguages` runs the same `rename_symbol` operation against TypeScript Language Server and Pyright and verifies that definition and reference files are both updated.
 
-TypeScript/Python rename also exercises the bounded internal warm-up used when project-based servers have not yet attached unopened reference files. The MCP still applies only the `WorkspaceEdit` returned by the language server.
+TypeScript/Python semantic operations also exercise the bounded internal project warm-up used when project-based servers have not yet attached unopened reference files. The real-LSP suite verifies cross-file references, incoming callers, and impact-analysis affected files before rename; the MCP still applies only the `WorkspaceEdit` returned by the language server.
 
 ## Reproduce the mixed-language proof
 

@@ -43,6 +43,7 @@ Coding agents can reason well once they have the right semantic context. The exp
 
 - **Reads stay read-only; writes are explicit.** `rename_symbol` and `format_document` preview by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
 - **No hidden index or embeddings.** Results come live from configured local language servers.
+- **Bounded project warm-up where needed.** TypeScript/Pyright project-wide relations open only candidate source files containing the target spelling, under hard file/byte/match limits; semantic answers still come from the LSP.
 - **No external indexing service.** Workspace code stays local to the MCP/LSP processes.
 - **Bounded context.** High-level responses have result/source/byte budgets and fail closed when a bounded search cannot finish.
 - **Cross-language API.** The same semantic operations work across supported LSP profiles; language is inferred for most target-based tools.
@@ -232,52 +233,52 @@ Every tool returns structured data. Symbol, position, and range lines and column
 
 A **target** identifies one symbol or position, in exactly one of three forms: a `symbol_id` returned by an earlier call, a human-readable `symbol_path` such as `"UserService/createUser"` (optionally scoped to one file with `path`; see [Finding a symbol by name](#finding-a-symbol-by-name) below), or `path` together with `line` and `column`.
 
-### Core semantic operations
+### High-level semantic workflows
 
 | Tool | Purpose | Required input |
 | --- | --- | --- |
-| `find_symbol` | Resolve one symbol by `symbol_path` | `symbol_path` |
-| `get_symbol_outline` | Symbol/file structure without source | target or `path` |
-| `get_symbol_context` | Source plus selected immediate relationships | target |
+| `find_symbol` | Resolve one symbol by `symbol_path` without knowing its file | `symbol_path` |
+| `get_symbol_outline` | Structure without source text | target or `path` |
+| `get_symbol_context` | Source plus selected callers/callees/references/implementations | target |
 | `get_semantic_slice` | Byte-bounded semantic source neighborhood | target |
 | `impact_analysis` | Refactor blast radius and affected files | target |
-| `get_diagnostics` | LSP diagnostics | `path` when file-specific |
-| `rename_symbol` | Preview/apply semantic cross-file rename | target, `new_name` |
+| `rename_symbol` | Preview/apply an LSP semantic rename | target, `new_name` |
 | `format_document` | Preview/apply document or range formatting | `path` |
-| `get_code_actions` | List LSP code actions | `path`, `line`, `column` |
-| `apply_code_action` | Apply one validated WorkspaceEdit-backed action | `path`, `line`, `column`, `action_id` |
+| `get_code_actions` | List LSP code actions without writing | `path`, `line`, `column` |
+| `apply_code_action` | Apply one WorkspaceEdit-backed action | `path`, `line`, `column`, `action_id` |
+| `get_diagnostics` | LSP diagnostics for a file/cached workspace state | `path` when file-specific |
 
 ### Discovery and direct inspection
 
 | Tool | Purpose | Required input |
 | --- | --- | --- |
 | `search_symbols` | Search workspace symbols by name | `query`, `language` |
-| `list_workspace_symbols` | Enumerate configured source symbols page by page | None |
+| `list_workspace_symbols` | Enumerate all configured source symbols page by page | None |
 | `get_document_symbols` | Hierarchical symbols for one file | `path` |
-| `get_symbol` | Retrieve a previously returned `symbol_id` | `symbol_id` |
-| `get_hover` | Exact LSP hover/type information | target |
+| `get_symbol` | Reuse an acquired `symbol_id` and optional source | `symbol_id` |
+| `get_hover` | LSP hover/type information for an exact target | target |
 
-### Low-level LSP primitives
+### Precise LSP relationship primitives
 
-These remain public for integrations or tasks that need one exact LSP relationship. They are **not deprecated**; aggregate tools are simply the better default for agents.
+These stay public intentionally. Use them when one exact LSP relation is preferable to an aggregate high-level result.
 
-| Tool | Purpose |
-| --- | --- |
-| `get_definition` | Definition locations |
-| `find_references` | Reference locations |
-| `find_implementations` | Implementation locations |
-| `get_type_definition` | Type-definition locations |
-| `get_declaration` | Declaration locations |
-| `get_incoming_calls` | Direct callers |
-| `get_outgoing_calls` | Direct callees |
-| `get_supertypes` | Direct supertypes |
-| `get_subtypes` | Direct subtypes |
+| Tool | Purpose | Required input |
+| --- | --- | --- |
+| `get_definition` | Definition locations | target |
+| `find_references` | Reference locations | target |
+| `find_implementations` | Implementation locations | target |
+| `get_type_definition` | Type-definition locations | target |
+| `get_declaration` | Declaration locations | target |
+| `get_incoming_calls` | Direct callers | target |
+| `get_outgoing_calls` | Direct callees | target |
+| `get_supertypes` | Direct supertypes | target |
+| `get_subtypes` | Direct subtypes | target |
 
-### Configuration
+### Setup
 
-| Tool | Purpose |
-| --- | --- |
-| `onboard` | Detect projects and explicitly generate `.simple-lsp.yaml` |
+| Tool | Purpose | Required input |
+| --- | --- | --- |
+| `onboard` | Detect projects and generate `.simple-lsp.yaml` | None |
 
 `search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
 

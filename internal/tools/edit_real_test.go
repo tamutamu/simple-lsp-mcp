@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
 
@@ -354,6 +355,47 @@ func TestRealSemanticRenameAcrossLanguages(t *testing.T) {
 				defer cancel()
 				engine.Sessions.Shutdown(ctx)
 			})
+			references, err := engine.Relationship(context.Background(), "find_references", "textDocument/references", "references", map[string]any{
+				"path": tc.defName, "symbol_path": tc.oldName, "include_declaration": true,
+			})
+			if err != nil {
+				t.Fatalf("cross-file references: %v", err)
+			}
+			locations, _ := references["locations"].([]core.Location)
+			if len(locations) < 2 {
+				t.Fatalf("project warm-up missed unopened references: %#v", references)
+			}
+
+			incoming, err := engine.Hierarchy(context.Background(), "get_incoming_calls", map[string]any{
+				"path": tc.defName, "symbol_path": tc.oldName,
+			})
+			if err != nil {
+				t.Fatalf("cross-file incoming calls: %v", err)
+			}
+			calls, _ := incoming["calls"].([]any)
+			if len(calls) < 1 {
+				t.Fatalf("project warm-up missed unopened callers: %#v", incoming)
+			}
+
+			impact, err := engine.ImpactAnalysis(context.Background(), map[string]any{
+				"path": tc.defName, "symbol_path": tc.oldName, "depth": 1,
+			})
+			if err != nil {
+				t.Fatalf("cross-file impact analysis: %v", err)
+			}
+			affected, _ := impact["affected_files"].([]any)
+			foundRef := false
+			for _, raw := range affected {
+				entry, _ := raw.(map[string]any)
+				if entry["path"] == tc.refName {
+					foundRef = true
+					break
+				}
+			}
+			if !foundRef {
+				t.Fatalf("impact analysis missed unopened affected file %s: %#v", tc.refName, impact)
+			}
+
 			preview, err := engine.RenameSymbol(context.Background(), map[string]any{
 				"path": tc.defName, "symbol_path": tc.oldName, "new_name": tc.newName,
 			})
