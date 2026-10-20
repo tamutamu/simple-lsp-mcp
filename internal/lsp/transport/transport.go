@@ -28,6 +28,18 @@ type ResponseError struct {
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
 }
+
+// ProtocolError preserves the JSON-RPC error code returned by a language
+// server so callers can distinguish unsupported methods from real failures.
+type ProtocolError struct {
+	Code    int
+	Message string
+}
+
+func (e *ProtocolError) Error() string {
+	return fmt.Sprintf("lsp error %d: %s", e.Code, e.Message)
+}
+
 type Transport struct {
 	r              *bufio.Reader
 	w              io.Writer
@@ -104,7 +116,7 @@ func (t *Transport) Request(ctx context.Context, method string, params any, resu
 			return io.EOF
 		}
 		if m.Error != nil {
-			return fmt.Errorf("lsp error %d: %s", m.Error.Code, m.Error.Message)
+			return &ProtocolError{Code: m.Error.Code, Message: m.Error.Message}
 		}
 		if result != nil && len(m.Result) > 0 {
 			return json.Unmarshal(m.Result, result)

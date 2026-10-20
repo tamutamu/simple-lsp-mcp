@@ -4,6 +4,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 	"github.com/tamutamu/simple-lsp-mcp/internal/onboard"
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
@@ -288,26 +290,41 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 	var ds []core.Diagnostic
 	complete := true
 	if path != "" {
-		p, s, d, err := e.document(ctx, path, stringVal(in, "language"))
+		_, s, d, err := e.document(ctx, path, stringVal(in, "language"))
 		if err != nil {
 			return nil, err
 		}
-		if s.Capabilities().Diagnostics {
-			var raw struct {
-				Items []protocol.Diagnostic `json:"items"`
-			}
-			callCtx, cancel := e.callContext(ctx)
-			err = s.Request(callCtx, "textDocument/diagnostic", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "previousResultId": nil}, &raw)
-			cancel()
-			if err != nil {
-				return nil, err
-			}
-			ds = e.diagnostics(d.Path, raw.Items, s.Capabilities().PositionEncoding)
-		} else {
-			time.Sleep(e.DiagnosticsWait)
-			ds = e.diagnostics(d.Path, s.Diagnostics(d.URI), s.Capabilities().PositionEncoding)
+		var raw struct {
+			Items []protocol.Diagnostic `json:"items"`
 		}
-		_ = p
+		callCtx, cancel := e.callContext(ctx)
+		pullErr := s.Request(callCtx, "textDocument/diagnostic", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "previousResultId": nil}, &raw)
+		cancel()
+		diagnosticPath := relativeMust(e, d.Path)
+		if pullErr == nil {
+			ds = e.diagnostics(diagnosticPath, raw.Items, s.Capabilities().PositionEncoding)
+		} else {
+			var protocolErr *transport.ProtocolError
+			unsupported := errors.As(pullErr, &protocolErr) && protocolErr.Code == -32601
+			// Some servers (including gopls versions in the real-LSP suite)
+			// implement pull diagnostics without advertising diagnosticProvider.
+			// Probe first; when an unadvertised server rejects the method, fall
+			// back to its publishDiagnostics cache. Advertised pull failures remain
+			// real errors and must not be hidden.
+			if s.Capabilities().Diagnostics && !unsupported {
+				return nil, pullErr
+			}
+			if e.DiagnosticsWait > 0 {
+				timer := time.NewTimer(e.DiagnosticsWait)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return nil, ctx.Err()
+				case <-timer.C:
+				}
+			}
+			ds = e.diagnostics(diagnosticPath, s.Diagnostics(d.URI), s.Capabilities().PositionEncoding)
+		}
 	} else {
 		complete = false
 	}

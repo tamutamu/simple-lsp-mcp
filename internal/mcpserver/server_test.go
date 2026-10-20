@@ -10,7 +10,7 @@ import (
 
 func TestDefinitionsContainExactlyTheSpecifiedTools(t *testing.T) {
 	want := []string{
-		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis",
+		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis", "verify_change",
 		"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
 		"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_symbol", "get_hover",
 		"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration",
@@ -50,7 +50,7 @@ func TestToolCatalogStaysWithinPromptBudget(t *testing.T) {
 
 func TestPreferredAgentWorkflowToolsComeFirstWithoutRemovingPrimitives(t *testing.T) {
 	wantPrefix := []string{
-		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis",
+		"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis", "verify_change",
 		"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
 	}
 	ds := definitions()
@@ -159,7 +159,7 @@ func TestResultStructuredAndTextContentMatch(t *testing.T) {
 }
 
 func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
-	for _, phrase := range []string{"get_symbol_context", "get_semantic_slice", "get_symbol_outline", "impact_analysis", "symbol_id", "INCOMPLETE_SEARCH"} {
+	for _, phrase := range []string{"get_symbol_context", "get_semantic_slice", "get_symbol_outline", "impact_analysis", "verify_change", "symbol_id", "INCOMPLETE_SEARCH"} {
 		if !strings.Contains(serverInstructions, phrase) {
 			t.Fatalf("server instructions missing %q: %s", phrase, serverInstructions)
 		}

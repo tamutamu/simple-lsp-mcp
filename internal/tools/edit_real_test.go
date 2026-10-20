@@ -483,3 +483,172 @@ func TestRealSemanticRenameAcrossLanguages(t *testing.T) {
 	})
 
 }
+
+func TestRealSemanticChangeGuard(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") == "" {
+		t.Skip("set SIMPLE_LSP_REAL_LSP=1")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Skip("gopls is not installed")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	root := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/guard\n\ngo 1.26\n")
+	write("calc.go", "package guard\n\nfunc Add(a int) int { return a + 1 }\n")
+	write("use.go", "package guard\n\nfunc Use() int { return Add(1) }\n")
+	write("calc_test.go", "package guard\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) { if Add(1) != 2 { t.Fatal() } }\n")
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "guard@example.invalid"},
+		{"config", "user.name", "Guard Test"},
+		{"add", "."},
+		{"commit", "-m", "baseline"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Change only the declaration and intentionally leave both callers stale.
+	write("calc.go", "package guard\n\nfunc Add(a int, b int) int { return a + b }\n")
+
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{
+		RequestTimeout:  30 * time.Second,
+		DiagnosticsWait: 500 * time.Millisecond,
+		MaxResults:      100,
+		Servers: map[string][]config.Server{
+			"go": {{Command: "gopls", Args: []string{"serve"}, Directory: "."}},
+		},
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		engine.Sessions.Shutdown(ctx)
+	})
+
+	result, err := engine.VerifyChange(context.Background(), map[string]any{"base": "HEAD", "depth": 1, "limit": 100})
+	if err != nil {
+		t.Fatalf("verify_change: %v", err)
+	}
+	if result["verdict"] != "FAIL" {
+		t.Fatalf("verdict = %v, want FAIL; result=%#v", result["verdict"], result)
+	}
+	changed, _ := result["changed_symbols"].([]any)
+	foundAdd := false
+	for _, raw := range changed {
+		entry, _ := raw.(map[string]any)
+		if entry["name"] == "Add" && entry["change_kind"] == "declaration_change" {
+			foundAdd = true
+		}
+	}
+	if !foundAdd {
+		t.Fatalf("changed symbols did not identify Add declaration: %#v", changed)
+	}
+	affected, _ := result["affected_files"].([]any)
+	foundUse := false
+	for _, raw := range affected {
+		entry, _ := raw.(map[string]any)
+		if entry["path"] == "use.go" && entry["changed"] == false {
+			foundUse = true
+		}
+	}
+	if !foundUse {
+		t.Fatalf("affected files did not identify stale caller use.go: %#v", affected)
+	}
+	tests, _ := result["related_tests"].([]string)
+	if len(tests) != 1 || tests[0] != "calc_test.go" {
+		t.Fatalf("related_tests = %#v, want calc_test.go", tests)
+	}
+	findings, _ := result["findings"].([]verifyFinding)
+	foundWarning, foundError := false, false
+	for _, finding := range findings {
+		if finding.Code == "AFFECTED_FILE_NOT_CHANGED" && finding.Path == "use.go" {
+			foundWarning = true
+		}
+		if finding.Code == "LSP_ERROR_IN_AFFECTED_FILE" && finding.Path == "use.go" {
+			foundError = true
+		}
+	}
+	if !foundWarning || !foundError {
+		t.Fatalf("verify_change did not flag and diagnose the untouched semantic caller: %#v", findings)
+	}
+}
+
+func TestRealSemanticChangeGuardFailsOnChangedLineDiagnostic(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") == "" {
+		t.Skip("set SIMPLE_LSP_REAL_LSP=1")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Skip("gopls is not installed")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	root := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/guarddiag\n\ngo 1.26\n")
+	write("calc.go", "package guarddiag\n\nfunc Add(a int) int {\n\treturn a + 1\n}\n")
+	for _, args := range [][]string{
+		{"init"}, {"config", "user.email", "guard@example.invalid"}, {"config", "user.name", "Guard Test"}, {"add", "."}, {"commit", "-m", "baseline"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write("calc.go", "package guarddiag\n\nfunc Add(a int) int {\n\treturn \"broken\"\n}\n")
+
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{
+		RequestTimeout: 30 * time.Second, DiagnosticsWait: 500 * time.Millisecond, MaxResults: 100,
+		Servers: map[string][]config.Server{"go": {{Command: "gopls", Args: []string{"serve"}, Directory: "."}}},
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		engine.Sessions.Shutdown(ctx)
+	})
+
+	result, err := engine.VerifyChange(context.Background(), map[string]any{"base": "HEAD", "limit": 100})
+	if err != nil {
+		t.Fatalf("verify_change: %v", err)
+	}
+	if result["verdict"] != "FAIL" {
+		t.Fatalf("verdict = %v, want FAIL; result=%#v", result["verdict"], result)
+	}
+	findings, _ := result["findings"].([]verifyFinding)
+	found := false
+	for _, finding := range findings {
+		if finding.Code == "LSP_ERROR_ON_CHANGED_LINE" && finding.Path == "calc.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("changed-line LSP error was not surfaced: %#v", findings)
+	}
+}

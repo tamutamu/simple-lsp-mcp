@@ -11,7 +11,7 @@ import (
 )
 
 // New registers semantic navigation plus explicit LSP-backed edit tools on an MCP server.
-const serverInstructions = "Prefer high-level tools: find_symbol, get_symbol_outline, get_symbol_context, get_semantic_slice, impact_analysis, rename_symbol, format_document, and code actions. Use low-level definition/reference/call/type tools only when one exact LSP primitive is needed. A bare symbol_path can resolve without shell path discovery. rename_symbol and format_document preview by default; apply_code_action is a write. Reuse symbol_id for follow-ups. If INCOMPLETE_SEARCH, incomplete results, or pagination is reported, continue or narrow rather than assuming absence."
+const serverInstructions = "Prefer high-level tools: find_symbol, get_symbol_outline, get_symbol_context, get_semantic_slice, impact_analysis, verify_change, rename_symbol, format_document, and code actions. After making code changes, use verify_change to check semantic impact and current LSP errors before declaring the task complete. Use low-level definition/reference/call/type tools only when one exact LSP primitive is needed. A bare symbol_path can resolve without shell path discovery. rename_symbol and format_document preview by default; apply_code_action is a write. Reuse symbol_id for follow-ups. If INCOMPLETE_SEARCH, incomplete results, or pagination is reported, continue or narrow rather than assuming absence."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
@@ -69,6 +69,9 @@ func definitions() []definition {
 		}},
 		{"impact_analysis", "Estimate refactor blast radius through callers, references, implementations, and affected files.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ImpactAnalysis(c, i)
+		}},
+		{"verify_change", "Semantic Change Guard: verify the Git working-tree diff against LSP impact and diagnostics; read-only.", objSchema(props("base", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.VerifyChange(c, i)
 		}},
 		{"rename_symbol", "Preview an LSP semantic rename; apply=true writes the validated cross-file WorkspaceEdit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
@@ -180,6 +183,7 @@ func allProperties() map[string]any {
 		"trim_final_newlines":      describe(map[string]any{"type": "boolean"}, "Formatting trimFinalNewlines."),
 		"code_action_kinds":        describe(map[string]any{"type": "array", "items": stringSchema()}, "Requested code-action kinds."),
 		"action_id":                describe(stringSchema(), "action_id returned by get_code_actions."),
+		"base":                     describe(stringSchema(), "Git base revision for verify_change; default HEAD."),
 	}
 }
 

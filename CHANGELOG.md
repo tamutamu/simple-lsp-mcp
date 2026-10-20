@@ -16,15 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add explicit LSP-backed editing: semantic rename with `prepareRename`/`rename`, whole-file and range formatting, code-action listing/resolution, and validated `WorkspaceEdit` application with preview-first writes.
 - Refuse unsafe edit shapes: workspace escapes, symlink targets, overlapping edits, stale files, resource operations, and code actions that require unbounded `workspace/executeCommand`.
 - Add bounded project warm-up for TypeScript/Python so unopened files participate in references, implementations, incoming calls, subtypes, impact analysis, aggregate context, and semantic rename without extra agent tool calls.
+- Add `verify_change`, a read-only Semantic Change Guard that maps Git working-tree changes to LSP symbols, compares semantic impact with the actual diff, surfaces related tests, and returns PASS/WARNING/FAIL from structured findings and current diagnostics.
 
 ### Changed
 
-- Keep all 25 public MCP tools, order high-level semantic workflows before exact LSP primitives, and compact the serialized model-visible tool catalog from 39,878 bytes to 24,114 bytes. A test enforces a 25 KiB catalog budget.
+- Keep the full public MCP surface (now 26 tools with `verify_change`), order high-level semantic workflows before exact LSP primitives, and keep the serialized model-visible tool catalog within the 25 KiB budget (24,639 bytes).
 
 ### Fixed
 
 - Confine pathless fallback discovery and project warm-up to the active workspace, including symlink-resolved LSP roots.
 - Prime TypeScript project semantics after bounded warm-up so path-alias references and semantic rename include unopened consumer files instead of returning a partial local result.
+- Fix diagnostic conversion to use workspace-relative paths, and probe pull diagnostics even when a server such as gopls implements `textDocument/diagnostic` without advertising `diagnosticProvider`.
+- Exclude `.scratch` and the existing generated/cache directory set from Semantic Change Guard diff analysis so temporary build artifacts cannot swamp semantic verification.
 
 ## [0.9.0] - 2026-09-25
 

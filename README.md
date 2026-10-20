@@ -5,13 +5,14 @@
 [![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Semantic read/write for coding agents, powered by the language servers you already trust.**
+**A semantic development layer for coding agents, powered by the language servers you already trust.**
 
 `simple-lsp-mcp` gives Claude Code, Codex, and other MCP clients one consistent API to **understand code and make LSP-computed changes** across languages. It keeps the language server's semantic precision, but packages common coding-agent tasks into fewer, bounded tool calls.
 
 ```text
 understand  → get_semantic_slice / get_symbol_context
 assess      → impact_analysis
+verify      → verify_change
 rename      → rename_symbol
 format      → format_document
 quick-fix   → get_code_actions → apply_code_action
@@ -30,13 +31,14 @@ Coding agents can reason well once they have the right semantic context. The exp
 - `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
 - `impact_analysis` — estimate refactor blast radius.
+- `verify_change` — Semantic Change Guard: compare the current Git diff with LSP impact, related tests, and current diagnostics before an agent declares the task complete.
 - `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
 - `format_document` — preview/apply document or range formatting.
 - `get_code_actions` / `apply_code_action` — inspect and apply WorkspaceEdit-backed LSP fixes.
 
 ```text
 ❌ grep → read → grep → infer → edit matching text → hope
-✅ semantic context → impact → LSP-computed edit → validate → apply
+✅ semantic context → impact → LSP-computed edit → verify_change → finish
 ```
 
 ### Design boundaries
@@ -242,6 +244,7 @@ A **target** identifies one symbol or position, in exactly one of three forms: a
 | `get_symbol_context` | Source plus selected callers/callees/references/implementations | target |
 | `get_semantic_slice` | Byte-bounded semantic source neighborhood | target |
 | `impact_analysis` | Refactor blast radius and affected files | target |
+| `verify_change` | Semantic Change Guard for the current Git diff | None (`base` defaults to `HEAD`) |
 | `rename_symbol` | Preview/apply an LSP semantic rename | target, `new_name` |
 | `format_document` | Preview/apply document or range formatting | `path` |
 | `get_code_actions` | List LSP code actions without writing | `path`, `line`, `column` |
@@ -293,6 +296,23 @@ A `symbol_path` reflects whatever shape the language server's own `documentSymbo
 When no file is specified, the server searches every configured LSP instance for the selected language and inspects every server-returned candidate up to a 128-file safety limit. If the lookup cannot finish, it raises `INCOMPLETE_SEARCH` rather than reporting a false unique result or false not-found. Supply `path` to narrow an incomplete search. Completeness refers to the LSP-returned candidate set: language-server indexes may themselves omit unindexed files.
 
 When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
+
+### Semantic Change Guard
+
+`verify_change` is the post-edit guard for coding agents. With no arguments it compares the current Git working tree to `HEAD`; `base` can select another commit. It is read-only.
+
+The guard:
+
+1. reads staged, unstaged, and untracked working-tree changes,
+2. maps changed lines to the innermost current LSP symbols,
+3. reuses semantic impact/context to find callers, references, implementations, and affected files,
+4. lists related test files,
+5. checks LSP error diagnostics on changed files and declaration-affected files, and
+6. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
+
+A declaration change that reaches an untouched non-test file is a warning by itself. If the LSP also reports an error in a changed or declaration-affected file, the verdict is `FAIL`. This avoids claiming that every semantic dependency must be edited while still catching concrete breakage.
+
+This first version does **not** prove business correctness and does not yet build a complete semantic graph for the base commit. It verifies the current working tree against its current LSP graph plus Git diff context; future before/after graph comparison can make change classification stronger without changing the public `verify_change` API.
 
 ### LSP-backed editing
 
