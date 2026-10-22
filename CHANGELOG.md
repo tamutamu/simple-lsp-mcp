@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prime TypeScript project semantics after bounded warm-up so path-alias references and semantic rename include unopened consumer files instead of returning a partial local result.
 - Fix diagnostic conversion to use workspace-relative paths, and probe pull diagnostics even when a server such as gopls implements `textDocument/diagnostic` without advertising `diagnosticProvider`.
 - Exclude `.scratch` and the existing generated/cache directory set from Semantic Change Guard diff analysis so temporary build artifacts cannot swamp semantic verification.
+- Advertise `textDocument.publishDiagnostics` so push-only servers such as TypeScript Language Server deliver diagnostics used by `get_diagnostics` and `verify_change`.
+- Exclude `.local` tool state from workspace and Change Guard traversal so local connector/runtime files do not appear as source changes.
 
 ## [0.9.0] - 2026-09-25
 

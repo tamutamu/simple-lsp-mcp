@@ -31,7 +31,7 @@ type workspaceListCursor struct {
 
 var workspaceListExcludedDirs = map[string]bool{
 	".git": true, "node_modules": true, ".venv": true, "venv": true,
-	"__pycache__": true, ".next": true, ".cache": true, ".scratch": true,
+	"__pycache__": true, ".next": true, ".cache": true, ".scratch": true, ".local": true,
 	"dist": true, "build": true, "target": true, "coverage": true,
 }
 

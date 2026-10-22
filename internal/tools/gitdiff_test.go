@@ -123,3 +123,14 @@ func TestDiffDiagnosticsUsesMessageIdentityNotLinePosition(t *testing.T) {
 		t.Fatalf("new=%#v resolved=%#v unchanged=%d", newDiagnostics, resolved, unchanged)
 	}
 }
+
+func TestPathExcludedFromWorkspaceCoversLocalToolState(t *testing.T) {
+	for _, path := range []string{".local/state/gh/device-id", ".scratch/tmp.go", "node_modules/pkg/index.ts"} {
+		if !pathExcludedFromWorkspace(path) {
+			t.Fatalf("%s should be excluded", path)
+		}
+	}
+	if pathExcludedFromWorkspace("internal/tools/verify.go") {
+		t.Fatal("source path should not be excluded")
+	}
+}

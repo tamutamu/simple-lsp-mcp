@@ -40,6 +40,18 @@ func TestDecodeCapsDetectsEditingProviders(t *testing.T) {
 	}
 }
 
+func TestClientCapabilitiesAdvertisePublishDiagnostics(t *testing.T) {
+	caps := clientCapabilities()
+	textDocument, _ := caps["textDocument"].(map[string]any)
+	publish, ok := textDocument["publishDiagnostics"].(map[string]any)
+	if !ok {
+		t.Fatalf("publishDiagnostics capability missing: %#v", textDocument)
+	}
+	if publish["relatedInformation"] != true || publish["versionSupport"] != true {
+		t.Fatalf("publishDiagnostics capability = %#v", publish)
+	}
+}
+
 func TestSessionStartsMCPConfiguredCommandAndArgs(t *testing.T) {
 	t.Setenv("SIMPLE_LSP_FAKE_SERVER", "1")
 	tempDir := t.TempDir()
