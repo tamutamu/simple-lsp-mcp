@@ -307,12 +307,15 @@ The guard:
 2. maps changed lines to the innermost current LSP symbols,
 3. reuses semantic impact/context to find callers, references, implementations, and affected files,
 4. lists related test files,
-5. checks LSP error diagnostics on changed files and declaration-affected files, and
-6. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
+5. checks LSP error diagnostics on changed files and declaration-affected files,
+6. when current errors exist, materializes the committed `base` into a bounded temporary snapshot and asks an isolated LSP engine whether each error already existed, and
+7. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
 
-A declaration change that reaches an untouched non-test file is a warning by itself. If the LSP also reports an error in a changed or declaration-affected file, the verdict is `FAIL`. This avoids claiming that every semantic dependency must be edited while still catching concrete breakage.
+A declaration change that reaches an untouched non-test file is a warning by itself. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions.
 
-This first version does **not** prove business correctness and does not yet build a complete semantic graph for the base commit. It verifies the current working tree against its current LSP graph plus Git diff context; future before/after graph comparison can make change classification stronger without changing the public `verify_change` API.
+The base snapshot is created outside the worktree with `git archive`; it never changes Git metadata or source files. Extraction is bounded to 20,000 files / 512 MiB, rejects links and path escapes, and uses the same generated/cache-directory exclusions as workspace traversal. A clean current diagnostic set skips the baseline LSP entirely, so the common successful path does not pay for a second language-server startup.
+
+This still does **not** prove business correctness and does not yet build a complete before/after semantic graph for the base commit. The current semantic impact graph comes from the working tree; the base snapshot is used for diagnostic regression comparison. Future relation-graph comparison can strengthen change classification without changing the public `verify_change` API.
 
 ### LSP-backed editing
 

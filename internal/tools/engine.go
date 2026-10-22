@@ -28,6 +28,7 @@ import (
 // Engine coordinates MCP tool requests with workspace, document, and LSP state.
 type Engine struct {
 	WS              *workspace.Workspace
+	runtime         config.Runtime
 	Sessions        *session.Manager
 	Docs            *document.Store
 	Symbols         *symbol.Registry
@@ -40,6 +41,7 @@ type Engine struct {
 func New(ws *workspace.Workspace, cfg config.Runtime) *Engine {
 	return &Engine{
 		WS:              ws,
+		runtime:         cfg,
 		Sessions:        session.NewManager(ws.Root(), cfg.Servers),
 		Docs:            document.NewStore(),
 		Symbols:         symbol.New(),

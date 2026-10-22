@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -167,8 +169,10 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 	}
 
 	// Diagnostics are checked on every changed source file and on untouched
-	// files affected by a declaration change. Errors on those files make the
-	// current change unsafe even though this MVP cannot yet prove the error is new.
+	// files affected by a declaration change. A committed base snapshot is
+	// analyzed with an isolated LSP engine so only newly introduced errors can
+	// make the change fail. Pre-existing errors are reported but do not poison
+	// the verdict.
 	diagnosticPaths := map[string]bool{}
 	for path := range changedPaths {
 		diagnosticPaths[path] = true
@@ -184,25 +188,49 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 		paths = paths[:verifyMaxDiagnosticFiles]
 		complete = false
 	}
-	diagnostics := make([]core.Diagnostic, 0)
-	for _, path := range paths {
-		p, profileErr := language.FromPath(path)
-		if profileErr != nil || !e.Sessions.Configured(p.SessionKey) {
-			continue
-		}
-		result, diagErr := e.Diagnostics(ctx, map[string]any{"path": path, "severities": []any{"error"}, "limit": limit})
-		if diagErr != nil {
-			warnings = append(warnings, "diagnostics unavailable for "+path+": "+diagErr.Error())
+
+	currentDiagnostics, currentComplete, currentWarnings := e.verifyDiagnostics(ctx, paths, limit)
+	warnings = append(warnings, currentWarnings...)
+	if !currentComplete {
+		complete = false
+	}
+
+	baselineChecked := false
+	baselineComplete := true
+	baselineDiagnostics := make([]core.Diagnostic, 0)
+	if len(currentDiagnostics) > 0 {
+		baselineChecked = true
+		baseEngine, cleanup, baseErr := e.baseEngine(ctx, changes.Base)
+		if baseErr != nil {
+			baselineComplete = false
 			complete = false
-			continue
+			warnings = append(warnings, "baseline diagnostics unavailable: "+baseErr.Error())
+		} else {
+			baselineDiagnostics, baselineComplete, currentWarnings = baseEngine.verifyDiagnostics(ctx, paths, limit)
+			cleanup()
+			warnings = append(warnings, currentWarnings...)
+			if !baselineComplete {
+				complete = false
+			}
 		}
-		ds, _ := result["diagnostics"].([]core.Diagnostic)
-		for _, d := range ds {
-			diagnostics = append(diagnostics, d)
-			if changedPaths[path] && lineInChangedRanges(d.Range.Start.Line, changedRanges[path]) {
-				findings = append(findings, verifyFinding{Severity: "error", Code: "LSP_ERROR_ON_CHANGED_LINE", Path: path, Message: d.Message})
-			} else if declarationAffected[path] {
-				findings = append(findings, verifyFinding{Severity: "error", Code: "LSP_ERROR_IN_AFFECTED_FILE", Path: path, Message: d.Message})
+	}
+
+	newDiagnostics := make([]core.Diagnostic, 0)
+	resolvedDiagnostics := make([]core.Diagnostic, 0)
+	unchangedDiagnostics := 0
+	if baselineChecked && baselineComplete {
+		newDiagnostics, resolvedDiagnostics, unchangedDiagnostics = diffDiagnostics(baselineDiagnostics, currentDiagnostics)
+		for _, d := range newDiagnostics {
+			if changedPaths[d.Path] && lineInChangedRanges(d.Range.Start.Line, changedRanges[d.Path]) {
+				findings = append(findings, verifyFinding{Severity: "error", Code: "NEW_LSP_ERROR_ON_CHANGED_LINE", Path: d.Path, Message: d.Message})
+			} else if declarationAffected[d.Path] {
+				findings = append(findings, verifyFinding{Severity: "error", Code: "NEW_LSP_ERROR_IN_AFFECTED_FILE", Path: d.Path, Message: d.Message})
+			}
+		}
+	} else {
+		for _, d := range currentDiagnostics {
+			if (changedPaths[d.Path] && lineInChangedRanges(d.Range.Start.Line, changedRanges[d.Path])) || declarationAffected[d.Path] {
+				findings = append(findings, verifyFinding{Severity: "warning", Code: "CURRENT_LSP_ERROR_BASELINE_UNAVAILABLE", Path: d.Path, Message: d.Message})
 			}
 		}
 	}
@@ -239,9 +267,91 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 		"verdict": verdict, "base": changes.Base,
 		"changed_files": fileOutput, "changed_symbols": symbolOutput,
 		"affected_files": affectedOutput, "related_tests": relatedTests,
-		"diagnostics": diagnostics, "findings": findings,
-		"meta": core.Meta{Complete: complete, Warnings: warnings},
+		"diagnostics": currentDiagnostics,
+		"diagnostic_diff": map[string]any{
+			"baseline_checked": baselineChecked, "baseline_complete": baselineComplete,
+			"new": newDiagnostics, "resolved": resolvedDiagnostics, "unchanged_count": unchangedDiagnostics,
+		},
+		"findings": findings,
+		"meta":     core.Meta{Complete: complete, Warnings: warnings},
 	}, nil
+}
+
+func (e *Engine) verifyDiagnostics(ctx context.Context, paths []string, limit int) ([]core.Diagnostic, bool, []string) {
+	diagnostics := make([]core.Diagnostic, 0)
+	complete := true
+	warnings := make([]string, 0)
+	for _, path := range paths {
+		p, profileErr := language.FromPath(path)
+		if profileErr != nil || !e.Sessions.Configured(p.SessionKey) {
+			continue
+		}
+		full, resolveErr := e.WS.Resolve(path)
+		if resolveErr != nil {
+			warnings = append(warnings, "diagnostics path unavailable for "+path+": "+resolveErr.Error())
+			complete = false
+			continue
+		}
+		if _, statErr := os.Stat(full); statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			warnings = append(warnings, "diagnostics path unavailable for "+path+": "+statErr.Error())
+			complete = false
+			continue
+		}
+		result, diagErr := e.Diagnostics(ctx, map[string]any{"path": path, "severities": []any{"error"}, "limit": limit})
+		if diagErr != nil {
+			warnings = append(warnings, "diagnostics unavailable for "+path+": "+diagErr.Error())
+			complete = false
+			continue
+		}
+		ds, _ := result["diagnostics"].([]core.Diagnostic)
+		diagnostics = append(diagnostics, ds...)
+	}
+	return diagnostics, complete, warnings
+}
+
+func diffDiagnostics(before, after []core.Diagnostic) (newDiagnostics, resolvedDiagnostics []core.Diagnostic, unchanged int) {
+	beforeCounts := map[string]int{}
+	afterCounts := map[string]int{}
+	for _, d := range before {
+		beforeCounts[diagnosticFingerprint(d)]++
+	}
+	for _, d := range after {
+		afterCounts[diagnosticFingerprint(d)]++
+	}
+	remainingBefore := make(map[string]int, len(beforeCounts))
+	for key, count := range beforeCounts {
+		remainingBefore[key] = count
+	}
+	for _, d := range after {
+		key := diagnosticFingerprint(d)
+		if remainingBefore[key] > 0 {
+			remainingBefore[key]--
+			unchanged++
+		} else {
+			newDiagnostics = append(newDiagnostics, d)
+		}
+	}
+	remainingAfter := make(map[string]int, len(afterCounts))
+	for key, count := range afterCounts {
+		remainingAfter[key] = count
+	}
+	for _, d := range before {
+		key := diagnosticFingerprint(d)
+		if remainingAfter[key] > 0 {
+			remainingAfter[key]--
+		} else {
+			resolvedDiagnostics = append(resolvedDiagnostics, d)
+		}
+	}
+	return newDiagnostics, resolvedDiagnostics, unchanged
+}
+
+func diagnosticFingerprint(d core.Diagnostic) string {
+	code, _ := json.Marshal(d.Code)
+	return d.Path + "\x00" + d.Severity + "\x00" + d.Source + "\x00" + string(code) + "\x00" + d.Message
 }
 
 func (e *Engine) verifyAffectedFiles(ctx context.Context, changed changedSemanticSymbol, depth, limit int) (map[string][]string, []string) {

@@ -580,7 +580,7 @@ func TestRealSemanticChangeGuard(t *testing.T) {
 		if finding.Code == "AFFECTED_FILE_NOT_CHANGED" && finding.Path == "use.go" {
 			foundWarning = true
 		}
-		if finding.Code == "LSP_ERROR_IN_AFFECTED_FILE" && finding.Path == "use.go" {
+		if finding.Code == "NEW_LSP_ERROR_IN_AFFECTED_FILE" && finding.Path == "use.go" {
 			foundError = true
 		}
 	}
@@ -644,11 +644,79 @@ func TestRealSemanticChangeGuardFailsOnChangedLineDiagnostic(t *testing.T) {
 	findings, _ := result["findings"].([]verifyFinding)
 	found := false
 	for _, finding := range findings {
-		if finding.Code == "LSP_ERROR_ON_CHANGED_LINE" && finding.Path == "calc.go" {
+		if finding.Code == "NEW_LSP_ERROR_ON_CHANGED_LINE" && finding.Path == "calc.go" {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("changed-line LSP error was not surfaced: %#v", findings)
+	}
+}
+
+func TestRealSemanticChangeGuardIgnoresPreexistingChangedLineError(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") == "" {
+		t.Skip("set SIMPLE_LSP_REAL_LSP=1")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Skip("gopls is not installed")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	root := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/guardbaseline\n\ngo 1.26\n")
+	write("calc.go", "package guardbaseline\n\nfunc Broken() int {\n\treturn \"broken\"\n}\n")
+	for _, args := range [][]string{
+		{"init"}, {"config", "user.email", "guard@example.invalid"}, {"config", "user.name", "Guard Test"}, {"add", "."}, {"commit", "-m", "baseline"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Keep the exact same type error but change the line text so the diagnostic
+	// sits on a changed line. A current-state-only guard would falsely fail.
+	write("calc.go", "package guardbaseline\n\nfunc Broken() int {\n\treturn  \"broken\"\n}\n")
+
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{
+		RequestTimeout: 30 * time.Second, DiagnosticsWait: 500 * time.Millisecond, MaxResults: 100,
+		Servers: map[string][]config.Server{"go": {{Command: "gopls", Args: []string{"serve"}, Directory: "."}}},
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		engine.Sessions.Shutdown(ctx)
+	})
+
+	result, err := engine.VerifyChange(context.Background(), map[string]any{"base": "HEAD", "limit": 100})
+	if err != nil {
+		t.Fatalf("verify_change: %v", err)
+	}
+	if result["verdict"] != "PASS" {
+		t.Fatalf("verdict = %v, want PASS for unchanged baseline error; result=%#v", result["verdict"], result)
+	}
+	diff, _ := result["diagnostic_diff"].(map[string]any)
+	if diff["baseline_complete"] != true {
+		t.Fatalf("baseline diagnostics incomplete: %#v", diff)
+	}
+	if diff["unchanged_count"] != 1 {
+		t.Fatalf("unchanged_count = %#v, want 1; diff=%#v", diff["unchanged_count"], diff)
+	}
+	newDiagnostics, _ := diff["new"].([]core.Diagnostic)
+	if len(newDiagnostics) != 0 {
+		t.Fatalf("pre-existing diagnostic was classified as new: %#v", newDiagnostics)
 	}
 }

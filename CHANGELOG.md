@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add explicit LSP-backed editing: semantic rename with `prepareRename`/`rename`, whole-file and range formatting, code-action listing/resolution, and validated `WorkspaceEdit` application with preview-first writes.
 - Refuse unsafe edit shapes: workspace escapes, symlink targets, overlapping edits, stale files, resource operations, and code actions that require unbounded `workspace/executeCommand`.
 - Add bounded project warm-up for TypeScript/Python so unopened files participate in references, implementations, incoming calls, subtypes, impact analysis, aggregate context, and semantic rename without extra agent tool calls.
-- Add `verify_change`, a read-only Semantic Change Guard that maps Git working-tree changes to LSP symbols, compares semantic impact with the actual diff, surfaces related tests, and returns PASS/WARNING/FAIL from structured findings and current diagnostics.
+- Add `verify_change`, a read-only Semantic Change Guard that maps Git working-tree changes to LSP symbols, compares semantic impact with the actual diff, surfaces related tests, and returns PASS/WARNING/FAIL from structured findings. When current LSP errors exist, it compares them against an isolated bounded snapshot of the committed base so pre-existing diagnostics do not become false regressions.
 
 ### Changed
 

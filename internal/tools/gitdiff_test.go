@@ -111,3 +111,15 @@ func TestGitChangesIncludesTrackedAndUntrackedFiles(t *testing.T) {
 		t.Fatalf("untracked file missing: %#v", byPath["new.go"])
 	}
 }
+
+func TestDiffDiagnosticsUsesMessageIdentityNotLinePosition(t *testing.T) {
+	before := []core.Diagnostic{{Path: "a.go", Severity: "error", Code: "E1", Source: "compiler", Message: "same error", Range: coreRange(3, 3)}}
+	after := []core.Diagnostic{
+		{Path: "a.go", Severity: "error", Code: "E1", Source: "compiler", Message: "same error", Range: coreRange(8, 8)},
+		{Path: "a.go", Severity: "error", Code: "E2", Source: "compiler", Message: "new error", Range: coreRange(9, 9)},
+	}
+	newDiagnostics, resolved, unchanged := diffDiagnostics(before, after)
+	if unchanged != 1 || len(newDiagnostics) != 1 || newDiagnostics[0].Code != "E2" || len(resolved) != 0 {
+		t.Fatalf("new=%#v resolved=%#v unchanged=%d", newDiagnostics, resolved, unchanged)
+	}
+}

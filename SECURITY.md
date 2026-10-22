@@ -26,7 +26,7 @@ a bug that breaks one of them is a vulnerability, not a feature request:
   environment-variable expansion, pipes, globbing, and shell argument splitting
   do not apply.
 - **No arbitrary command execution from tool input.** Tool arguments cannot
-  choose which process is launched. Only `.simple-lsp.yaml` can choose language-server executables, and that file is under the user's control in the workspace. `verify_change` additionally invokes the local `git` executable with fixed, read-only `rev-parse`, `diff`, and `ls-files` arguments; `base` is passed as a single revision argument and cannot select a command.
+  choose which process is launched. Only `.simple-lsp.yaml` can choose language-server executables, and that file is under the user's control in the workspace. `verify_change` additionally invokes the local `git` executable with fixed, read-only `rev-parse`, `diff`, `ls-files`, and `archive` arguments; `base` is passed as a single revision argument and cannot select a command. Base archives are extracted only into a temporary directory with path traversal and link rejection plus file/byte limits.
 - **Workspace confinement.** Paths in tool arguments are resolved relative to
   the workspace root. Escaping the workspace root is a bug.
 - **No direct network requests by navigation tools.** The server speaks stdio to the MCP client and local language servers. Configured child processes (for example `npx`) may independently download software or access the network; review `.simple-lsp.yaml` first.
