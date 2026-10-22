@@ -308,10 +308,11 @@ The guard:
 3. reuses semantic impact/context to find callers, references, implementations, and affected files,
 4. lists related test files,
 5. checks LSP error diagnostics on changed files and declaration-affected files,
-6. when current errors exist, materializes the committed `base` into a bounded temporary snapshot and asks an isolated LSP engine whether each error already existed, and
-7. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
+6. when current errors exist, materializes the committed `base` into a bounded temporary snapshot and asks an isolated LSP engine whether each error already existed,
+7. for newly introduced diagnostics, asks the current language server for applicable WorkspaceEdit-backed code actions and returns reusable `apply_code_action` inputs, and
+8. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
 
-A declaration change that reaches an untouched non-test file is a warning by itself. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions.
+A declaration change that reaches an untouched non-test file is a warning by itself. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions. `repair_candidates` are suggestions only: `verify_change` remains read-only, and the agent must explicitly call `apply_code_action` to write a selected LSP fix.
 
 The base snapshot is created outside the worktree with `git archive`; it never changes Git metadata or source files. Extraction is bounded to 20,000 files / 512 MiB, rejects links and path escapes, and uses the same generated/cache-directory exclusions as workspace traversal. A clean current diagnostic set skips the baseline LSP entirely, so the common successful path does not pay for a second language-server startup.
 

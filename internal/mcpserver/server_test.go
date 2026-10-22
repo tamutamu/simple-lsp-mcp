@@ -159,7 +159,7 @@ func TestResultStructuredAndTextContentMatch(t *testing.T) {
 }
 
 func TestServerInstructionsGuideAgentTowardHighLevelTools(t *testing.T) {
-	for _, phrase := range []string{"get_symbol_context", "get_semantic_slice", "get_symbol_outline", "impact_analysis", "verify_change", "symbol_id", "INCOMPLETE_SEARCH"} {
+	for _, phrase := range []string{"get_symbol_context", "get_semantic_slice", "get_symbol_outline", "impact_analysis", "verify_change", "repair_candidates", "apply_code_action", "symbol_id", "INCOMPLETE_SEARCH"} {
 		if !strings.Contains(serverInstructions, phrase) {
 			t.Fatalf("server instructions missing %q: %s", phrase, serverInstructions)
 		}

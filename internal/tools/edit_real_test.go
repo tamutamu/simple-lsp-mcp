@@ -720,3 +720,84 @@ func TestRealSemanticChangeGuardIgnoresPreexistingChangedLineError(t *testing.T)
 		t.Fatalf("pre-existing diagnostic was classified as new: %#v", newDiagnostics)
 	}
 }
+
+func TestRealSemanticChangeGuardReturnsRepairCandidate(t *testing.T) {
+	if os.Getenv("SIMPLE_LSP_REAL_LSP") == "" {
+		t.Skip("set SIMPLE_LSP_REAL_LSP=1")
+	}
+	if _, err := exec.LookPath("gopls"); err != nil {
+		t.Skip("gopls is not installed")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	root := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/guardrepair\n\ngo 1.26\n")
+	write("main.go", "package guardrepair\n\nfunc Value() int { return 1 }\n")
+	for _, args := range [][]string{
+		{"init"}, {"config", "user.email", "guard@example.invalid"}, {"config", "user.name", "Guard Test"}, {"add", "."}, {"commit", "-m", "baseline"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Introduce a fixable compiler diagnostic. gopls offers a WorkspaceEdit-backed
+	// quick fix that removes the unused import.
+	write("main.go", "package guardrepair\n\nimport \"fmt\"\n\nfunc Value() int { return 1 }\n")
+
+	ws, err := workspace.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{
+		RequestTimeout: 30 * time.Second, DiagnosticsWait: 500 * time.Millisecond, MaxResults: 100,
+		Servers: map[string][]config.Server{"go": {{Command: "gopls", Args: []string{"serve"}, Directory: "."}}},
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		engine.Sessions.Shutdown(ctx)
+	})
+
+	result, err := engine.VerifyChange(context.Background(), map[string]any{"base": "HEAD", "limit": 100})
+	if err != nil {
+		t.Fatalf("verify_change: %v", err)
+	}
+	if result["verdict"] != "FAIL" {
+		t.Fatalf("verdict = %v, want FAIL; result=%#v", result["verdict"], result)
+	}
+	candidates, _ := result["repair_candidates"].([]any)
+	if len(candidates) == 0 {
+		t.Fatalf("expected an LSP repair candidate; result=%#v", result)
+	}
+	candidate, _ := candidates[0].(map[string]any)
+	if candidate["path"] != "main.go" {
+		t.Fatalf("repair path = %#v, want main.go", candidate["path"])
+	}
+	actions, _ := candidate["actions"].([]any)
+	if len(actions) == 0 {
+		t.Fatalf("repair candidate has no actions: %#v", candidate)
+	}
+	foundApplicable := false
+	for _, raw := range actions {
+		action, _ := raw.(map[string]any)
+		applyInput, _ := action["apply_input"].(map[string]any)
+		if action["action_id"] != "" && applyInput["action_id"] == action["action_id"] && applyInput["path"] == "main.go" {
+			foundApplicable = true
+			break
+		}
+	}
+	if !foundApplicable {
+		t.Fatalf("repair actions do not contain reusable apply_code_action input: %#v", actions)
+	}
+}

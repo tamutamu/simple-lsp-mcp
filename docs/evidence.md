@@ -49,6 +49,8 @@ The public MCP surface contains 26 tools after adding `verify_change`, including
 
 `TestRealSemanticChangeGuardFailsOnChangedLineDiagnostic` changes only a function body to introduce a type error and verifies that a **new** LSP error on the changed line produces `FAIL`. `TestRealSemanticChangeGuardIgnoresPreexistingChangedLineError` commits the same type error first, then changes whitespace on that diagnostic line; `verify_change` launches an isolated gopls over the committed snapshot, classifies the error as unchanged, and returns `PASS` instead of a false regression. These tests also exposed and fixed an existing diagnostics bug: diagnostic ranges were being converted with absolute document paths instead of workspace-relative paths.
 
+`TestRealSemanticChangeGuardReturnsRepairCandidate` introduces an unused Go import. `verify_change` identifies the diagnostic as new and returns `FAIL`, then asks gopls for code actions and returns a WorkspaceEdit-backed repair candidate with a stable `action_id` plus the exact `apply_input` needed by `apply_code_action`. The guard itself performs no write.
+
 The base snapshot is extracted with strict path/link checks and file/byte budgets. It is created only when the current verification scope actually contains LSP errors, avoiding a second LSP startup on clean changes.
 
 The guard's current evidence is intentionally narrower than a correctness proof: semantic impact still comes from the current working tree. The base snapshot currently supplies diagnostic regression comparison, not a complete before/after semantic relation graph or business-level invariants.

@@ -12,7 +12,11 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 )
 
-const verifyMaxDiagnosticFiles = 32
+const (
+	verifyMaxDiagnosticFiles   = 32
+	verifyMaxRepairDiagnostics = 8
+	verifyMaxRepairActions     = 5
+)
 
 type verifyFinding struct {
 	Severity string `json:"severity"`
@@ -235,6 +239,8 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 		}
 	}
 
+	repairCandidates := e.verifyRepairCandidates(ctx, newDiagnostics)
+
 	sort.Slice(findings, func(i, j int) bool {
 		if severityRank(findings[i].Severity) != severityRank(findings[j].Severity) {
 			return severityRank(findings[i].Severity) > severityRank(findings[j].Severity)
@@ -272,9 +278,54 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 			"baseline_checked": baselineChecked, "baseline_complete": baselineComplete,
 			"new": newDiagnostics, "resolved": resolvedDiagnostics, "unchanged_count": unchangedDiagnostics,
 		},
-		"findings": findings,
-		"meta":     core.Meta{Complete: complete, Warnings: warnings},
+		"findings":          findings,
+		"repair_candidates": repairCandidates,
+		"meta":              core.Meta{Complete: complete, Warnings: warnings},
 	}, nil
+}
+
+func (e *Engine) verifyRepairCandidates(ctx context.Context, diagnostics []core.Diagnostic) []any {
+	out := make([]any, 0)
+	for i, d := range diagnostics {
+		if i >= verifyMaxRepairDiagnostics {
+			break
+		}
+		input := map[string]any{
+			"path": d.Path,
+			"line": d.Range.Start.Line, "column": d.Range.Start.Column,
+			"end_line": d.Range.End.Line, "end_column": d.Range.End.Column,
+			"limit": verifyMaxRepairActions,
+		}
+		result, err := e.GetCodeActions(ctx, input)
+		if err != nil {
+			continue
+		}
+		actions, _ := result["actions"].([]codeActionSummary)
+		usable := make([]any, 0, len(actions))
+		for _, action := range actions {
+			if action.Disabled != "" || action.HasCommand || (!action.HasEdit && !action.NeedsResolve) {
+				continue
+			}
+			applyInput := map[string]any{
+				"path": d.Path,
+				"line": d.Range.Start.Line, "column": d.Range.Start.Column,
+				"end_line": d.Range.End.Line, "end_column": d.Range.End.Column,
+				"action_id": action.ActionID,
+			}
+			usable = append(usable, map[string]any{
+				"action_id": action.ActionID, "title": action.Title, "kind": action.Kind,
+				"preferred": action.Preferred, "needs_resolve": action.NeedsResolve,
+				"apply_input": applyInput,
+			})
+		}
+		if len(usable) == 0 {
+			continue
+		}
+		out = append(out, map[string]any{
+			"path": d.Path, "range": d.Range, "diagnostic": d.Message, "actions": usable,
+		})
+	}
+	return out
 }
 
 func (e *Engine) verifyDiagnostics(ctx context.Context, paths []string, limit int) ([]core.Diagnostic, bool, []string) {
