@@ -21,10 +21,12 @@ type changedLineRange struct {
 }
 
 type changedFile struct {
-	Path      string             `json:"path"`
-	Ranges    []changedLineRange `json:"ranges,omitempty"`
-	Deleted   bool               `json:"deleted,omitempty"`
-	Untracked bool               `json:"untracked,omitempty"`
+	Path       string             `json:"path"`
+	BasePath   string             `json:"base_path,omitempty"`
+	Ranges     []changedLineRange `json:"ranges,omitempty"`
+	BaseRanges []changedLineRange `json:"base_ranges,omitempty"`
+	Deleted    bool               `json:"deleted,omitempty"`
+	Untracked  bool               `json:"untracked,omitempty"`
 }
 
 type gitChangeSet struct {
@@ -32,7 +34,7 @@ type gitChangeSet struct {
 	Files []changedFile
 }
 
-var diffHunkPattern = regexp.MustCompile(`^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@`)
+var diffHunkPattern = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
 
 // gitChanges reads the working tree relative to base without modifying Git
 // state. `git diff <base>` includes both staged and unstaged tracked changes;
@@ -131,6 +133,7 @@ func parseUnifiedDiff(data []byte) ([]changedFile, error) {
 			return
 		}
 		current.Ranges = mergeChangedRanges(current.Ranges)
+		current.BaseRanges = mergeChangedRanges(current.BaseRanges)
 		files = append(files, *current)
 	}
 	for _, raw := range bytes.Split(data, []byte{'\n'}) {
@@ -143,6 +146,9 @@ func parseUnifiedDiff(data []byte) ([]changedFile, error) {
 			seenHunk = false
 		case current != nil && !seenHunk && strings.HasPrefix(line, "--- "):
 			oldPath = strings.TrimPrefix(line, "--- ")
+			if oldPath != "/dev/null" {
+				current.BasePath = filepath.ToSlash(oldPath)
+			}
 		case current != nil && !seenHunk && strings.HasPrefix(line, "+++ "):
 			path := strings.TrimPrefix(line, "+++ ")
 			if path == "/dev/null" {
@@ -151,6 +157,8 @@ func parseUnifiedDiff(data []byte) ([]changedFile, error) {
 			} else {
 				current.Path = filepath.ToSlash(path)
 			}
+		case current != nil && !seenHunk && strings.HasPrefix(line, "rename from "):
+			current.BasePath = filepath.ToSlash(strings.TrimPrefix(line, "rename from "))
 		case current != nil && !seenHunk && strings.HasPrefix(line, "rename to "):
 			current.Path = filepath.ToSlash(strings.TrimPrefix(line, "rename to "))
 		case current != nil && strings.HasPrefix(line, "@@ "):
@@ -159,21 +167,20 @@ func parseUnifiedDiff(data []byte) ([]changedFile, error) {
 			if m == nil {
 				return nil, core.NewError(core.InternalError, "verify_change could not parse git diff hunk: "+line)
 			}
-			start, _ := strconv.Atoi(m[1])
-			count := 1
+			oldStart, _ := strconv.Atoi(m[1])
+			oldCount := 1
 			if m[2] != "" {
-				count, _ = strconv.Atoi(m[2])
+				oldCount, _ = strconv.Atoi(m[2])
 			}
-			if count == 0 {
-				// A deletion has no new lines. Anchor it to the nearest surviving
-				// worktree line so an enclosing current symbol can still be found.
-				if start < 1 {
-					start = 1
-				}
-				current.Ranges = append(current.Ranges, changedLineRange{Start: start, End: start})
-			} else {
-				current.Ranges = append(current.Ranges, changedLineRange{Start: start, End: start + count - 1})
+			newStart, _ := strconv.Atoi(m[3])
+			newCount := 1
+			if m[4] != "" {
+				newCount, _ = strconv.Atoi(m[4])
 			}
+			if oldCount > 0 {
+				current.BaseRanges = append(current.BaseRanges, anchoredChangedRange(oldStart, oldCount))
+			}
+			current.Ranges = append(current.Ranges, anchoredChangedRange(newStart, newCount))
 		}
 	}
 	flush()
@@ -183,6 +190,16 @@ func parseUnifiedDiff(data []byte) ([]changedFile, error) {
 		}
 	}
 	return files, nil
+}
+
+func anchoredChangedRange(start, count int) changedLineRange {
+	if start < 1 {
+		start = 1
+	}
+	if count <= 0 {
+		return changedLineRange{Start: start, End: start}
+	}
+	return changedLineRange{Start: start, End: start + count - 1}
 }
 
 func mergeChangedRanges(ranges []changedLineRange) []changedLineRange {

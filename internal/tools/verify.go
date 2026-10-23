@@ -147,6 +147,22 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 
 	findings := []verifyFinding{}
 	relatedTests := []string{}
+
+	var baselineEngine *Engine
+	var baselineCleanup func()
+	var baselineInitErr error
+	ensureBaseline := func() (*Engine, error) {
+		if baselineEngine != nil || baselineInitErr != nil {
+			return baselineEngine, baselineInitErr
+		}
+		baselineEngine, baselineCleanup, baselineInitErr = e.baseEngine(ctx, changes.Base)
+		return baselineEngine, baselineInitErr
+	}
+	defer func() {
+		if baselineCleanup != nil {
+			baselineCleanup()
+		}
+	}()
 	affectedOutput := make([]any, 0, len(affected))
 	affectedPaths := make([]string, 0, len(affected))
 	for path := range affected {
@@ -169,6 +185,29 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 				Severity: "warning", Code: "AFFECTED_FILE_NOT_CHANGED", Path: path,
 				Message: "a changed declaration semantically affects this file, but the file is not in the current diff",
 			})
+		}
+	}
+
+	semanticDiff := map[string]any{
+		"baseline_checked": false, "complete": true, "symbols": []any{}, "removed_count": 0, "added_count": 0,
+	}
+	if len(changedSymbols) > 0 {
+		base, baseErr := ensureBaseline()
+		if baseErr != nil {
+			semanticDiff["baseline_checked"] = true
+			semanticDiff["complete"] = false
+			warnings = append(warnings, "semantic baseline unavailable: "+baseErr.Error())
+			complete = false
+		} else {
+			var semanticFindings []verifyFinding
+			var semanticWarnings []string
+			var semanticComplete bool
+			semanticDiff, semanticFindings, semanticWarnings, semanticComplete = e.semanticRelationDiff(ctx, base, changes, changedSymbols, changedPaths, limit)
+			findings = append(findings, semanticFindings...)
+			warnings = append(warnings, semanticWarnings...)
+			if !semanticComplete {
+				complete = false
+			}
 		}
 	}
 
@@ -204,14 +243,13 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 	baselineDiagnostics := make([]core.Diagnostic, 0)
 	if len(currentDiagnostics) > 0 {
 		baselineChecked = true
-		baseEngine, cleanup, baseErr := e.baseEngine(ctx, changes.Base)
+		base, baseErr := ensureBaseline()
 		if baseErr != nil {
 			baselineComplete = false
 			complete = false
 			warnings = append(warnings, "baseline diagnostics unavailable: "+baseErr.Error())
 		} else {
-			baselineDiagnostics, baselineComplete, currentWarnings = baseEngine.verifyDiagnostics(ctx, paths, limit)
-			cleanup()
+			baselineDiagnostics, baselineComplete, currentWarnings = base.verifyDiagnostics(ctx, paths, limit)
 			warnings = append(warnings, currentWarnings...)
 			if !baselineComplete {
 				complete = false
@@ -273,7 +311,8 @@ func (e *Engine) VerifyChange(ctx context.Context, in map[string]any) (map[strin
 		"verdict": verdict, "base": changes.Base,
 		"changed_files": fileOutput, "changed_symbols": symbolOutput,
 		"affected_files": affectedOutput, "related_tests": relatedTests,
-		"diagnostics": currentDiagnostics,
+		"diagnostics":   currentDiagnostics,
+		"semantic_diff": semanticDiff,
 		"diagnostic_diff": map[string]any{
 			"baseline_checked": baselineChecked, "baseline_complete": baselineComplete,
 			"new": newDiagnostics, "resolved": resolvedDiagnostics, "unchanged_count": unchangedDiagnostics,

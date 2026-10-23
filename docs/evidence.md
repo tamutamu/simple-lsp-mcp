@@ -51,11 +51,13 @@ The public MCP surface contains 26 tools after adding `verify_change`, including
 
 `TestRealSemanticChangeGuardReturnsRepairCandidate` introduces an unused Go import. `verify_change` identifies the diagnostic as new and returns `FAIL`, then asks gopls for code actions and returns a WorkspaceEdit-backed repair candidate with a stable `action_id` plus the exact `apply_input` needed by `apply_code_action`. The test applies that candidate, verifies the import is actually removed, and runs `verify_change` again to prove the loop ends at `PASS`. The guard itself performs no write.
 
-The base snapshot is extracted with strict path/link checks and file/byte budgets. It is created only when the current verification scope actually contains LSP errors, avoiding a second LSP startup on clean changes.
+The base snapshot is extracted with strict path/link checks and file/byte budgets. The same isolated base engine is now used for both semantic-relation comparison and diagnostic regression comparison, so Change Guard can detect silent graph changes even when the current code has zero diagnostics.
 
 `TestRealSemanticChangeGuardCrossLanguageDiagnostics` verifies the same new-error/base-comparison path against TypeScript Language Server and Pyright. This check exposed a missing `textDocument.publishDiagnostics` client capability: TypeScript diagnostics were previously silent even for a clear TS2322 error. The capability is now advertised and covered by a session-level regression test.
 
-The guard's current evidence is intentionally narrower than a correctness proof: semantic impact still comes from the current working tree. The base snapshot currently supplies diagnostic regression comparison, not a complete before/after semantic relation graph or business-level invariants.
+`TestRealSemanticChangeGuardDetectsSilentRelationRemoval` removes a call while keeping the code type-correct. Both gopls and TypeScript Language Server report zero diagnostics, but the base graph contains one outgoing call that the working tree no longer contains. `verify_change` returns `WARNING` with `SEMANTIC_RELATION_REMOVED`. This is the key evidence that Change Guard can surface a class of omissions not represented by compiler errors.
+
+The guard is still not a correctness proof. It compares relations only for changed symbols with the same stable `symbol_path` in the working tree and base, reports new/renamed/unpairable symbols separately instead of guessing, caps actual relation comparisons at 32 paired symbols, and relies on the relation capabilities exposed by each language server. Removed calls/implementations become review warnings rather than hard failures because intentional graph changes are valid.
 
 ### Semantic edits are executed by real language servers
 
