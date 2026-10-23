@@ -70,7 +70,7 @@ func definitions() []definition {
 		{"impact_analysis", "Estimate refactor blast radius through callers, references, implementations, and affected files.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ImpactAnalysis(c, i)
 		}},
-		{"verify_change", "Semantic Change Guard: compare the Git diff with base/current LSP relations and diagnostics, and surface safe repair candidates; read-only.", objSchema(props("base", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"verify_change", "Semantic Change Guard: verify the Git working-tree diff against LSP impact and diagnostics; read-only.", objSchema(props("base", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.VerifyChange(c, i)
 		}},
 		{"rename_symbol", "Preview an LSP semantic rename; apply=true writes the validated cross-file WorkspaceEdit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {

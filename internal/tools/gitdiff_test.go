@@ -29,18 +29,6 @@ func TestParseUnifiedDiffTracksCurrentLineRanges(t *testing.T) {
 			t.Fatalf("range[%d] = %#v, want %#v", i, files[0].Ranges[i], want[i])
 		}
 	}
-	wantBase := []changedLineRange{{Start: 2, End: 3}, {Start: 10, End: 10}}
-	if len(files[0].BaseRanges) != len(wantBase) {
-		t.Fatalf("base ranges = %#v", files[0].BaseRanges)
-	}
-	for i := range wantBase {
-		if files[0].BaseRanges[i] != wantBase[i] {
-			t.Fatalf("base range[%d] = %#v, want %#v", i, files[0].BaseRanges[i], wantBase[i])
-		}
-	}
-	if files[0].BasePath != "a.go" {
-		t.Fatalf("base path = %q, want a.go", files[0].BasePath)
-	}
 }
 
 func TestParseUnifiedDiffHandlesDeletedFile(t *testing.T) {

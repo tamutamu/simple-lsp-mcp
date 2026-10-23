@@ -307,16 +307,16 @@ The guard:
 2. maps changed lines to the innermost current LSP symbols,
 3. reuses semantic impact/context to find callers, references, implementations, and affected files,
 4. lists related test files,
-5. materializes the committed `base` into a bounded temporary snapshot and compares semantic relations for changed symbols (`incoming_call`, `outgoing_call`, `implementation`, and reference counts),
-6. checks LSP error diagnostics on changed files and declaration-affected files and distinguishes new errors from errors that already existed in `base`,
+5. checks LSP error diagnostics on changed files and declaration-affected files,
+6. when current errors exist, materializes the committed `base` into a bounded temporary snapshot and asks an isolated LSP engine whether each error already existed,
 7. for newly introduced diagnostics, asks the current language server for applicable WorkspaceEdit-backed code actions and returns reusable `apply_code_action` inputs, and
 8. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
 
-A declaration change that reaches an untouched non-test file is a warning by itself. A removed call or implementation relation to an untouched file is also a warning: it can be intentional, so Change Guard asks for review instead of claiming a bug. Reference-count changes are included in `semantic_diff` but do not create standalone warnings because they are too noisy on their own. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions. `repair_candidates` are suggestions only: `verify_change` remains read-only, and the agent must explicitly call `apply_code_action` to write a selected LSP fix.
+A declaration change that reaches an untouched non-test file is a warning by itself. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions. `repair_candidates` are suggestions only: `verify_change` remains read-only, and the agent must explicitly call `apply_code_action` to write a selected LSP fix.
 
-The base snapshot is created outside the worktree with `git archive`; it never changes Git metadata or source files. Extraction is bounded to 20,000 files / 512 MiB, rejects links and path escapes, and uses the same generated/cache-directory exclusions as workspace traversal. Relation comparison is bounded to 32 changed symbols per verification. The committed snapshot is used by one isolated LSP engine for both relation comparison and diagnostic regression checks.
+The base snapshot is created outside the worktree with `git archive`; it never changes Git metadata or source files. Extraction is bounded to 20,000 files / 512 MiB, rejects links and path escapes, and uses the same generated/cache-directory exclusions as workspace traversal. A clean current diagnostic set skips the baseline LSP entirely, so the common successful path does not pay for a second language-server startup.
 
-This still does **not** prove business correctness or compare every relation in the repository. It compares changed symbols that have the same stable `symbol_path` in the working tree and committed base; new or renamed symbols are reported through `semantic_diff.unpaired_count` instead of being guessed into a potentially false pairing. Only relation types supported by the configured language server are compared. A warning means “a meaningful semantic edge disappeared; review whether that was intended,” not “the change is definitely wrong.”
+This still does **not** prove business correctness and does not yet build a complete before/after semantic graph for the base commit. The current semantic impact graph comes from the working tree; the base snapshot is used for diagnostic regression comparison. Future relation-graph comparison can strengthen change classification without changing the public `verify_change` API.
 
 ### LSP-backed editing
 
@@ -333,8 +333,6 @@ Before any write, every edit is validated: paths must stay inside the running wo
 Run `go test ./...` and `go test -race ./...` before contributing. CI also runs integration tests against actual Go, TypeScript, and Python language servers.
 
 For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and follows cross-file calls with `get_semantic_slice` on both sides. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
-
-To feel the product value directly, use [`examples/change-guard-demo`](examples/change-guard-demo/). It gives you a change where `go test` still passes after a required call is removed, while `verify_change` reports the lost `outgoing_call` relation. The same demo also walks through `FAIL -> repair_candidates -> apply_code_action -> PASS`.
 
 See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify semantic navigation and LSP-computed edits; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
 
