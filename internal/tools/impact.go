@@ -57,6 +57,7 @@ type impactBudget struct {
 	expansions int
 	nodes      int
 	warnings   []string
+	truncated  bool
 }
 
 func newImpactBudget(ctx context.Context) *impactBudget {
@@ -106,6 +107,12 @@ func (b *impactBudget) node() bool {
 // language-server error should not abort the whole call.
 func (b *impactBudget) stop(reason string) {
 	b.warnings = append(b.warnings, reason)
+}
+
+// truncate records a deliberately incomplete bounded search.
+func (b *impactBudget) truncate(reason string) {
+	b.truncated = true
+	b.stop(reason)
 }
 
 // done reports whether the deadline or the request/expansion budget has
@@ -195,7 +202,7 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 		if !capable(s.Capabilities(), "references") {
 			return nil, e.unsupported(p, "textDocument/references")
 		}
-		b.stop("call hierarchy not applicable or unavailable; only direct LSP references (and available implementations) were inspected; transitive callers were not analyzed")
+		b.stop("root is not callable or has no call hierarchy; inspect direct references and enclosing declarations; transitive traversal may be incomplete")
 	} else {
 		rootNode = e.callItemIn(cache, p, s, items[0], nil)
 		delete(rootNode, "from_ranges")
@@ -204,12 +211,62 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	rootSelRange, _ := rootNode["selection_range"].(core.Range)
 	visited := map[string]bool{nodeKey(rootPath, rootSelRange): true}
 
+	includeRefs := boolValDefault(in, "include_references", true)
+	includeImpls := boolValDefault(in, "include_implementations", true)
+	var refs, impls []core.Location
+	refsOK, implsOK := false, false
+	if includeRefs {
+		if !capable(s.Capabilities(), "references") {
+			b.stop(p.Name + " does not advertise textDocument/references")
+		} else if b.request() {
+			refs, err = e.locationsAt(rootCtx, cache, s, d.URI, pos, "textDocument/references", map[string]any{"context": map[string]bool{"includeDeclaration": false}})
+			if err != nil {
+				b.stop("references: " + err.Error())
+			} else {
+				refsOK = true
+			}
+		}
+	}
+	if includeImpls {
+		if !capable(s.Capabilities(), "implementation") {
+			b.stop(p.Name + " does not advertise textDocument/implementation")
+		} else if b.request() {
+			impls, err = e.locationsAt(rootCtx, cache, s, d.URI, pos, "textDocument/implementation", nil)
+			if err != nil {
+				b.stop("implementations: " + err.Error())
+			} else {
+				implsOK = true
+			}
+		}
+	}
+
+	// LSP references identify exact usages. Resolve each to its enclosing
+	// documentSymbol before traversing further: a changed data declaration
+	// can then lead to the functions and callers that actually depend on it.
+	var dependentSymbols []any
+	var owners []referenceOwner
+	if referenceOnly && refsOK {
+		dependentSymbols, owners = e.referenceOwners(rootCtx, p, refs, b)
+	}
+	ownerLimit := min(limit, impactMaxOwnerOutput)
+	dependentTr := len(dependentSymbols) > ownerLimit
+	if dependentTr {
+		dependentSymbols = dependentSymbols[:ownerLimit]
+		b.truncate(fmt.Sprintf("reference owner output capped at %d of %d symbols; narrow the query or inspect direct references", ownerLimit, len(owners)))
+	}
 	var direct, indirect []any
 	skippedExternal := 0
 	reachedDepth := 0
 
 	frontier := items
-	for level := 1; level <= depth && len(frontier) > 0 && !b.done(); level++ {
+	startLevel := 1
+	if referenceOnly {
+		startLevel = 2 // references are depth 1; callers of referencing functions are depth 2
+		if depth >= 2 && refsOK {
+			frontier = e.ownerCallFrontier(rootCtx, p, s, owners, b)
+		}
+	}
+	for level := startLevel; level <= depth && len(frontier) > 0 && !b.done(); level++ {
 		var next []protocol.CallHierarchyItem
 		for _, item := range frontier {
 			if !b.expand() {
@@ -269,35 +326,6 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 		reachedDepth = level
 	}
 
-	includeRefs := boolValDefault(in, "include_references", true)
-	includeImpls := boolValDefault(in, "include_implementations", true)
-	var refs, impls []core.Location
-	refsOK, implsOK := false, false
-	if includeRefs {
-		if !capable(s.Capabilities(), "references") {
-			b.stop(p.Name + " does not advertise textDocument/references")
-		} else if b.request() {
-			refs, err = e.locationsAt(rootCtx, cache, s, d.URI, pos, "textDocument/references", map[string]any{"context": map[string]bool{"includeDeclaration": false}})
-			if err != nil {
-				b.stop("references: " + err.Error())
-			} else {
-				refsOK = true
-			}
-		}
-	}
-	if includeImpls {
-		if !capable(s.Capabilities(), "implementation") {
-			b.stop(p.Name + " does not advertise textDocument/implementation")
-		} else if b.request() {
-			impls, err = e.locationsAt(rootCtx, cache, s, d.URI, pos, "textDocument/implementation", nil)
-			if err != nil {
-				b.stop("implementations: " + err.Error())
-			} else {
-				implsOK = true
-			}
-		}
-	}
-
 	directTr := len(direct) > limit
 	if directTr {
 		direct = direct[:limit]
@@ -316,6 +344,9 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	}
 
 	directOut := map[string]any{"callers": direct}
+	if referenceOnly && refsOK {
+		directOut["dependent_symbols"] = dependentSymbols
+	}
 	if refsOK {
 		directOut["references"] = locationList(refs)
 	}
@@ -328,6 +359,9 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	mode := "call_hierarchy"
 	if referenceOnly {
 		mode = "references_only"
+		if len(indirect) > 0 {
+			mode = "reference_usage_graph"
+		}
 	}
 	result := map[string]any{
 		"analysis_mode":  mode,
@@ -338,7 +372,7 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 		"meta": impactMeta{
 			Meta: core.Meta{
 				Complete:  len(b.warnings) == 0,
-				Truncated: directTr || indirectTr || refsTr || implsTr || affectedTr,
+				Truncated: directTr || indirectTr || refsTr || implsTr || affectedTr || dependentTr || b.truncated,
 				Warnings:  b.warnings,
 			},
 			Depth:           reachedDepth,

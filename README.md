@@ -30,11 +30,13 @@ Coding agents can reason well once they have the right semantic context. The exp
 - `get_symbol_outline` — inspect structure without returning source text.
 - `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
-- `impact_analysis` — estimate refactor blast radius. For functions/methods, combine call hierarchy, references and implementations. For constants, fields and other non-callable symbols, fall back to references and implementations rather than failing with "not a function". The response distinguishes `analysis_mode: call_hierarchy` from `analysis_mode: references_only`; the latter explicitly marks transitive impact as incomplete.
+- `impact_analysis` — trace likely change impact using **LSP references → enclosing document symbols → incoming call hierarchy**, alongside implementations. For a changed constant, field or type, identify the actual referencing functions (`direct.dependent_symbols`), their test candidates, and—with `depth: 2` or `3`—their upstream callers (`indirect.callers`). Functions retain direct caller analysis. A bounded response exposes `analysis_mode: call_hierarchy | references_only | reference_usage_graph` and incomplete/truncated metadata; it never claims a candidate necessarily requires an edit.
 - `verify_change` — Semantic Change Guard: compare the current Git diff with LSP impact, related tests, and current diagnostics before an agent declares the task complete.
 - `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
 - `format_document` — preview/apply document or range formatting.
 - `get_code_actions` / `apply_code_action` — inspect and apply WorkspaceEdit-backed LSP fixes.
+
+Example: with `impact_analysis({"symbol_path":"TaxRate","path":"config.go","depth":2})`, the MCP can show a reference inside `Invoice` and then its caller `HandleInvoice` even when `HandleInvoice` does not mention `TaxRate` at all. It can also mark `TestTaxRate` as a **test candidate** when that test directly references the symbol. All identities and edges come from LSP results, not identifier-string guesses. This is a navigation aid, **not proof of a bug or missing edit**. The same feature was exercised on the real [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) (`settings → send_email → recover_password`); see [measured evidence](docs/evidence.md#real-application-verification-not-only-synthetic-fixtures).
 
 ```text
 ❌ grep → read → grep → infer → edit matching text → hope

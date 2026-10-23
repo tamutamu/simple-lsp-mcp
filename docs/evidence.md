@@ -106,7 +106,28 @@ Verified against real language servers (rather than mock LSP JSON):
 - **TypeScript/TypeScript Language Server:** exported const in `rates.ts` imported by `invoice.ts` and `order.ts`; both affected files returned.
 - **No regression for functions:** `TestImpactAnalysisWithGopls` still returns `analysis_mode: call_hierarchy` and nonempty direct callers.
 
-**Limit:** reference-only mode does not claim to know which call chains are impacted transitively, and a position targeting a *use-site* instead of a declaration can still require the caller to resolve the definition first. These are correctness constraints, not missing marketing features.
+**Limit:** `references_only` mode does not claim to know which call chains are impacted transitively, and a position targeting a *use-site* instead of a declaration can still require the caller to resolve the definition first. The follow-up usage-graph enhancement below addresses a subset of transitive paths, but does not prove completeness or whether an edit is required.
+
+## Composed LSP usage graph (2026-10-23)
+
+**Previous behavior:** for a non-callable symbol, `impact_analysis` returned its definition and raw reference file/line locations. To discover which functions use a changed field/constant, an agent had to open each file and manually interpret the location. To find an upstream handler that never mentions the constant, the agent then had to identify each referencing function and follow its callers separately.
+
+**New behavior:** the **existing** `impact_analysis` now composes three authoritative LSP operations without a new public MCP tool:
+
+1. `textDocument/references` finds exact references to the selected constant/type/field (not occurrences of the same spelling).
+2. `textDocument/documentSymbol` finds the **innermost containing declaration** at each reference. `direct.dependent_symbols` includes its `symbol_id`, `symbol_path`, reference lines/count and `test_candidate` when the referencing file has a conventional test filename.
+3. With `depth >= 2`, `textDocument/prepareCallHierarchy` and `callHierarchy/incomingCalls` follow those referencing functions to their callers, which appear under `indirect.callers` with the intermediate function shown as `via.name`. TypeScript's callable `const`/arrow functions are included.
+
+Example proven using **real gopls**, not a mock: `TaxRate` in `config.go` has LSP references inside `Invoice` (`invoice.go`), `Order` (`order.go`) and `TestTaxRate` (`taxrate_test.go`). `HandleInvoice` (`handler.go`) calls `Invoice` **without referring to `TaxRate` directly**. A single `impact_analysis` request with `depth:2` returns these exact owners, flags `TestTaxRate` as a *candidate* test, and returns `HandleInvoice` as an indirect caller via `Invoice`. The old `find_references` primitive only returns direct source locations. The same two-hop graph is independently verified with **real Pyright** (`TAX_RATE → invoice → handle_invoice`) and **real TypeScript Language Server** (`taxRate → invoice → handleInvoice`). Existing function-call analysis still passes unchanged.
+
+The implementation is bounded to 128 reference locations, 16 distinct ownership-inspection files, 24 output owner symbols (ranked by reference count), 12 caller-expansion roots, and the existing overall 64-LSP-request/60-second limits. Results are marked partial or truncated when limits/capabilities prevent coverage. `analysis_mode:"reference_usage_graph"` indicates that an indirect caller was actually found; `references_only` is preserved if none was found. No static call graph is ever invented from text matching, and a `test_candidate` is not a claim of test coverage. **This validates richer semantic data in one model-visible call, not an A/B-proven improvement in agent editing success.**
+
+Runnable tests: `TestRealGoImpactForNonCallable`, `TestRealImpactForDataSymbolsAcrossLanguages`, and the existing callable `TestImpactAnalysisWithGopls`, with `SIMPLE_LSP_REAL_LSP=1`.
+
+### Real application verification (not only synthetic fixtures)
+
+On a fresh, unmodified checkout of `fastapi/full-stack-fastapi-template` pinned to `b1125d8` (2026-10-15), `impact_analysis` was run against the actual module-level `settings` declaration in `backend/app/core/config.py`, with `depth:2,limit:100` and real Pyright. The result contained **100 displayed direct references, 63 identified referencing declarations (24 displayed under a hard output cap), 8 indirect callers and 17 affected-file candidates**. Among the returned LSP-verified edges were `settings → send_email → recover_password` and `settings → send_email → create_user`. The tool completed in **3,521 ms** on this single measured run; `meta.complete=false` and `meta.truncated=true` correctly disclosed the 24-of-63 ownership cap, 12-of-63 expansion cap, and the unsupported implementation capability. No project sources were modified. This is objective evidence of multi-hop semantic navigation on an existing production template, **not** proof of lower agent edit error rates or a reproducible latency improvement.
+
 
 ## Zero-config startup and managed LSPs
 

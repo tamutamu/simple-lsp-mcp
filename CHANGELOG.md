@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extend existing `impact_analysis` with a bounded cross-file usage graph: combine LSP references with enclosing `documentSymbol`s to identify functions/tests using data symbols, then follow those functions' Call Hierarchy for indirect impact (Go, Python, TypeScript real-LSP tests); do not add public MCP tools or falsely mark partial searches as complete.
 - Make `impact_analysis` handle LSP non-callable symbols (constants, variables, fields and types) by combining references and implementations without requiring Call Hierarchy; expose explicit `references_only`/`call_hierarchy` analysis mode and incomplete metadata where transitive callers are unavailable.
 - Manage pinned language-server binaries in an isolated per-user versioned cache, with first-use installation, concurrent-install protection and absolute-path execution; no global LSP PATH registration, `npx` spawning or repeated `go run` on every request.
 - Bundle a user-invoked `simple-lsp-mcp-setup` skill in the Claude and Codex plugin packages, with checksummed release installers for Linux/macOS and Windows, MCP registration checks, and real LSP probes.
