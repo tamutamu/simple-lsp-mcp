@@ -290,7 +290,7 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 			}
 			for i, x := range xs {
 				if i >= impactMaxFanout {
-					b.stop(fmt.Sprintf("fan-out capped at %d callers for %s", impactMaxFanout, item.Name))
+					b.truncate(fmt.Sprintf("fan-out capped at %d callers for %s", impactMaxFanout, item.Name))
 					break
 				}
 				m := e.callItemIn(cache, p, s, x.From, x.FromRanges)
@@ -371,8 +371,8 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 		"affected_files": affected,
 		"meta": impactMeta{
 			Meta: core.Meta{
-				Complete:  len(b.warnings) == 0,
-				Truncated: directTr || indirectTr || refsTr || implsTr || affectedTr || dependentTr || b.truncated,
+				Complete:  impactComplete(b, directTr, indirectTr, refsTr, implsTr, affectedTr, dependentTr),
+				Truncated: impactTruncated(b, directTr, indirectTr, refsTr, implsTr, affectedTr, dependentTr),
 				Warnings:  b.warnings,
 			},
 			Depth:           reachedDepth,
@@ -536,4 +536,21 @@ func affectedFiles(rootPath string, direct, indirect []any, refs, impls []core.L
 		out = append(out, map[string]any{"path": a.path, "reasons": reasons, "count": a.count})
 	}
 	return out, tr
+}
+
+// impactTruncated accounts for output limits as well as traversal limits.
+func impactTruncated(b *impactBudget, outputs ...bool) bool {
+	if b.truncated {
+		return true
+	}
+	for _, truncated := range outputs {
+		if truncated {
+			return true
+		}
+	}
+	return false
+}
+
+func impactComplete(b *impactBudget, outputs ...bool) bool {
+	return len(b.warnings) == 0 && !impactTruncated(b, outputs...)
 }

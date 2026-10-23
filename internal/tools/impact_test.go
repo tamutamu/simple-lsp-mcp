@@ -163,3 +163,16 @@ func TestImpactPositionInRangeHalfOpen(t *testing.T) {
 		}
 	}
 }
+func TestImpactCompletenessIncludesOutputTruncation(t *testing.T) {
+	b := newImpactBudget(context.Background())
+	if !impactComplete(b, false, false) {
+		t.Fatal("unlimited result should be complete")
+	}
+	if !impactTruncated(b, false, true) || impactComplete(b, false, true) {
+		t.Fatal("output truncation must prevent complete=true")
+	}
+	b.truncate("fan-out limit")
+	if !impactTruncated(b) || impactComplete(b) {
+		t.Fatal("traversal truncation must prevent complete=true")
+	}
+}
