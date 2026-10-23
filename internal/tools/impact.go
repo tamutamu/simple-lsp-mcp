@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
+	"github.com/tamutamu/simple-lsp-mcp/internal/document"
+	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 )
 
 // impact_analysis bounds. depth and limit are the only knobs a caller can
@@ -146,36 +149,57 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	if err != nil {
 		return nil, err
 	}
-	if !s.Capabilities().CallHierarchy {
-		return nil, e.unsupported(p, "textDocument/prepareCallHierarchy")
+	rootNode, nonCallable := e.impactRootIdentity(rootCtx, p, s, d, pos, in)
+	referenceOnly := nonCallable || !s.Capabilities().CallHierarchy
+	if referenceOnly && !boolValDefault(in, "include_references", true) {
+		return nil, core.NewError(core.InvalidArgument, "reference-only impact requires include_references=true")
 	}
-	if err := e.warmProjectSymbolCandidates(rootCtx, p, s, e.targetWarmName(in)); err != nil {
+	if referenceOnly && !capable(s.Capabilities(), "references") {
+		return nil, e.unsupported(p, "textDocument/references")
+	}
+	warmName := e.targetWarmName(in)
+	if warmName == "" {
+		warmName, _ = rootNode["name"].(string)
+	}
+	if err := e.warmProjectSymbolCandidates(rootCtx, p, s, warmName); err != nil {
 		return nil, err
 	}
 
 	b := newImpactBudget(rootCtx)
-	if !b.request() {
-		return nil, core.NewError(core.RequestTimeout, "impact_analysis deadline exceeded before it could start")
-	}
-	var raw json.RawMessage
-	{
+	var items []protocol.CallHierarchyItem
+	if !referenceOnly {
+		if !b.request() {
+			return nil, core.NewError(core.RequestTimeout, "impact_analysis deadline exceeded before it could start")
+		}
+		var raw json.RawMessage
 		callCtx, cancelReq := e.callContext(rootCtx)
 		err := s.Request(callCtx, "textDocument/prepareCallHierarchy", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos}, &raw)
 		cancelReq()
 		if err != nil {
+			return nil, err // Do not hide unexpected LSP failures as a valid empty graph.
+		}
+		if err := json.Unmarshal(raw, &items); err != nil {
 			return nil, err
 		}
+		if len(items) > 1 {
+			return nil, core.NewError(core.InvalidArgument, "multiple call hierarchy items; specify an exact symbol")
+		}
+		if len(items) == 0 {
+			referenceOnly = true
+		}
 	}
-	var items []protocol.CallHierarchyItem
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, err
+	if referenceOnly {
+		if !boolValDefault(in, "include_references", true) {
+			return nil, core.NewError(core.InvalidArgument, "reference-only impact requires include_references=true")
+		}
+		if !capable(s.Capabilities(), "references") {
+			return nil, e.unsupported(p, "textDocument/references")
+		}
+		b.stop("call hierarchy not applicable or unavailable; only direct LSP references (and available implementations) were inspected; transitive callers were not analyzed")
+	} else {
+		rootNode = e.callItemIn(cache, p, s, items[0], nil)
+		delete(rootNode, "from_ranges")
 	}
-	if len(items) != 1 {
-		return nil, core.NewError(core.SymbolNotFound, "call hierarchy item was not found")
-	}
-	root := items[0]
-	rootNode := e.callItemIn(cache, p, s, root, nil)
-	delete(rootNode, "from_ranges")
 	rootPath, _ := rootNode["path"].(string)
 	rootSelRange, _ := rootNode["selection_range"].(core.Range)
 	visited := map[string]bool{nodeKey(rootPath, rootSelRange): true}
@@ -184,7 +208,7 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	skippedExternal := 0
 	reachedDepth := 0
 
-	frontier := []protocol.CallHierarchyItem{root}
+	frontier := items
 	for level := 1; level <= depth && len(frontier) > 0 && !b.done(); level++ {
 		var next []protocol.CallHierarchyItem
 		for _, item := range frontier {
@@ -301,7 +325,12 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 
 	affected, affectedTr := affectedFiles(rootPath, direct, indirect, refs, impls, limit)
 
+	mode := "call_hierarchy"
+	if referenceOnly {
+		mode = "references_only"
+	}
 	result := map[string]any{
+		"analysis_mode":  mode,
 		"root":           rootNode,
 		"direct":         directOut,
 		"indirect":       map[string]any{"callers": indirect},
@@ -321,6 +350,71 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 		},
 	}
 	return result, nil
+}
+
+// impactRootIdentity uses the symbol already returned by documentSymbol to
+// decide whether a call hierarchy makes sense. For constants, fields, and
+// types, references are still meaningful even though prepareCallHierarchy
+// can error (gopls: "<name> is not a function"). No text matching is used.
+func (e *Engine) impactRootIdentity(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position, in map[string]any) (map[string]any, bool) {
+	path := relativeMust(e, d.Path)
+	root := map[string]any{"language": p.Name, "path": path}
+	var name, kind string
+	if id := stringVal(in, "symbol_id"); id != "" {
+		if rec, err := e.Symbols.Get(id); err == nil {
+			name, kind = rec.Name, rec.Kind
+			root["symbol_id"] = id
+			root["range"] = rec.Range
+			root["selection_range"] = rec.SelectionRange
+			if rec.SymbolPath != "" {
+				root["symbol_path"] = rec.SymbolPath
+			}
+		}
+	} else {
+		// position/symbol_path targets need the actual symbol kind, not a guess
+		// from the identifier's spelling. DocumentSymbol is authoritative.
+		position, err := document.FromLSP(d.Text, pos, s.Capabilities().PositionEncoding)
+		if err == nil {
+			_, _, nodes, err := e.documentNodes(ctx, p, path)
+			if err == nil {
+				for _, node := range nodes {
+					if !impactPositionInRange(position, node.SelectionRange) {
+						continue
+					}
+					name, kind = node.Name, node.Kind
+					root["symbol_path"] = node.SymbolPath
+					root["symbol_id"] = e.registerNode(p, path, d.URI, d.Hash, node)
+					root["range"] = node.Range
+					root["selection_range"] = node.SelectionRange
+					break
+				}
+			}
+		}
+	}
+	if name != "" {
+		root["name"] = name
+	}
+	if kind != "" {
+		root["kind"] = kind
+	}
+	// LSP call hierarchy describes callable functions/methods/constructors,
+	// not declarations such as fields, constants, variables, or types.
+	return root, kind != "" && kind != "function" && kind != "method" && kind != "constructor"
+}
+
+// impactPositionInRange treats an LSP selection range as half-open so
+// selecting any character of a declaration name resolves the same symbol.
+func impactPositionInRange(p core.Position, r core.Range) bool {
+	if p.Line < r.Start.Line || p.Line > r.End.Line {
+		return false
+	}
+	if p.Line == r.Start.Line && p.Column < r.Start.Column {
+		return false
+	}
+	if p.Line == r.End.Line && p.Column >= r.End.Column {
+		return false
+	}
+	return true
 }
 
 func locationList(locs []core.Location) []any {

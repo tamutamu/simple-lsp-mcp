@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Make `impact_analysis` handle LSP non-callable symbols (constants, variables, fields and types) by combining references and implementations without requiring Call Hierarchy; expose explicit `references_only`/`call_hierarchy` analysis mode and incomplete metadata where transitive callers are unavailable.
 - Manage pinned language-server binaries in an isolated per-user versioned cache, with first-use installation, concurrent-install protection and absolute-path execution; no global LSP PATH registration, `npx` spawning or repeated `go run` on every request.
 - Bundle a user-invoked `simple-lsp-mcp-setup` skill in the Claude and Codex plugin packages, with checksummed release installers for Linux/macOS and Windows, MCP registration checks, and real LSP probes.
 - Register Claude MCP instances at user scope when using `setup claude --apply`, so setup is not tied to one directory.

@@ -30,7 +30,7 @@ Coding agents can reason well once they have the right semantic context. The exp
 - `get_symbol_outline` — inspect structure without returning source text.
 - `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
-- `impact_analysis` — estimate refactor blast radius.
+- `impact_analysis` — estimate refactor blast radius. For functions/methods, combine call hierarchy, references and implementations. For constants, fields and other non-callable symbols, fall back to references and implementations rather than failing with "not a function". The response distinguishes `analysis_mode: call_hierarchy` from `analysis_mode: references_only`; the latter explicitly marks transitive impact as incomplete.
 - `verify_change` — Semantic Change Guard: compare the current Git diff with LSP impact, related tests, and current diagnostics before an agent declares the task complete.
 - `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
 - `format_document` — preview/apply document or range formatting.

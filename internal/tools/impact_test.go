@@ -149,3 +149,17 @@ func TestImpactContextClampsToMaxTotal(t *testing.T) {
 		t.Fatalf("deadline %v exceeds impactMaxTotal", time.Until(dl))
 	}
 }
+
+func TestImpactPositionInRangeHalfOpen(t *testing.T) {
+	selection := core.Range{Start: core.Position{Line: 2, Column: 7}, End: core.Position{Line: 2, Column: 14}}
+	for _, tc := range []struct {
+		line, col int
+		inside    bool
+	}{
+		{2, 6, false}, {2, 7, true}, {2, 10, true}, {2, 13, true}, {2, 14, false}, {1, 8, false}, {3, 8, false},
+	} {
+		if got := impactPositionInRange(core.Position{Line: tc.line, Column: tc.col}, selection); got != tc.inside {
+			t.Errorf("position (%d,%d) inside=%v want %v", tc.line, tc.col, got, tc.inside)
+		}
+	}
+}

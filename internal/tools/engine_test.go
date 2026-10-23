@@ -349,6 +349,9 @@ func TestImpactAnalysisWithGopls(t *testing.T) {
 	if meta.Depth != 1 || meta.RequestedDepth != 1 {
 		t.Fatalf("meta = %#v, want depth 1", meta)
 	}
+	if res["analysis_mode"] != "call_hierarchy" {
+		t.Fatalf("callable function should retain call hierarchy: %#v", res["analysis_mode"])
+	}
 	direct, ok := res["direct"].(map[string]any)
 	if !ok {
 		t.Fatalf("direct = %#v", res["direct"])

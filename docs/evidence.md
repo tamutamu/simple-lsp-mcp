@@ -93,6 +93,21 @@ SIMPLE_LSP_REAL_LSP=1 go test ./internal/tools \
 
 The same test runs in GitHub Actions.
 
+## Non-callable symbol impact via LSP references (2026-10-23)
+
+A deterministic, real-LSP regression test exposed an `impact_analysis` failure: on a Go constant `TaxRate` used by both `invoice.go` and `order.go`, the old implementation always called `textDocument/prepareCallHierarchy` and gopls returned `lsp error 0: TaxRate is not a function`. Yet `textDocument/references` can locate both affected files.
+
+Instead of introducing another public MCP tool, `impact_analysis` now uses a symbol's LSP `documentSymbol` **kind** to determine whether Call Hierarchy is applicable. Functions/methods/constructors retain the existing incoming-call traversal. Constants/fields/types (or servers that do not advertise Call Hierarchy) use **LSP references + implementations**, preserve affected-file reasons, and include `analysis_mode: "references_only"` and `meta.complete=false` with a warning because transitive callers were *not* analyzed. Missing LSP data is never synthesized from grep. Unexpected Call Hierarchy request errors are still surfaced, not silently converted to success.
+
+Verified against real language servers (rather than mock LSP JSON):
+
+- **Go/gopls:** a constant declaration and two cross-file references; tested by `symbol_id`, `symbol_path`, and selecting an interior character of the constant name. A struct field (`Pricing/Discount`) also returns reference-only impact. Prior version failed for the constant; updated tests pass.
+- **Python/Pyright:** data symbol in `rates.py` used in `invoice.py` and `order.py`; both affected files returned.
+- **TypeScript/TypeScript Language Server:** exported const in `rates.ts` imported by `invoice.ts` and `order.ts`; both affected files returned.
+- **No regression for functions:** `TestImpactAnalysisWithGopls` still returns `analysis_mode: call_hierarchy` and nonempty direct callers.
+
+**Limit:** reference-only mode does not claim to know which call chains are impacted transitively, and a position targeting a *use-site* instead of a declaration can still require the caller to resolve the definition first. These are correctness constraints, not missing marketing features.
+
 ## Zero-config startup and managed LSPs
 
 `TestRealAutoDetectedLanguageServers` creates a Go + FastAPI/Python + TypeScript workspace **without `.simple-lsp.yaml`**, calls `config.Load`, and then requests real `documentSymbol` results through gopls, Pyright and TypeScript Language Server. It verifies that all three project roots are selected, no config is written and no package is downloaded. CI includes this test in the opt-in real-LSP suite.

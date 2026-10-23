@@ -67,7 +67,7 @@ func definitions() []definition {
 		{"get_semantic_slice", "Get a byte-bounded semantic source neighborhood for understanding or changing one symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_bytes")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SemanticSlice(c, i)
 		}},
-		{"impact_analysis", "Estimate refactor blast radius through callers, references, implementations, and affected files.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"impact_analysis", "Estimate refactor blast radius using LSP call hierarchy, references and implementations. Non-callable symbols fall back to reference-only impact with explicit incomplete metadata.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ImpactAnalysis(c, i)
 		}},
 		{"verify_change", "Semantic Change Guard: verify the Git working-tree diff against LSP impact and diagnostics; read-only.", objSchema(props("base", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
