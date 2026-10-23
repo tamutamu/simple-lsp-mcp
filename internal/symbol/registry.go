@@ -1,6 +1,7 @@
 package symbol
 
 import (
+	"container/list"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
@@ -8,7 +9,7 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 )
 
-// Record stores the metadata needed to resolve a symbol during one MCP session.
+// Record stores metadata needed to resolve a symbol in one MCP session.
 type Record struct {
 	ID, SessionKey, Name, Kind, ContainerName, URI, Path, FileHash string
 	SymbolPath, Detail                                             string
@@ -16,39 +17,75 @@ type Record struct {
 	Data                                                           any
 }
 
-// Registry owns ephemeral symbol handles for the current MCP process.
+const maxRegistryEntries = 10000
+
+type identity struct {
+	session, path, hash, name, kind, symbolPath string
+	selection                                   core.Range
+}
+type entry struct {
+	record Record
+	key    identity
+}
+
+// Registry is a bounded, process-local LRU of ephemeral symbol handles.
 type Registry struct {
-	mu      sync.RWMutex
-	records map[string]Record
+	mu         sync.Mutex
+	records    map[string]*list.Element
+	identities map[identity]string
+	recent     *list.List
 }
 
-// New creates an empty symbol registry.
 func New() *Registry {
-	return &Registry{records: map[string]Record{}}
+	return &Registry{
+		records:    make(map[string]*list.Element),
+		identities: make(map[identity]string),
+		recent:     list.New(),
+	}
 }
 
-// Register assigns a collision-resistant handle to a symbol record.
 func (r *Registry) Register(v Record) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for {
-		b := make([]byte, 12)
-		_, _ = rand.Read(b)
-		v.ID = "sym_" + hex.EncodeToString(b)
-		if _, ok := r.records[v.ID]; !ok {
-			r.records[v.ID] = v
-			return v.ID
-		}
+	key := identity{v.SessionKey, v.Path, v.FileHash, v.Name, v.Kind, v.SymbolPath, v.SelectionRange}
+	if id, ok := r.identities[key]; ok {
+		el := r.records[id]
+		v.ID = id
+		el.Value = entry{record: v, key: key}
+		r.recent.MoveToFront(el)
+		return id
 	}
+	for {
+		var bytes [12]byte
+		if _, err := rand.Read(bytes[:]); err != nil {
+			panic("secure symbol ID generation failed")
+		}
+		v.ID = "sym_" + hex.EncodeToString(bytes[:])
+		if _, exists := r.records[v.ID]; exists {
+			continue
+		}
+		el := r.recent.PushFront(entry{record: v, key: key})
+		r.records[v.ID] = el
+		r.identities[key] = v.ID
+		break
+	}
+	if r.recent.Len() > maxRegistryEntries {
+		oldest := r.recent.Back()
+		previous := oldest.Value.(entry)
+		delete(r.records, previous.record.ID)
+		delete(r.identities, previous.key)
+		r.recent.Remove(oldest)
+	}
+	return v.ID
 }
 
-// Get resolves a previously registered symbol handle.
 func (r *Registry) Get(id string) (Record, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	v, ok := r.records[id]
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	el, ok := r.records[id]
 	if !ok {
 		return Record{}, core.NewError(core.SymbolNotFound, "symbol handle was not found")
 	}
-	return v, nil
+	r.recent.MoveToFront(el)
+	return el.Value.(entry).record, nil
 }
