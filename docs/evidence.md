@@ -107,6 +107,8 @@ One **read-only code-review task** asked Claude Code (Sonnet, medium effort) to 
 
 **This does not establish an MCP speed or cost benefit.** Claude did not call the MCP in the enabled condition, and a single stochastic run per condition cannot isolate model variance. The initial trial was discarded because permissions differed and MCP calls were denied. Both valid-condition reviews independently identified the direct `os.WriteFile` implementation, best-effort multi-file rollback, and residual race/crash risks. The review is useful as a correctness investigation, not product-impact evidence.
 
+A separate, **prompted real-repository** experiment against `fastapi/full-stack-fastapi-template` is documented in [the 2026-10-23 agent evaluation](agent-evaluation-2026-10-23.md): Claude did use `rename_symbol`, both renames matched the built-in-tool diff byte-for-byte, and the full MCP arms timed out on `verify_change`. No user-value advantage is claimed from those results.
+
 ## Not proven yet
 
 The next evidence layer is agent-level A/B testing. We still need controlled tasks comparing Claude Code and Codex with and without `simple-lsp-mcp`, measuring at least:
