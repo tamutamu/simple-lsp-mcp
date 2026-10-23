@@ -93,6 +93,16 @@ SIMPLE_LSP_REAL_LSP=1 go test ./internal/tools \
 
 The same test runs in GitHub Actions.
 
+## Zero-config startup and managed LSPs
+
+`TestRealAutoDetectedLanguageServers` creates a Go + FastAPI/Python + TypeScript workspace **without `.simple-lsp.yaml`**, calls `config.Load`, and then requests real `documentSymbol` results through gopls, Pyright and TypeScript Language Server. It verifies that all three project roots are selected, no config is written and no package is downloaded. CI includes this test in the opt-in real-LSP suite.
+
+The CLI was also tested manually against an isolated real [`fastapi/full-stack-fastapi-template`](https://github.com/fastapi/full-stack-fastapi-template) checkout at `b1125d8` **without YAML**. `doctor --auto-install-lsp` found the Python, TypeScript, HTML and CSS profiles in their project roots, and `doctor --probe` returned `probe_ok=true` for `backend/app/crud.py` and `frontend/src/hooks/useAuth.ts`. Missing optional HTML/CSS executables were reported as missing without opt-in; with opt-in, the doctor selected managed `npx` launchers instead.
+
+To verify the actual download path rather than merely previewing the command, the LSP executables were **deliberately hidden from PATH** and managed mode was used to fetch and start TypeScript Language Server (`typescript@5.9.3` / `typescript-language-server@5.3.0`), Pyright (`pyright@1.1.413`), and HTML/CSS Language Servers (`vscode-langservers-extracted@4.10.0`) via `npx`. gopls was also hidden from PATH and started through pinned `go run golang.org/x/tools/gopls@v0.24.0 serve`. All five language profiles returned a successful real `doctor --probe`; the no-network-download preview returned correctly without executing a package manager.
+
+These are runtime setup smoke tests, **not** proof that simple-lsp improves an agent's development success rate.
+
 ## Exploratory Claude Code comparison (2026-10-23)
 
 One **read-only code-review task** asked Claude Code (Sonnet, medium effort) to trace the public WorkspaceEdit write paths and review stale-file, symlink, and partial-write protection. The same prompt and 12-turn limit were used with and without this MCP; both sessions permitted Read, Glob, and Grep and denied Bash/Edit/Write. MCP configuration was isolated between runs.

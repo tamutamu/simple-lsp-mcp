@@ -67,20 +67,45 @@ See [SECURITY.md](SECURITY.md) for the write/confinement model and [docs/evidenc
 
 The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` requires a non-empty `query` and `language` to keep workspace-wide searches bounded.
 
-## Onboarding tool & Configuration (`.simple-lsp.yaml`)
+## Automatic LSP setup (no per-language plugins)
 
-Language server configurations are read from `.simple-lsp.yaml` (or `.simple-lsp.yml`) in the root of the workspace.
+**Register `simple-lsp-mcp` once with Claude Code or Codex.** You do not need
+separate LSP plugins for each language. Without any `.simple-lsp.yaml`, the MCP
+automatically discovers Go, Python, TypeScript/JavaScript, HTML and CSS projects
+(including monorepos), reuses installed language servers, and starts each server
+only when an MCP tool needs it. Detection does not modify workspace files or
+install any packages.
 
-### Quick Setup (Onboarding Tool)
+For a **single opt-in that also downloads missing language servers**, run:
 
-You can automatically detect project structures (including monorepos) and generate `.simple-lsp.yaml` by executing the `onboard` MCP tool from your AI chat session.
+```sh
+simple-lsp-mcp setup claude --apply --auto-install-lsp
+# or
+simple-lsp-mcp setup codex --apply --auto-install-lsp
+```
 
-Options:
-- `overwrite` (boolean): Overwrite an existing configuration when explicitly requested.
-- `workspace` (string): Optional directory identifying the **running server root** (defaults to that root). Other roots and subdirectories are rejected because a restarted server only loads configuration from its own root; use `--workspace` when launching the server to configure a different project.
+If an LSP executable is absent, managed mode uses **pinned packages** through
+`npx` (Pyright, TypeScript Language Server, HTML/CSS) or `go run` (gopls) on
+first use. You must already have Node.js/npx or Go installed, respectively.
+The first request may need network access and additional time; packages are
+cached by npm/Go. There is no background download on server startup. Without
+`--auto-install-lsp`, a missing executable produces an error rather than a
+surprise download.
 
-If no configuration exists, the MCP server starts with no language servers configured; it does **not** write a file or automatically execute any language servers. Call `onboard` to generate the configuration, then **restart/reconnect the MCP server** to load the new profiles. The tool returns `restart_required: true` to make this explicit.
+An existing `.simple-lsp.yaml` (or `.simple-lsp.yml`) always wins over discovery
+and the managed defaults. For custom language servers, project-specific settings
+or unusual layouts, call the optional `onboard` MCP tool to generate a starter
+configuration, then restart/reconnect the MCP server. **Ordinary projects need
+no YAML and no restart after detection.**
 
+### Inspect without installing
+
+```sh
+simple-lsp-mcp doctor --workspace .
+simple-lsp-mcp doctor --workspace . --auto-install-lsp
+# --probe is optional: it really starts the LSP (and may download in managed mode).
+simple-lsp-mcp doctor --workspace . --auto-install-lsp --probe frontend/src/main.ts
+```
 
 ### Configuration Format
 
@@ -122,10 +147,10 @@ Each server entry supports:
 ## Requirements
 
 - Go 1.26 or later when building from this repository
-- An LSP server for every language you intend to use
+- An installed LSP server for each language, or Node.js/npx and/or Go with `--auto-install-lsp`
 - An MCP client such as Codex or Claude Code
 
-Install and configure only the LSP servers you need. Each server starts lazily, on the first request for its language.
+No separate Claude Code LSP plugin is needed. Existing language servers are reused when present; optional managed mode downloads missing ones on first use. Each server starts lazily, on the first request for its language.
 
 | Language | LSP server | Example installation |
 | --- | --- | --- |
@@ -167,11 +192,13 @@ Install the binary and use the clients' own MCP registration commands without ma
 simple-lsp-mcp doctor --workspace .
 simple-lsp-mcp doctor --workspace . --probe internal/tools/semantic.go
 simple-lsp-mcp setup claude           # preview only
-simple-lsp-mcp setup claude --apply   # explicitly register
+simple-lsp-mcp setup claude --apply    # explicitly register; no downloads
 simple-lsp-mcp setup codex --apply
+simple-lsp-mcp setup claude --apply --auto-install-lsp  # permit first-use downloads
+simple-lsp-mcp setup codex --apply --auto-install-lsp
 ```
 
-`doctor` reads the existing `.simple-lsp.yaml`, reports the exact running binary/version and missing executables, and warns when `simple-lsp-mcp` on `PATH` resolves to a different binary. It never creates the configuration; use the `onboard` MCP tool when one is needed. `--probe` performs an actual LSP document-symbol request. `setup` defaults to a preview, does not install software, and refuses to silently overwrite an existing registration. `--apply` modifies only the selected MCP client's configuration through that client's CLI.
+`doctor` reports auto-discovered or explicitly configured LSPs, the running binary/version, and missing executables. It never writes configuration and only attempts a first-use package download if **both** `--auto-install-lsp` and `--probe` are supplied. `setup` defaults to preview, does not download software, and refuses to overwrite existing registrations. `--apply` registers the MCP using the selected client's CLI. To change an existing MCP registration to managed mode, remove it using that client's CLI before registering again.
 
 ## Codex configuration
 
@@ -342,7 +369,8 @@ See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and 
 | --- | --- | --- |
 | `--workspace` | Current working directory | Workspace root to inspect (defaults to process current working directory) |
 | `--log-level` | `info` | `debug`, `info`, `warn`, or `error` |
-| `--request-timeout` | `15s` | Timeout for each LSP request |
+| `--auto-install-lsp` | `false` | Allow pinned missing LSP packages to be downloaded on first use (requires Node.js/npx or Go) |
+| `--request-timeout` | `15s` (`60s` with managed LSP) | Timeout for each LSP request; explicitly supplied value takes priority |
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |
 | `--max-results` | `500` | Maximum result count per tool |
 | `--version` | `false` | Print version information and exit |

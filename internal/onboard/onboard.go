@@ -2,11 +2,9 @@ package onboard
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
 	"gopkg.in/yaml.v3"
@@ -22,17 +20,6 @@ type Options struct {
 type Result struct {
 	ConfigPath string
 	Detected   map[string][]string // relPath -> list of detected profiles
-}
-
-var skipDirs = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	".venv":        true,
-	"venv":         true,
-	"target":       true,
-	"dist":         true,
-	"build":        true,
-	".next":        true,
 }
 
 // Run scans the workspace for project structures and generates .simple-lsp.yaml.
@@ -70,7 +57,7 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
-	detected := scanWorkspace(wsDir)
+	detected := config.DetectWorkspace(wsDir)
 
 	configMap := make(map[string]map[string]config.Server)
 
@@ -154,66 +141,7 @@ func Run(opts Options) (*Result, error) {
 	}, nil
 }
 
-func scanWorkspace(wsDir string) map[string][]string {
-	detected := make(map[string]map[string]bool)
-
-	_ = filepath.WalkDir(wsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if skipDirs[name] && path != wsDir {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		rel, err := filepath.Rel(wsDir, filepath.Dir(path))
-		if err != nil {
-			return nil
-		}
-
-		if rel == "" {
-			rel = "."
-		}
-
-		fileName := d.Name()
-		if detected[rel] == nil {
-			detected[rel] = make(map[string]bool)
-		}
-
-		switch fileName {
-		case "pyproject.toml", "requirements.txt", "Pipfile", "setup.py":
-			detected[rel]["python"] = true
-		case "package.json", "tsconfig.json", "jsconfig.json":
-			detected[rel]["typescript-javascript"] = true
-		case "go.mod":
-			detected[rel]["go"] = true
-		}
-
-		ext := strings.ToLower(filepath.Ext(fileName))
-		if ext == ".html" || ext == ".htm" {
-			detected[rel]["html"] = true
-		}
-		if ext == ".css" {
-			detected[rel]["css"] = true
-		}
-
-		return nil
-	})
-
-	res := make(map[string][]string)
-	for relPath, profs := range detected {
-		var list []string
-		for p := range profs {
-			list = append(list, p)
-		}
-		if len(list) > 0 {
-			sort.Strings(list)
-			res[relPath] = list
-		}
-	}
-
-	return res
+// scanWorkspace is retained for package tests; startup and onboarding share detection.
+func scanWorkspace(root string) map[string][]string {
+	return config.DetectWorkspace(root)
 }

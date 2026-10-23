@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Auto-detect supported language projects (including monorepos) and reuse installed LSPs without generating `.simple-lsp.yaml` or installing per-language Claude Code plugins.
+- Allow explicit `--auto-install-lsp` opt-in at MCP registration for pinned on-demand LSP packages via `npx`/`go run`; keep YAML overrides authoritative and startup download-free.
 - Add an executable React/TypeScript + FastAPI/Python monorepo proof under `examples/react-fastapi-monorepo`, backed by real TypeScript Language Server and Pyright integration tests.
 - Add evidence documentation that separates verified semantic capabilities from the still-unproven agent-level speed/accuracy hypothesis.
 - Verify that per-LSP `env`, `settings`, and `initialization_options` are actually forwarded to the child language-server process and protocol messages.

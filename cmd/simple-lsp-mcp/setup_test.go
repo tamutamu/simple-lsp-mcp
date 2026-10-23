@@ -13,3 +13,12 @@ func TestSetupCommandUsesOfficialCLIAndRejectsUnknownClients(t *testing.T) {
 		t.Fatal("unsupported client accepted")
 	}
 }
+
+func TestSetupCommandManagedModeUsesOneRegistration(t *testing.T) {
+	for _, client := range []string{"claude", "codex"} {
+		name, args, err := setupCommandOptions(client, "/tmp/simple-lsp-mcp", true)
+		if err != nil || name != client || len(args) != 6 || args[5] != "--auto-install-lsp" {
+			t.Fatalf("client=%s command=%s args=%#v err=%v", client, name, args, err)
+		}
+	}
+}

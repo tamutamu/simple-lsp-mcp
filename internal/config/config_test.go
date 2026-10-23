@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
+	"time"
 )
 
 func TestLoadWithoutConfigIsReadOnlyAndLeavesProfilesUnconfigured(t *testing.T) {
@@ -98,5 +101,167 @@ func TestLoadRejectsInvalidConfigFiles(t *testing.T) {
 				t.Fatal("Load succeeded for invalid config")
 			}
 		})
+	}
+}
+
+func TestLoadAutoDetectsMonorepoWithoutWritingConfig(t *testing.T) {
+	root := t.TempDir()
+	for _, entry := range []string{"backend/pyproject.toml", "frontend/package.json", "go.mod"} {
+		full := filepath.Join(root, entry)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := Load(Runtime{Workspace: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for profile, directory := range map[string]string{
+		"go": ".", "python": "backend", "typescript-javascript": "frontend",
+	} {
+		if len(cfg.Servers[profile]) != 1 || cfg.Servers[profile][0].Directory != directory {
+			t.Errorf("profile %s: %#v", profile, cfg.Servers[profile])
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(root, ConfigFile)); !os.IsNotExist(err) {
+		t.Fatalf("automatic detection wrote configuration: %v", err)
+	}
+}
+
+func TestAutomaticDetectionSkipsIgnoredDirectoriesAndSymlinks(t *testing.T) {
+	root := t.TempDir()
+	for _, directory := range []string{"node_modules", ".scratch", ".local"} {
+		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, directory, "go.mod"), []byte("module x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "node_modules", "go.mod"), filepath.Join(root, "go.mod")); err != nil {
+		t.Skip(err)
+	}
+	if got := DetectWorkspace(root); len(got) != 0 {
+		t.Fatalf("detected ignored project files: %#v", got)
+	}
+}
+
+func TestAutomaticServerDoesNotDownloadWithoutOptIn(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", root)
+	for _, profile := range []string{"go", "python", "typescript-javascript", "html", "css"} {
+		srv := automaticServer(profile, false)
+		if srv.Managed || srv.Command == "npx" || srv.Command == "go" {
+			t.Errorf("unexpected managed launcher for %s: %#v", profile, srv)
+		}
+	}
+}
+
+func TestAutomaticServerManagedModeRequiresInstalledToolchain(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", root)
+	for _, profile := range []string{"go", "python", "typescript-javascript"} {
+		if srv := automaticServer(profile, true); srv.Managed {
+			t.Fatalf("managed launcher without Go/npx for %s: %#v", profile, srv)
+		}
+	}
+}
+
+func TestDetectWorkspaceGroupsAssetsUnderNearestProject(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{
+		"frontend/package.json", "frontend/src/parts/view.css", "frontend/src/parts/page.html",
+		"backend/pyproject.toml", "frontend/node_modules/fake/tsconfig.json", ".claude/skills/fake/package.json",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := DetectWorkspace(root)
+	if len(got) != 2 {
+		t.Fatalf("unexpected roots: %#v", got)
+	}
+	want := []string{"css", "html", "typescript-javascript"}
+	if !reflect.DeepEqual(got["frontend"], want) {
+		t.Fatalf("frontend profiles = %#v want %#v", got["frontend"], want)
+	}
+	if !reflect.DeepEqual(got["backend"], []string{"python"}) {
+		t.Fatalf("backend = %#v", got["backend"])
+	}
+}
+
+func TestLoadExplicitConfigOverridesAutoDetectAndManagedMode(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ConfigFile), []byte("go:\n  command: custom-gopls\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(Runtime{Workspace: root, AutoInstallLSP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Servers) != 1 || len(cfg.Servers["go"]) != 1 || cfg.Servers["go"][0].Command != "custom-gopls" {
+		t.Fatalf("explicit config was changed: %#v", cfg.Servers)
+	}
+}
+
+func TestManagedLauncherUsesPinnedToolchainPackages(t *testing.T) {
+	root := t.TempDir()
+	// Minimal mock executables keep this test offline and independent of npm/Go installations.
+	for _, name := range []string{"npx", "go"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", root)
+	for _, tc := range []struct{ profile, command, pkg string }{
+		{"python", "npx", "--package=pyright@1.1.413"},
+		{"typescript-javascript", "npx", "--package=typescript@5.9.3"},
+		{"html", "npx", "--package=vscode-langservers-extracted@4.10.0"},
+		{"css", "npx", "--package=vscode-langservers-extracted@4.10.0"},
+		{"go", "go", "golang.org/x/tools/gopls@v0.24.0"},
+	} {
+		srv := automaticServer(tc.profile, true)
+		if !srv.Managed || srv.Command != tc.command {
+			t.Errorf("%s: wrong managed launcher: %#v", tc.profile, srv)
+		}
+		if !slices.Contains(srv.Args, tc.pkg) {
+			t.Errorf("%s: package pin absent in args: %#v", tc.profile, srv.Args)
+		}
+	}
+}
+
+func TestManagedDefaultTimeoutRespectsCallerOverride(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	cfg, err := Load(Runtime{Workspace: root, AutoInstallLSP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Servers["go"]) != 1 || !cfg.Servers["go"][0].Managed || cfg.RequestTimeout != 60*time.Second {
+		t.Fatalf("managed defaults: %+v", cfg)
+	}
+	custom, err := Load(Runtime{Workspace: root, AutoInstallLSP: true, RequestTimeout: 3 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if custom.RequestTimeout != 3*time.Second {
+		t.Fatalf("explicit timeout was lost: %s", custom.RequestTimeout)
 	}
 }

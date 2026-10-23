@@ -141,7 +141,11 @@ func (s *Session) initialize(ctx context.Context, cmd *exec.Cmd, t *transport.Tr
 		Capabilities     map[string]json.RawMessage `json:"capabilities"`
 		PositionEncoding string                     `json:"positionEncoding"`
 	}
-	initCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	initializeTimeout := 15 * time.Second
+	if s.cfg.Managed {
+		initializeTimeout = 180 * time.Second
+	}
+	initCtx, cancel := context.WithTimeout(ctx, initializeTimeout)
 	defer cancel()
 	if err := t.Request(initCtx, "initialize", s.initializationParams(), &result); err != nil {
 		_ = cmd.Process.Kill()

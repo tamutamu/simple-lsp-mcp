@@ -20,6 +20,7 @@ const ConfigFileAlt = ".simple-lsp.yml"
 
 // Server describes the command and runtime settings used to start one language server.
 type Server struct {
+	Managed               bool              `yaml:"-" json:"managed,omitempty"`
 	Command               string            `yaml:"command" json:"command"`
 	Args                  []string          `yaml:"args" json:"args"`
 	Directory             string            `yaml:"-" json:"directory,omitempty"`
@@ -52,6 +53,7 @@ func (sl *ServerList) UnmarshalYAML(value *yaml.Node) error {
 
 // Runtime holds the server configuration and request limits used at runtime.
 type Runtime struct {
+	AutoInstallLSP  bool
 	Workspace       string
 	Servers         map[string][]Server
 	RequestTimeout  time.Duration
@@ -99,8 +101,11 @@ var DefaultProfiles = map[string][]Server{
 }
 
 // Load applies defaults and reads configured language-server profiles from .simple-lsp.yaml (or .simple-lsp.yml).
-// If neither configuration exists, start without LSP profiles. The explicit onboard tool creates configuration; loading never writes to the workspace.
+// If neither configuration exists, auto-discover language roots in memory.
+// The explicit onboard tool is only needed for overriding the defaults.
+// Loading never writes to the workspace or launches a program.
 func Load(base Runtime) (Runtime, error) {
+	explicitTimeout := base.RequestTimeout != 0
 	applyDefaults(&base)
 
 	configPath := filepath.Join(base.Workspace, ConfigFile)
@@ -111,7 +116,12 @@ func Load(base Runtime) (Runtime, error) {
 		if _, errAlt := os.Stat(altPath); errAlt == nil {
 			targetPath = altPath
 		} else if errors.Is(errAlt, os.ErrNotExist) {
-			base.Servers = map[string][]Server{}
+			base.Servers = automaticServers(base.Workspace, base.AutoInstallLSP)
+			// A cold managed package download needs more than a normal LSP request.
+			// Keep the managed default bounded; never override an explicit timeout.
+			if !explicitTimeout && base.AutoInstallLSP && hasManagedServer(base.Servers) {
+				base.RequestTimeout = 60 * time.Second
+			}
 			return base, nil
 		} else {
 			return base, fmt.Errorf("could not inspect config %s: %w", altPath, errAlt)

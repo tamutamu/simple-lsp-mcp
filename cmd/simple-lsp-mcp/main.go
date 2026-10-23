@@ -50,15 +50,16 @@ func main() {
 	var root, logLevel string
 	var timeout, wait time.Duration
 	var max int
-	var showVersion bool
+	var showVersion, autoInstallLSP bool
 
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
 	flag.StringVar(&logLevel, "log-level", "info", "debug|info|warn|error")
-	flag.DurationVar(&timeout, "request-timeout", 15*time.Second, "LSP request timeout")
+	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 60s with managed LSP)")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
 	flag.IntVar(&max, "max-results", 500, "maximum result count")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
+	flag.BoolVar(&autoInstallLSP, "auto-install-lsp", false, "allow downloading pinned language servers on first use when not installed (requires Go or npx)")
 	flag.Parse()
 
 	ver := getVersion()
@@ -89,7 +90,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: timeout, DiagnosticsWait: wait, MaxResults: max})
+	cfg, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: timeout, DiagnosticsWait: wait, MaxResults: max, AutoInstallLSP: autoInstallLSP})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

@@ -19,11 +19,13 @@ import (
 )
 
 type doctorServer struct {
-	Profile    string `json:"profile"`
-	Directory  string `json:"directory"`
-	Command    string `json:"command"`
-	Executable string `json:"executable,omitempty"`
-	Available  bool   `json:"available"`
+	Profile    string   `json:"profile"`
+	Directory  string   `json:"directory"`
+	Command    string   `json:"command"`
+	Executable string   `json:"executable,omitempty"`
+	Available  bool     `json:"available"`
+	Managed    bool     `json:"managed,omitempty"`
+	Args       []string `json:"args,omitempty"`
 }
 
 type doctorReport struct {
@@ -40,14 +42,15 @@ type doctorReport struct {
 	OK         bool           `json:"ok"`
 }
 
-// runDoctor reads an existing configuration and checks executable availability.
-// It never invokes an installer or creates a default configuration. --probe
-// additionally starts the LSP and makes a real documentSymbol request.
+// runDoctor checks explicit or automatically detected profiles. The default
+// mode does not install packages. --probe starts the matching LSP and can
+// download packages only when --auto-install-lsp was explicitly provided.
 func runDoctor(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := flags.String("workspace", ".", "workspace root")
 	probe := flags.String("probe", "", "optional workspace-relative source file to verify with its LSP")
+	autoInstall := flags.Bool("auto-install-lsp", false, "preview managed first-use package installation")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -81,42 +84,50 @@ func runDoctor(args []string, out io.Writer) error {
 		configPath = filepath.Join(ws.Root(), config.ConfigFileAlt)
 	}
 	report.Config = configPath
-	if _, err := os.Stat(configPath); err != nil {
-		report.Issues = append(report.Issues, "configuration not found; use the onboard MCP tool to create .simple-lsp.yaml")
+	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+		report.Config = "auto-detected (in memory)"
+	}
+	runtime, err := config.Load(config.Runtime{Workspace: ws.Root(), MaxResults: 100, AutoInstallLSP: *autoInstall})
+	if err != nil {
+		report.Issues = append(report.Issues, "invalid configuration: "+err.Error())
 	} else {
-		runtime, err := config.Load(config.Runtime{Workspace: ws.Root(), RequestTimeout: 15 * time.Second, MaxResults: 100})
-		if err != nil {
-			report.Issues = append(report.Issues, "invalid configuration: "+err.Error())
-		} else {
-			profiles := make([]string, 0, len(runtime.Servers))
-			for profile := range runtime.Servers {
-				profiles = append(profiles, profile)
-			}
-			sort.Strings(profiles)
-			for _, profile := range profiles {
-				for _, server := range runtime.Servers[profile] {
-					found, lookErr := exec.LookPath(server.Command)
-					entry := doctorServer{Profile: profile, Directory: server.Directory, Command: server.Command, Executable: found, Available: lookErr == nil}
-					report.Servers = append(report.Servers, entry)
-					if lookErr != nil {
-						report.Issues = append(report.Issues, fmt.Sprintf("%s: executable %q not found", profile, server.Command))
-					}
+		if len(runtime.Servers) == 0 {
+			report.Issues = append(report.Issues, "no supported language project detected; add a supported project marker or use onboard to configure manually")
+		}
+		profiles := make([]string, 0, len(runtime.Servers))
+		for profile := range runtime.Servers {
+			profiles = append(profiles, profile)
+		}
+		sort.Strings(profiles)
+		for _, profile := range profiles {
+			for _, server := range runtime.Servers[profile] {
+				found, lookErr := exec.LookPath(server.Command)
+				entry := doctorServer{Profile: profile, Directory: server.Directory, Command: server.Command, Args: server.Args, Managed: server.Managed, Executable: found, Available: lookErr == nil}
+				report.Servers = append(report.Servers, entry)
+				if lookErr != nil {
+					report.Issues = append(report.Issues, fmt.Sprintf("%s: executable %q not found; install it or start simple-lsp-mcp with --auto-install-lsp", profile, server.Command))
+				} else if server.Managed {
+					report.Warnings = append(report.Warnings, fmt.Sprintf("%s: first use can download pinned packages via %s", profile, server.Command))
 				}
 			}
-			if *probe != "" {
-				report.ProbeFile = *probe
-				engine := tools.New(ws, runtime)
-				ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-				_, probeErr := engine.DocumentSymbols(ctx, map[string]any{"path": *probe})
-				cancel()
-				shutdownCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
-				engine.Sessions.Shutdown(shutdownCtx)
-				stop()
-				if probeErr != nil {
-					report.Issues = append(report.Issues, "LSP document-symbol probe failed: "+probeErr.Error())
-				} else {
-					report.ProbeOK = true
-				}
+		}
+		if *probe != "" {
+			report.ProbeFile = *probe
+			engine := tools.New(ws, runtime)
+			probeTimeout := 25 * time.Second
+			if *autoInstall {
+				probeTimeout = 190 * time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+			_, probeErr := engine.DocumentSymbols(ctx, map[string]any{"path": *probe})
+			cancel()
+			shutdownCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
+			engine.Sessions.Shutdown(shutdownCtx)
+			stop()
+			if probeErr != nil {
+				report.Issues = append(report.Issues, "LSP document-symbol probe failed: "+probeErr.Error())
+			} else {
+				report.ProbeOK = true
 			}
 		}
 	}
