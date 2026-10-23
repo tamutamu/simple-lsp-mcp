@@ -120,7 +120,7 @@ func Load(base Runtime) (Runtime, error) {
 			// A cold managed package download needs more than a normal LSP request.
 			// Keep the managed default bounded; never override an explicit timeout.
 			if !explicitTimeout && base.AutoInstallLSP && hasManagedServer(base.Servers) {
-				base.RequestTimeout = 60 * time.Second
+				base.RequestTimeout = 180 * time.Second
 			}
 			return base, nil
 		} else {

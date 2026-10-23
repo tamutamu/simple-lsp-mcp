@@ -55,7 +55,7 @@ func main() {
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
 	flag.StringVar(&logLevel, "log-level", "info", "debug|info|warn|error")
-	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 60s with managed LSP)")
+	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 180s with managed LSP)")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
 	flag.IntVar(&max, "max-results", 500, "maximum result count")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")

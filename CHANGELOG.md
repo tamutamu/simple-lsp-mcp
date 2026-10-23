@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Manage pinned language-server binaries in an isolated per-user versioned cache, with first-use installation, concurrent-install protection and absolute-path execution; no global LSP PATH registration, `npx` spawning or repeated `go run` on every request.
+- Bundle a user-invoked `simple-lsp-mcp-setup` skill in the Claude and Codex plugin packages, with checksummed release installers for Linux/macOS and Windows, MCP registration checks, and real LSP probes.
+- Register Claude MCP instances at user scope when using `setup claude --apply`, so setup is not tied to one directory.
 - Auto-detect supported language projects (including monorepos) and reuse installed LSPs without generating `.simple-lsp.yaml` or installing per-language Claude Code plugins.
 - Allow explicit `--auto-install-lsp` opt-in at MCP registration for pinned on-demand LSP packages via `npx`/`go run`; keep YAML overrides authoritative and startup download-free.
 - Add an executable React/TypeScript + FastAPI/Python monorepo proof under `examples/react-fastapi-monorepo`, backed by real TypeScript Language Server and Pyright integration tests.

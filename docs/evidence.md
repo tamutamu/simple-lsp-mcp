@@ -101,6 +101,21 @@ The CLI was also tested manually against an isolated real [`fastapi/full-stack-f
 
 To verify the actual download path rather than merely previewing the command, the LSP executables were **deliberately hidden from PATH** and managed mode was used to fetch and start TypeScript Language Server (`typescript@5.9.3` / `typescript-language-server@5.3.0`), Pyright (`pyright@1.1.413`), and HTML/CSS Language Servers (`vscode-langservers-extracted@4.10.0`) via `npx`. gopls was also hidden from PATH and started through pinned `go run golang.org/x/tools/gopls@v0.24.0 serve`. All five language profiles returned a successful real `doctor --probe`; the no-network-download preview returned correctly without executing a package manager.
 
+### Private, versioned LSP cache (2026-10-23)
+
+The optional managed mode was revised from `npx`/`go run` launchers to a separate `internal/managedlsp` installer. This is a **distribution improvement**, not a new MCP tool: each pinned language server is installed once into the user's own versioned cache using `npm install --prefix ... --ignore-scripts` or `go install` with a private `GOBIN`; the managed launcher subsequently starts the cached file using its absolute path. The managed configuration does **not** inspect or require language-server executables on PATH. Go and Node toolchains remain prerequisites.
+
+An isolated five-language workspace was used with `SIMPLE_LSP_CACHE_DIR` redirected to a disposable test directory. After downloading and installing all pinned packages, `doctor --auto-install-lsp --probe <source>` passed for Go, Python, TypeScript, HTML and CSS. The tested cached executables were:
+
+- `go/0.24.0/gopls`
+- `python/1.1.413/node_modules/pyright/langserver.index.js`
+- `typescript-javascript/5.3.0/node_modules/typescript-language-server/lib/cli.mjs`
+- `html-css/4.10.0/node_modules/vscode-langservers-extracted/bin/{vscode-html-language-server,vscode-css-language-server}`
+
+Then **every LSP executable was removed from PATH**, `npm_config_offline=true` was set, and all five `doctor --probe` requests succeeded again using only the managed cache. Go itself remained on PATH for gopls workspace analysis: removing the Go toolchain produced `lsp error 0: no views`, confirming that bundling the LSP does not eliminate the language toolchain prerequisite. The probes did not modify source files or create `.simple-lsp.yaml`.
+
+Unit tests additionally use an isolated fake `npm` / `go` installer to verify absolute-path launch commands, cached reuse after removing npm, concurrent requests causing a single installation, PATH independence, correct `GOBIN` override, and HTML/CSS package sharing. The entire install path is opt-in via `--auto-install-lsp` and the plugin's `.mcp.json`; the un-managed default still uses installed LSP commands.
+
 These are runtime setup smoke tests, **not** proof that simple-lsp improves an agent's development success rate.
 
 ## Exploratory Claude Code comparison (2026-10-23)

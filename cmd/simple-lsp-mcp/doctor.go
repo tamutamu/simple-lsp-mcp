@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
+	"github.com/tamutamu/simple-lsp-mcp/internal/managedlsp"
 	"github.com/tamutamu/simple-lsp-mcp/internal/tools"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
@@ -26,6 +27,7 @@ type doctorServer struct {
 	Available  bool     `json:"available"`
 	Managed    bool     `json:"managed,omitempty"`
 	Args       []string `json:"args,omitempty"`
+	Cached     bool     `json:"cached,omitempty"`
 }
 
 type doctorReport struct {
@@ -101,14 +103,25 @@ func runDoctor(args []string, out io.Writer) error {
 		sort.Strings(profiles)
 		for _, profile := range profiles {
 			for _, server := range runtime.Servers[profile] {
-				found, lookErr := exec.LookPath(server.Command)
-				entry := doctorServer{Profile: profile, Directory: server.Directory, Command: server.Command, Args: server.Args, Managed: server.Managed, Executable: found, Available: lookErr == nil}
-				report.Servers = append(report.Servers, entry)
-				if lookErr != nil {
-					report.Issues = append(report.Issues, fmt.Sprintf("%s: executable %q not found; install it or start simple-lsp-mcp with --auto-install-lsp", profile, server.Command))
-				} else if server.Managed {
-					report.Warnings = append(report.Warnings, fmt.Sprintf("%s: first use can download pinned packages via %s", profile, server.Command))
+				entry := doctorServer{Profile: profile, Directory: server.Directory, Command: server.Command, Args: server.Args, Managed: server.Managed}
+				if server.Managed {
+					path, ready, missing, statusErr := managedlsp.Status(profile)
+					entry.Executable, entry.Cached, entry.Available = path, ready, missing == "" && statusErr == nil
+					if statusErr != nil {
+						report.Issues = append(report.Issues, statusErr.Error())
+					} else if missing != "" {
+						report.Issues = append(report.Issues, fmt.Sprintf("%s: missing %s (required to install or run the managed LSP)", profile, missing))
+					} else if !ready {
+						report.Warnings = append(report.Warnings, fmt.Sprintf("%s: pinned language server will be installed in %s on first use", profile, path))
+					}
+				} else {
+					found, lookErr := exec.LookPath(server.Command)
+					entry.Executable, entry.Available = found, lookErr == nil
+					if lookErr != nil {
+						report.Issues = append(report.Issues, fmt.Sprintf("%s: executable %q not found; install it or use --auto-install-lsp", profile, server.Command))
+					}
 				}
+				report.Servers = append(report.Servers, entry)
 			}
 		}
 		if *probe != "" {

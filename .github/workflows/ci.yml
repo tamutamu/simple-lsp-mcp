@@ -10,6 +10,25 @@ jobs:
       - run: go test ./...
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Validate setup skill packaging
+        run: |
+          python3 - <<'PYVALID'
+          import json
+          from pathlib import Path
+          skill = Path('skills/simple-lsp-mcp-setup/SKILL.md')
+          text = skill.read_text()
+          assert text.startswith('---\nname: simple-lsp-mcp-setup\n')
+          assert (skill.parent / 'scripts/install-release.sh').is_file()
+          assert (skill.parent / 'scripts/install-release.ps1').is_file()
+          codex = json.loads(Path('.codex-plugin/plugin.json').read_text())
+          claude = json.loads(Path('.claude-plugin/plugin.json').read_text())
+          market = json.loads(Path('.claude-plugin/marketplace.json').read_text())
+          server = json.loads(Path('.mcp.json').read_text())
+          assert codex['skills'] == './skills/'
+          assert server['mcpServers']['simple-lsp']['args'] == ['--auto-install-lsp']
+          assert codex['version'] == claude['version'] == market['plugins'][0]['version']
+          PYVALID
+          sh -n skills/simple-lsp-mcp-setup/scripts/install-release.sh
       - name: Install real language servers
         run: |
           go install golang.org/x/tools/gopls@latest
@@ -25,3 +44,13 @@ jobs:
         env:
           SIMPLE_LSP_REAL_LSP: '1'
         run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration|ReactFastAPIMonorepoExample|LSPEditing|TypeScriptRangeFormatting|SemanticRenameAcrossLanguages|SemanticChangeGuard.*|AutoDetectedLanguageServers)$' -count=1 -v -timeout=6m
+  windows-plugin-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows installer without execution
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'skills/simple-lsp-mcp-setup/scripts/install-release.ps1'), [ref]$null, [ref]$errors)
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }

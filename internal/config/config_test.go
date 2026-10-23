@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/tamutamu/simple-lsp-mcp/internal/managedlsp"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -160,12 +161,13 @@ func TestAutomaticServerDoesNotDownloadWithoutOptIn(t *testing.T) {
 	}
 }
 
-func TestAutomaticServerManagedModeRequiresInstalledToolchain(t *testing.T) {
+func TestAutomaticServerManagedModeDoesNotDependOnLSPInPath(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PATH", root)
-	for _, profile := range []string{"go", "python", "typescript-javascript"} {
-		if srv := automaticServer(profile, true); srv.Managed {
-			t.Fatalf("managed launcher without Go/npx for %s: %#v", profile, srv)
+	for _, profile := range []string{"go", "python", "typescript-javascript", "html", "css"} {
+		srv := automaticServer(profile, true)
+		if !srv.Managed || srv.Command != "managed:"+profile || len(srv.Args) != 0 {
+			t.Fatalf("%s: %#v", profile, srv)
 		}
 	}
 }
@@ -215,27 +217,20 @@ func TestLoadExplicitConfigOverridesAutoDetectAndManagedMode(t *testing.T) {
 }
 
 func TestManagedLauncherUsesPinnedToolchainPackages(t *testing.T) {
-	root := t.TempDir()
-	// Minimal mock executables keep this test offline and independent of npm/Go installations.
-	for _, name := range []string{"npx", "go"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("PATH", root)
-	for _, tc := range []struct{ profile, command, pkg string }{
-		{"python", "npx", "--package=pyright@1.1.413"},
-		{"typescript-javascript", "npx", "--package=typescript@5.9.3"},
-		{"html", "npx", "--package=vscode-langservers-extracted@4.10.0"},
-		{"css", "npx", "--package=vscode-langservers-extracted@4.10.0"},
-		{"go", "go", "golang.org/x/tools/gopls@v0.24.0"},
+	for _, tc := range []struct{ profile, dependency string }{
+		{"python", "pyright@1.1.413"},
+		{"typescript-javascript", "typescript@5.9.3"},
+		{"html", "vscode-langservers-extracted@4.10.0"},
+		{"css", "vscode-langservers-extracted@4.10.0"},
+		{"go", "golang.org/x/tools/gopls@v0.24.0"},
 	} {
 		srv := automaticServer(tc.profile, true)
-		if !srv.Managed || srv.Command != tc.command {
-			t.Errorf("%s: wrong managed launcher: %#v", tc.profile, srv)
+		if !srv.Managed || srv.Command != "managed:"+tc.profile {
+			t.Fatalf("%s: wrong managed launcher: %#v", tc.profile, srv)
 		}
-		if !slices.Contains(srv.Args, tc.pkg) {
-			t.Errorf("%s: package pin absent in args: %#v", tc.profile, srv.Args)
+		spec, ok := managedlsp.Specification(tc.profile)
+		if !ok || !(slices.Contains(spec.Packages, tc.dependency) || spec.GoPackage == tc.dependency) {
+			t.Fatalf("%s: missing pinned dependency %#v", tc.profile, spec)
 		}
 	}
 }
@@ -254,7 +249,7 @@ func TestManagedDefaultTimeoutRespectsCallerOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Servers["go"]) != 1 || !cfg.Servers["go"][0].Managed || cfg.RequestTimeout != 60*time.Second {
+	if len(cfg.Servers["go"]) != 1 || !cfg.Servers["go"][0].Managed || cfg.RequestTimeout != 180*time.Second {
 		t.Fatalf("managed defaults: %+v", cfg)
 	}
 	custom, err := Load(Runtime{Workspace: root, AutoInstallLSP: true, RequestTimeout: 3 * time.Second})

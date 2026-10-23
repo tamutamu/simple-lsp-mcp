@@ -2,7 +2,9 @@
   "mcpServers": {
     "simple-lsp": {
       "command": "simple-lsp-mcp",
-      "args": []
+      "args": [
+        "--auto-install-lsp"
+      ]
     }
   }
 }

@@ -18,7 +18,13 @@ func setupCommand(client, binary string) (string, []string, error) {
 func setupCommandOptions(client, binary string, autoInstall bool) (string, []string, error) {
 	switch client {
 	case "claude", "codex":
-		args := []string{"mcp", "add", "simple-lsp", "--", binary}
+		args := []string{"mcp", "add"}
+		if client == "claude" {
+			// The in-agent setup is a one-time user-level registration, not
+			// a surprising local-only entry tied to the current repository.
+			args = append(args, "--scope", "user")
+		}
+		args = append(args, "simple-lsp", "--", binary)
 		if autoInstall {
 			args = append(args, "--auto-install-lsp")
 		}

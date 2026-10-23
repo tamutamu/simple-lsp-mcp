@@ -17,6 +17,7 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
+	"github.com/tamutamu/simple-lsp-mcp/internal/managedlsp"
 )
 
 type Session struct {
@@ -71,7 +72,7 @@ func (s *Session) Ensure(ctx context.Context) error {
 	return err
 }
 func (s *Session) start(ctx context.Context) error {
-	cmd, transport, err := s.launch()
+	cmd, transport, err := s.launch(ctx)
 	if err != nil {
 		return err
 	}
@@ -91,11 +92,19 @@ func (s *Session) start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Session) launch() (*exec.Cmd, *transport.Transport, error) {
+func (s *Session) launch(ctx context.Context) (*exec.Cmd, *transport.Transport, error) {
 	if s.cfg.Command == "" {
 		return nil, nil, core.NewError(core.LanguageServerStartFailed, "language server command is empty")
 	}
-	cmd := exec.Command(s.cfg.Command, s.cfg.Args...)
+	command, args := s.cfg.Command, s.cfg.Args
+	if s.cfg.Managed {
+		var err error
+		command, args, err = managedlsp.Ensure(ctx, s.key)
+		if err != nil {
+			return nil, nil, core.WithCause(core.LanguageServerStartFailed, "managed language server provisioning failed", err)
+		}
+	}
+	cmd := exec.Command(command, args...)
 	cmd.Dir = s.root
 
 	// Apply custom environment variables

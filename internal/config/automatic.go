@@ -1,9 +1,6 @@
 package config
 
-import (
-	"os/exec"
-	"sort"
-)
+import "sort"
 
 // automaticServers configures detected language roots in memory only. Installed
 // binaries are reused. Downloads are only possible when AutoInstallLSP was
@@ -30,9 +27,9 @@ func automaticServers(root string, allowDownload bool) map[string][]Server {
 	return servers
 }
 
-// automaticServer uses an installed executable by preference, and provides a
-// pinned, on-demand managed launcher for supported languages when permitted.
-// Existing .simple-lsp.yaml configuration always takes precedence.
+// automaticServer selects an isolated, pinned LSP installation in managed mode.
+// Custom YAML always takes precedence, and un-managed mode preserves the
+// installed-server behavior without downloading anything.
 func automaticServer(profile string, allowDownload bool) Server {
 	var executable string
 	var args []string
@@ -55,29 +52,9 @@ func automaticServer(profile string, allowDownload bool) Server {
 	default:
 		return Server{}
 	}
-	if _, err := exec.LookPath(executable); err == nil {
-		return Server{Command: executable, Args: args}
-	}
-	if !allowDownload {
-		// Make the missing dependency explicit rather than silently hiding the
-		// language. Doctor will identify the missing executable.
-		return Server{Command: executable, Args: args}
-	}
-	if profile == "go" {
-		if _, err := exec.LookPath("go"); err == nil {
-			return Server{Command: "go", Args: []string{"run", "golang.org/x/tools/gopls@v0.24.0", "serve"}, Managed: true}
-		}
-	} else if _, err := exec.LookPath("npx"); err == nil {
-		switch profile {
-		case "python":
-			return Server{Command: "npx", Args: []string{"--yes", "--package=pyright@1.1.413", "pyright-langserver", "--stdio"}, Managed: true}
-		case "typescript-javascript":
-			return Server{Command: "npx", Args: []string{"--yes", "--package=typescript@5.9.3", "--package=typescript-language-server@5.3.0", "typescript-language-server", "--stdio"}, Managed: true}
-		case "html":
-			return Server{Command: "npx", Args: []string{"--yes", "--package=vscode-langservers-extracted@4.10.0", "vscode-html-language-server", "--stdio"}, Managed: true}
-		case "css":
-			return Server{Command: "npx", Args: []string{"--yes", "--package=vscode-langservers-extracted@4.10.0", "vscode-css-language-server", "--stdio"}, Managed: true}
-		}
+	if allowDownload {
+		// The session manager resolves this to an absolute cached executable.
+		return Server{Managed: true, Command: "managed:" + profile}
 	}
 	return Server{Command: executable, Args: args}
 }

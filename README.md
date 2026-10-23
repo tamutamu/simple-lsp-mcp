@@ -67,13 +67,25 @@ See [SECURITY.md](SECURITY.md) for the write/confinement model and [docs/evidenc
 
 The MCP language name and the LSP configuration profile are different. For example, TypeScript maps to the shared `typescript-javascript` profile. Most target-based tools now infer the language automatically from `symbol_id`, a file extension, or configured profiles; `search_symbols` requires a non-empty `query` and `language` to keep workspace-wide searches bounded.
 
+## Setup from inside the coding agent
+
+Once the **simple-lsp-mcp plugin** is installed, run the bundled setup skill directly in the agent. It checks the host, installs an official checksummed binary if needed, inspects existing MCP registrations before changing anything, auto-detects the workspace, and probes real language servers. No manual setup commands or per-language Claude Code plugins are required.
+
+- **Claude Code:** `/simple-lsp-mcp-setup` (full name `/simple-lsp-mcp:simple-lsp-mcp-setup`).
+- **Codex:** `$simple-lsp-mcp-setup` (Codex's skill invocation syntax, not a custom `/` command).
+
+**The skill must be installed before it can be invoked.** The plugin includes it via `skills/simple-lsp-mcp-setup/SKILL.md`; installing only the standalone MCP binary does not add an agent slash command. The skill's release installer uses official SHA-256-verified GitHub assets and never needs administrator rights. If you are developing from an unpublished local checkout, the skill can build the local binary with Go instead. Client registration or plugin startup may require restarting the agent session; the skill will report that status rather than falsely claiming connection.
+
+The packaged `.mcp.json` already enables managed LSP provisioning for plugin users. Every detected language server is installed under the private versioned cache and launched by an absolute path, without requiring an LSP executable on PATH. Third-party packages are fetched only when that language is first used. See [Security](SECURITY.md) for this behavior. CLI-only users can still choose the explicit `--auto-install-lsp` flag shown below.
+
 ## Automatic LSP setup (no per-language plugins)
 
 **Register `simple-lsp-mcp` once with Claude Code or Codex.** You do not need
 separate LSP plugins for each language. Without any `.simple-lsp.yaml`, the MCP
 automatically discovers Go, Python, TypeScript/JavaScript, HTML and CSS projects
-(including monorepos), reuses installed language servers, and starts each server
-only when an MCP tool needs it. Detection does not modify workspace files or
+(including monorepos) and starts language servers only when an MCP tool needs
+them. In the default no-download mode, the MCP uses LSPs installed on PATH;
+managed mode instead uses its **own isolated versioned cache**. Detection does not modify workspace files or
 install any packages.
 
 For a **single opt-in that also downloads missing language servers**, run:
@@ -84,13 +96,22 @@ simple-lsp-mcp setup claude --apply --auto-install-lsp
 simple-lsp-mcp setup codex --apply --auto-install-lsp
 ```
 
-If an LSP executable is absent, managed mode uses **pinned packages** through
-`npx` (Pyright, TypeScript Language Server, HTML/CSS) or `go run` (gopls) on
-first use. You must already have Node.js/npx or Go installed, respectively.
-The first request may need network access and additional time; packages are
-cached by npm/Go. There is no background download on server startup. Without
-`--auto-install-lsp`, a missing executable produces an error rather than a
-surprise download.
+Managed mode uses **pinned packages** and installs them exactly once into the
+user cache (`~/.cache/simple-lsp-mcp/servers/` on Linux, or the platform's user
+cache directory). The package installer uses `npm install` (Pyright,
+TypeScript Language Server, HTML/CSS) or `go install` (gopls), but the actual
+language server is subsequently started **directly by absolute path**, never
+by searching PATH or invoking `npx` / `go run` again. No LSP global install and
+no PATH modifications are necessary. Versions are isolated and shared across
+workspaces. Override the cache location with the absolute-path environment
+variable `SIMPLE_LSP_CACHE_DIR`.
+
+The host needs Node.js and npm to install Node-based servers (and Node.js to
+run them), or Go for the first gopls installation. The MCP does not install
+those runtimes. Go must remain available for Go workspace analysis. First use may access the network; subsequent launches use the
+managed cache, even when offline. No package installation occurs on startup or
+when running `doctor` without `--probe`. Without `--auto-install-lsp`, missing
+LSP executables are reported rather than downloaded.
 
 An existing `.simple-lsp.yaml` (or `.simple-lsp.yml`) always wins over discovery
 and the managed defaults. For custom language servers, project-specific settings
@@ -147,10 +168,10 @@ Each server entry supports:
 ## Requirements
 
 - Go 1.26 or later when building from this repository
-- An installed LSP server for each language, or Node.js/npx and/or Go with `--auto-install-lsp`
+- An installed LSP server for each language, or Node.js/npm and/or Go with `--auto-install-lsp`
 - An MCP client such as Codex or Claude Code
 
-No separate Claude Code LSP plugin is needed. Existing language servers are reused when present; optional managed mode downloads missing ones on first use. Each server starts lazily, on the first request for its language.
+No separate Claude Code LSP plugin is needed. The plugin-managed LSP mode installs and launches pinned language servers entirely from a private cache; individual LSP executables need not be on PATH. Each server starts lazily on the first request for its language.
 
 | Language | LSP server | Example installation |
 | --- | --- | --- |
@@ -251,8 +272,7 @@ claude plugin marketplace add tamutamu/simple-lsp-mcp
 claude plugin install simple-lsp-mcp@simple-lsp-mcp
 ```
 
-The plugin still expects `simple-lsp-mcp` to be installed and on your `PATH` —
-see [Installation](#installation) above.
+The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code to install the binary and verify LSPs from inside the agent. Codex includes the same skill as `$simple-lsp-mcp-setup`. If you install the binary separately, it still needs to be resolvable by the MCP client or registered by absolute path; a session restart may be necessary.
 
 ## MCP tools
 
@@ -369,8 +389,8 @@ See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and 
 | --- | --- | --- |
 | `--workspace` | Current working directory | Workspace root to inspect (defaults to process current working directory) |
 | `--log-level` | `info` | `debug`, `info`, `warn`, or `error` |
-| `--auto-install-lsp` | `false` | Allow pinned missing LSP packages to be downloaded on first use (requires Node.js/npx or Go) |
-| `--request-timeout` | `15s` (`60s` with managed LSP) | Timeout for each LSP request; explicitly supplied value takes priority |
+| `--auto-install-lsp` | `false` | Install and use isolated pinned LSP packages on first use (requires Node.js/npm or Go; no LSP PATH) |
+| `--request-timeout` | `15s` (`180s` with managed LSP) | Timeout for each LSP request; explicitly supplied value takes priority |
 | `--diagnostics-wait` | `2s` | Time to wait for push diagnostics |
 | `--max-results` | `500` | Maximum result count per tool |
 | `--version` | `false` | Print version information and exit |
