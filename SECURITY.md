@@ -31,6 +31,18 @@ a bug that breaks one of them is a vulnerability, not a feature request:
   the workspace root. Escaping the workspace root is a bug.
 - **No direct network requests by navigation tools.** The server speaks stdio to the MCP client and local language servers. Configured child processes (for example `npx`) may independently download software or access the network; review `.simple-lsp.yaml` first.
 
+## Current edit limitations
+
+LSP-computed edits are validated before they are written, but file writes are
+**not transactional**. Source files are currently updated with `os.WriteFile`;
+a crash or write error after truncation can leave the current file incomplete.
+For multi-file edits the engine attempts to restore files already written if a
+write returns an error, but that rollback is best-effort and cannot recover
+from process termination. Validation and writes are also separated in time;
+concurrent external file edits or symlink replacement can race the preflight
+checks. Run write tools only on a trusted workspace and avoid concurrent
+modification of their target files.
+
 ## What is trusted
 
 `.simple-lsp.yaml` is trusted configuration. It names executables that will be

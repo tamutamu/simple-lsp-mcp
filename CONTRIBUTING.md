@@ -61,6 +61,18 @@ Add a table-driven test in the matching `_test.go`, add a fixture under
 `testdata/` if the detection logic is non-trivial, and update the supported
 languages table in `README.md`.
 
+## Three checks before adding a tool
+
+A language server offering an operation does not by itself justify exposing it as
+an MCP tool. Check all three points **before writing implementation code**:
+
+1. **Observed problem:** Which real coding-agent task failed or required excessive work? Record the repository, task, and failure; a synthetic demo alone is insufficient.
+2. **Incremental value:** Can the same agent already solve it using its built-in Read/Grep/Edit tools or this project's existing tools? Compare against that baseline before inventing a new API.
+3. **Net value:** Is a verified improvement in task correctness or cost worth the new tool's model-visible footprint, maintenance, security, and cross-platform behavior? Set acceptance criteria before testing.
+
+If any check lacks evidence, **do not add the feature yet**. Prefer a focused
+regression fix to expanding the public API on speculation.
+
 ## Design constraints
 
 These are deliberate. A pull request that breaks one of them will be asked to

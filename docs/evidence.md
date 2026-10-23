@@ -93,6 +93,20 @@ SIMPLE_LSP_REAL_LSP=1 go test ./internal/tools \
 
 The same test runs in GitHub Actions.
 
+## Exploratory Claude Code comparison (2026-10-23)
+
+One **read-only code-review task** asked Claude Code (Sonnet, medium effort) to trace the public WorkspaceEdit write paths and review stale-file, symlink, and partial-write protection. The same prompt and 12-turn limit were used with and without this MCP; both sessions permitted Read, Glob, and Grep and denied Bash/Edit/Write. MCP configuration was isolated between runs.
+
+| Metric | Without MCP | With MCP available |
+| --- | ---: | ---: |
+| Successful review | Yes | Yes |
+| Read/Grep calls | 8 | 5 |
+| Elapsed time, as reported by CLI | 28.7 seconds | 18.4 seconds |
+| Estimated API cost, as reported by CLI | $0.153 | $0.125 |
+| Calls to simple-lsp-mcp | n/a | **0** |
+
+**This does not establish an MCP speed or cost benefit.** Claude did not call the MCP in the enabled condition, and a single stochastic run per condition cannot isolate model variance. The initial trial was discarded because permissions differed and MCP calls were denied. Both valid-condition reviews independently identified the direct `os.WriteFile` implementation, best-effort multi-file rollback, and residual race/crash risks. The review is useful as a correctness investigation, not product-impact evidence.
+
 ## Not proven yet
 
 The next evidence layer is agent-level A/B testing. We still need controlled tasks comparing Claude Code and Codex with and without `simple-lsp-mcp`, measuring at least:
