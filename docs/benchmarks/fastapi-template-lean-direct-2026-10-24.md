@@ -26,7 +26,7 @@
 | Python LSP diagnostic result | 1 diagnostic (3/3) | 1 diagnostic (3/3) |
 | TypeScript `get_document_symbols` | 5 symbols (3/3) | 5 symbols (3/3) |
 | First reference call elapsed time | 5.3 ms | 162.7 ms |
-| Whole MCP process + seven tool calls, average | 1,286 ms | 1,371 ms |
+| Whole MCP process + eight tool calls, average | 1,286 ms | 1,371 ms |
 
 **Why the first reference result matters:** prior behavior was *incomplete but marked `complete=true`*. Python references searched only the opened definition file when the request supplied `path/line/column` but no `symbol_path`. Calling rename later warmed other project files and exposed twelve previously missing references. The fix uses a read-only LSP `textDocument/prepareRename` request to determine the precise identifier before reusing the existing bounded project-file synchronization. This restores correctness **without adding a public MCP tool or introducing an agent-level impact-analysis engine**. TypeScript and Python real-LSP regression tests now cover this initial position-based reference query.
 
