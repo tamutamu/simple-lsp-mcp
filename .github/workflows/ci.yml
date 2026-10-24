@@ -43,7 +43,7 @@ jobs:
       - name: Real LSP integration tests (Go, TypeScript, Python, mixed monorepo, edits)
         env:
           SIMPLE_LSP_REAL_LSP: '1'
-        run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration|ReactFastAPIMonorepoExample|LSPEditing|TypeScriptRangeFormatting|SemanticRenameAcrossLanguages|SemanticChangeGuard.*|AutoDetectedLanguageServers|GoImpactForNonCallable|ImpactForDataSymbolsAcrossLanguages)$' -count=1 -v -timeout=6m
+        run: go test ./internal/tools -run '^(TestImpactAnalysisWithGopls|TestReal(LanguageServers|GoMonorepoSearchesEveryServer|GoSemanticSlice|WorkspaceEnumeration|ReactFastAPIMonorepoExample|LSPEditing|TypeScriptRangeFormatting|SemanticRenameAcrossLanguages|SemanticChangeGuard.*|AutoDetectedLanguageServers|GoImpactForNonCallable|ImpactForDataSymbolsAcrossLanguages))$' -count=1 -v -timeout=6m
   windows-plugin-script:
     runs-on: windows-latest
     steps:

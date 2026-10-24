@@ -181,3 +181,52 @@ The next evidence layer is agent-level A/B testing. We still need controlled tas
 - whether the agent touched the correct files and symbols.
 
 Until those experiments exist, the project should claim **verified semantic navigation/edit capability and bounded context**, not a percentage improvement in agent accuracy or speed.
+
+## Coding-agent outcome A/B pilot (2026-10-24)
+
+**Question:** does giving a *coding agent* simple-lsp-mcp produce better actual code changes, not just better LSP responses? Unlike the real-LSP integration tests above, the following trials used Claude Code to **edit separate, identical source checkouts** and then independently inspected the produced Git diffs and ran acceptance checks. In each pair the agent was given the same task and model; the baseline had no external MCP server, and the treatment had this project's MCP server and short semantic-tool guidance. The setup is therefore a comparison of the *usable integration*, not an isolation of tool access from tool instructions.
+
+| Actual source and task | Agent outcome, no MCP | Agent outcome, simple-lsp-mcp | Interpretation |
+| --- | --- | --- | --- |
+| `fastapi/full-stack-fastapi-template` at `f45203ff`: rename `app.crud.authenticate` to `authenticate_user` and update real Python callers | Success; 3 changed files, 6 tool calls, 16 s, estimated $0.118694 | Success; **identical Git diff**, 4 tool calls, 13 s, estimated $0.121009 | Fewer calls and seconds in this run, but **higher API cost**; no correctness win |
+| This repository at `8d76608`: rename only `(*symbol.Registry).Register` to `Store` and update Go callers and tests | Success; 4 changed files, 18 tool calls, 32 s, estimated $0.134215 | Success; **identical Git diff**, 4 tool calls, 22 s, estimated $0.075861 | In this run: 78% fewer tool calls, 31% faster, 43% cheaper; no correctness win |
+
+### Go task repeatability check
+
+To see whether the faster Go result was a one-off, we repeated that *same* task in **three independent pairs** (six fresh Claude sessions, including the first pair). The second pair ran MCP first; the first and third ran control first. All six edits passed the same acceptance check, all six `git diff` outputs were **byte-for-byte identical** (SHA-256 prefix `4c078e56abca`), and all three MCP sessions invoked `rename_symbol` rather than merely receiving its tool schema.
+
+| Trial | No MCP: tool calls / s / USD | MCP: tool calls / s / USD | Result |
+| --- | --- | --- | --- |
+| 1 | 18 / 32 / $0.134215 | 4 / 22 / $0.075861 | Identical passing diff |
+| 2 | 19 / 27 / $0.136258 | 4 / 19 / $0.072796 | Identical passing diff |
+| 3 | 18 / 26 / $0.134302 | 4 / 22 / $0.076570 | Identical passing diff |
+| **Median** | **18 / 27 / $0.134302** | **4 / 22 / $0.075861** | **78% fewer calls, 19% less time, 44% lower reported cost** |
+
+This is repeatability **for one Go refactoring task**, not an unbiased estimate across development tasks. No claim of statistical significance, improved functional correctness or general coding effectiveness follows from three repeated pairs. It does show a reproducible reduction in agent tool round trips for this particular LSP-suitable change. The earlier Python task remains a counterexample to a blanket claim about cost: its MCP run cost slightly more.
+
+### Exact agent task prompts
+
+The text below is the original English user prompt for each pair, not a retrospectively simplified task description. The same prompt text was used in both conditions; only the additional availability/configuration of the MCP and a brief treatment-side semantic-tool suggestion changed.
+
+**Python task:**
+
+> In this FastAPI backend repository, rename the Python function app.crud.authenticate to authenticate_user, updating every real call site in backend/app and backend/tests. Preserve behavior and avoid changing unrelated symbols. Do not add aliases, compatibility wrappers, dependencies, or unnecessary edits. If practical, verify syntax. Finish with a brief description of what changed.
+
+**Go task (all three pairs):**
+
+> Refactor the Go codebase: rename only the method `(*symbol.Registry).Register` in `internal/symbol/registry.go` to `Store` and update all its real callers across the project, including tests. Avoid changing any unrelated `Register` methods or SDK names. Do not add wrappers, aliases, dependencies, or unrelated edits. Run `go test ./...` when possible and report the result.
+
+The MCP-specific system prompt appended only for treatment was: *When useful, use the simple-lsp MCP for semantic navigation and rename, and confirm its actual results before finishing.* We used `claude -p` with `--model sonnet --effort low --strict-mcp-config --no-session-persistence --output-format stream-json --verbose --permission-mode dontAsk`, `--max-turns 14` for Python / `16` for Go, and the same basic editing and shell-tool permissions. A fresh temporary `--mcp-config` pointed the treatment at the repository's locally built `simple-lsp-mcp` binary; the control ran with **no MCP config**. The Go task used the source at the `8d76608` revision, independent of later release metadata edits. Repeat the trials on clean identical Git source snapshots; never run them in a user's working tree.
+
+### How success was checked
+
+- Python task: independently parse the files with Python's AST parser; confirm the old declaration has disappeared, `authenticate_user` exists, all three `crud.authenticate_user` call sites remain (and no `crud.authenticate` calls), only the three expected files changed, and `python3 -I -m compileall -q backend/app backend/tests` succeeds. No end-to-end HTTP test/database integration was exercised.
+- Go task: check that `(*Registry).Store` exists in `internal/symbol/registry.go`, no old `Register` method remains, compare the two complete `git diff` outputs byte-for-byte, run `go test ./...` **independently of the agent**, and check `git diff --check`. The changes affected the registry, its tests, and callers in `internal/tools/helpers.go` and `internal/tools/hierarchy.go`.
+- For both tasks the *actual MCP invocation* `mcp__simple-lsp__rename_symbol` appears in the agent's tool-use trace, and changes were applied, not merely previewed. Control traces instead show `Grep`/`Edit` calls. The two groups used the same `claude-sonnet-5-5` model (Claude Code 2.1.301), low effort, an identical user task, independent initial checkouts, `--strict-mcp-config`, `--no-session-persistence`, and the same basic file/shell tools. Each agent process started fresh.
+- Wall time is process elapsed time, not cumulative tool execution time; API costs are Claude's own reported estimated `total_cost_usd`. Tool-call count includes discovery tool calls such as `ToolSearch`, not just writes. These are observed figures, not statistical estimates.
+
+### Interpretation and acceptance criteria
+
+**This pilot does not establish that coding agents generally become more correct, faster, or cheaper.** Both succeeded, two tasks are both symbol renames, and a single session can vary with prompt caching, model sampling, host load and LSP warm-up. An identical passing diff is useful evidence that the LSP shortcut does not degrade correctness *in these cases*, not a universal correctness guarantee. It would be misleading to present these timings as a product-wide benchmark or claim a statistically significant improvement.
+
+For a general performance claim, preregister representative tasks with independent acceptance tests **before** comparing agents: multi-file code changes, symbol-name collisions, debugging, regression repair, impact analysis, and at least one substantial TypeScript, Python, and Go repository. Use equal model/effort/tool permissions, separate identical worktrees, alternate or randomize treatment order, capture JSON tool traces and actual code diffs, and repeat each task enough times to estimate variation. A favorable signal requires **no drop in passing acceptance checks**, no increase in irrelevant edits, and a meaningful reproducible reduction in median cost/time or tool calls with uncertainty bounds that exclude zero. Failures, skips, and timeouts must stay in the denominator. Report each task's results (including baseline wins) rather than only the best cases. Keep this as transparent evidence, **not another MCP tool or synthetic token-count benchmark**.

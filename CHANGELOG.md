@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-24
+
 ### Added
 
 - Extend existing `impact_analysis` with a bounded cross-file usage graph: combine LSP references with enclosing `documentSymbol`s to identify functions/tests using data symbols, then follow those functions' Call Hierarchy for indirect impact (Go, Python, TypeScript real-LSP tests); do not add public MCP tools or falsely mark partial searches as complete.
@@ -31,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reuse symbol handles for unchanged declarations and bound the process-local symbol registry with LRU eviction, preventing unbounded growth during long agent sessions.
+- Report `impact_analysis.meta.complete=false` whenever output caps or call fan-out limits truncate the semantic graph, rather than claiming full coverage.
+- Correct MCP registry metadata to describe explicit semantic edits instead of incorrectly advertising the server as fully read-only.
 - Confine pathless fallback discovery and project warm-up to the active workspace, including symlink-resolved LSP roots.
 - Prime TypeScript project semantics after bounded warm-up so path-alias references and semantic rename include unopened consumer files instead of returning a partial local result.
 - Fix diagnostic conversion to use workspace-relative paths, and probe pull diagnostics even when a server such as gopls implements `textDocument/diagnostic` without advertising `diagnosticProvider`.

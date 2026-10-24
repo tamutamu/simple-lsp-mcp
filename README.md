@@ -43,6 +43,10 @@ Example: with `impact_analysis({"symbol_path":"TaxRate","path":"config.go","dept
 ✅ semantic context → impact → LSP-computed edit → verify_change → finish
 ```
 
+### Measured coding-agent outcome (limited A/B pilot)
+
+In **three fresh, paired Claude Code runs** of a real Go multi-file method rename, all six runs produced *identical passing Git diffs*. With simple-lsp-mcp enabled, the median agent tool-call count was **4 instead of 18**, reported API cost was **$0.076 instead of $0.134**, and elapsed time was **22 instead of 27 seconds**. This shows a repeatable round-trip reduction for an LSP-suitable rename, **not yet a proven increase in general coding accuracy or performance**. A separate Python rename also succeeded in both modes, but cost slightly more with MCP. See the [exact prompts, results, checks, and caveats](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24).
+
 ### Design boundaries
 
 - **Reads stay read-only; writes are explicit.** `rename_symbol` and `format_document` preview by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
