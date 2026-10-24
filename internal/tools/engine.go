@@ -166,7 +166,7 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 		return nil, e.unsupported(p, method)
 	}
 	if !projectAlreadyWarmed(ctx) && (name == "find_references" || name == "find_implementations") {
-		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.targetWarmName(in)); err != nil {
+		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.warmNameForPosition(ctx, p, s, d, pos, in)); err != nil {
 			return nil, err
 		}
 		if err := e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
@@ -217,7 +217,7 @@ func (e *Engine) Hierarchy(ctx context.Context, name string, in map[string]any) 
 	}
 	call := name == "get_incoming_calls" || name == "get_outgoing_calls"
 	if !projectAlreadyWarmed(ctx) && (name == "get_incoming_calls" || name == "get_subtypes") {
-		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.targetWarmName(in)); err != nil {
+		if err := e.warmProjectSymbolCandidates(ctx, p, s, e.warmNameForPosition(ctx, p, s, d, pos, in)); err != nil {
 			return nil, err
 		}
 	}

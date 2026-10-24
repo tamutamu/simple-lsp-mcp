@@ -355,6 +355,21 @@ func TestRealSemanticRenameAcrossLanguages(t *testing.T) {
 				defer cancel()
 				engine.Sessions.Shutdown(ctx)
 			})
+			// The first reference query must include unopened files even when
+			// the caller specifies a source position rather than a symbol_path.
+			// Without a warm-up name, Pyright only returned a local reference.
+			column := strings.Index(strings.Split(tc.defContent, "\n")[0], tc.oldName) + 2
+			byPosition, err := engine.Relationship(context.Background(), "find_references", "textDocument/references", "references", map[string]any{
+				"path": tc.defName, "line": 1, "column": column, "include_declaration": true,
+			})
+			if err != nil {
+				t.Fatalf("cross-file position references: %v", err)
+			}
+			positionLocations, _ := byPosition["locations"].([]core.Location)
+			if len(positionLocations) < 2 {
+				t.Fatalf("initial position-based references omitted unopened files: %#v", byPosition)
+			}
+
 			references, err := engine.Relationship(context.Background(), "find_references", "textDocument/references", "references", map[string]any{
 				"path": tc.defName, "symbol_path": tc.oldName, "include_declaration": true,
 			})

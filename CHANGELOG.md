@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Position-based `find_references` and incoming hierarchy requests now reuse the LSP's read-only rename preparation to identify the symbol before bounded project warm-up, avoiding incomplete Python/TypeScript cross-file results on the first query.
+- Extend real Pyright/TypeScript Language Server tests to ensure unopened file references are discovered for one-based path/line/column targets.
+
+### Evidence
+
+- Repeat direct-LSP measurements on the official FastAPI template, publishing both correctness gains and added first-reference latency without claiming a coding-agent productivity win.
+
 ## [0.11.0] - 2026-10-24
 
 ### Changed

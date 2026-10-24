@@ -46,6 +46,8 @@ We compared **Claude Code with and without the previous 26-tool simple-lsp-mcp v
 
 **What we changed afterward:** the benchmark tested the old composite-tool architecture, **not** this 18-tool version. We removed the composite analysis/guard tools and eliminated the mandatory tool workflow. The previous [three-pair Go rename pilot](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24) did show savings on that one task; the FastAPI results show why one workload cannot justify blanket productivity claims. The lean bridge still requires its own A/B study.
 
+**Lean bridge follow-up (direct LSP only):** A [three-pair test on the same FastAPI checkout](docs/benchmarks/fastapi-template-lean-direct-2026-10-24.md) confirmed that the 18-tool catalog is 29.6% smaller and that position-based Python reference searches now return **13** actual references at first request rather than **1** (a previously hidden incomplete result). This improvement needs about 163 ms for that initial reference request versus about 5 ms before the fix; the entire direct-tool sequence was about 6.6% slower. **It is not a coding-agent A/B result**; the new 18-tool version's impact on coding-agent productivity is not yet measured.
+
 ### Design boundaries
 
 - **Reads stay read-only; writes are explicit.** `rename_symbol` and `format_document` preview by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.

@@ -87,6 +87,34 @@ func (e *Engine) targetWarmName(in map[string]any) string {
 	return ""
 }
 
+// warmNameForPosition asks the LSP for the exact identifier at a position.
+// A path/line/column caller has no symbol name in its arguments, but project
+// servers may omit unopened files unless candidate files are synchronized.
+// prepareRename is a read-only LSP request and is not used to perform an edit.
+func (e *Engine) warmNameForPosition(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position, in map[string]any) string {
+	if name := e.targetWarmName(in); name != "" {
+		return name
+	}
+	if !projectWarmSupported(p) || !s.Capabilities().PrepareRename {
+		return ""
+	}
+	callCtx, cancel := e.callContext(ctx)
+	var raw json.RawMessage
+	err := s.Request(callCtx, "textDocument/prepareRename", map[string]any{
+		"textDocument": protocol.TextDocumentIdentifier{URI: d.URI},
+		"position":     pos,
+	}, &raw)
+	cancel()
+	if err != nil {
+		return ""
+	}
+	preparation, err := renamePreparation(d.Text, raw, s.Capabilities().PositionEncoding)
+	if err != nil {
+		return ""
+	}
+	return e.renameWarmName(in, d.Text, preparation)
+}
+
 // warmProjectSymbolCandidates opens only same-profile source files containing
 // the target spelling. Project-based servers such as tsserver and Pyright can
 // otherwise omit unopened files from references, incoming calls, subtypes, or
