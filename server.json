@@ -3,7 +3,7 @@
   "name": "io.github.tamutamu/simple-lsp-mcp",
   "description": "LSP-backed semantic code navigation, bounded impact analysis, verification, and preview-first edits for coding agents; edits are applied only on explicit request.",
   "title": "simple-lsp-mcp",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "repository": {
     "url": "https://github.com/tamutamu/simple-lsp-mcp",
     "source": "github"

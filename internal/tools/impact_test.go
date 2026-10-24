@@ -176,3 +176,16 @@ func TestImpactCompletenessIncludesOutputTruncation(t *testing.T) {
 		t.Fatal("traversal truncation must prevent complete=true")
 	}
 }
+
+func TestImpactSelectedSymbolFindsNestedDeclaration(t *testing.T) {
+	outer := symbolNode{Name: "Pricing", Kind: "struct", SelectionRange: core.Range{Start: core.Position{Line: 2, Column: 6}, End: core.Position{Line: 2, Column: 13}}, Children: []symbolNode{{Name: "Discount", Kind: "field", SymbolPath: "Pricing/Discount", SelectionRange: core.Range{Start: core.Position{Line: 2, Column: 23}, End: core.Position{Line: 2, Column: 31}}}}}
+	if n, found := impactSelectedSymbol([]symbolNode{outer}, core.Position{Line: 2, Column: 25}); !found || n.Name != "Discount" {
+		t.Fatalf("nested field missing: %+v %v", n, found)
+	}
+	if n, found := impactSelectedSymbol([]symbolNode{outer}, core.Position{Line: 2, Column: 12}); !found || n.Name != "Pricing" {
+		t.Fatalf("parent declaration missing: %+v %v", n, found)
+	}
+	if _, found := impactSelectedSymbol([]symbolNode{outer}, core.Position{Line: 2, Column: 31}); found {
+		t.Fatal("exclusive selection end classified as a declaration")
+	}
+}

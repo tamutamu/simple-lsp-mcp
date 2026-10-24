@@ -178,11 +178,12 @@ func TestRealImpactForDataSymbolsAcrossLanguages(t *testing.T) {
 			"handler.py":         "from invoice import invoice\ndef handle_invoice(v: int) -> int: return invoice(v)\n",
 		}},
 		{name: "typescript", profile: "typescript-javascript", bin: "typescript-language-server", argsSymbol: "taxRate", defFile: "rates.ts", args: []string{"--stdio"}, files: map[string]string{
-			"tsconfig.json": "{\"compilerOptions\":{\"strict\":true,\"moduleResolution\":\"bundler\"},\"include\":[\"*.ts\"]}",
+			"tsconfig.json": "{\"compilerOptions\":{\"strict\":true,\"moduleResolution\":\"bundler\"},\"include\":[\"*.ts\",\"*.tsx\"]}",
 			"rates.ts":      "export const taxRate = 12;\n",
 			"invoice.ts":    "import { taxRate } from './rates';\nexport const invoice = (n:number) => n*taxRate/100;\n",
 			"order.ts":      "import { taxRate } from './rates';\nexport const order = (n:number) => n+taxRate;\n",
 			"handler.ts":    "import { invoice } from './invoice';\nexport const handleInvoice = (n:number) => invoice(n);\n",
+			"view.tsx":      "import { taxRate } from './rates';\nexport const viewRate = () => taxRate;\n",
 		}},
 	}
 	for _, tc := range cases {
@@ -220,6 +221,34 @@ func TestRealImpactForDataSymbolsAcrossLanguages(t *testing.T) {
 			got, err := e.ImpactAnalysis(ctx, map[string]any{"symbol_id": sym["symbol_id"], "depth": 2})
 			if err != nil {
 				t.Fatalf("impact_analysis for data symbol: %v", err)
+			}
+			// A use in a different source file must resolve through the real LSP
+			// definition and produce the same declaration root.
+			useFile := "invoice.py"
+			if tc.name == "typescript" {
+				useFile = "invoice.ts"
+			}
+			useLine := strings.Split(tc.files[useFile], "\n")[1]
+			useColumn := strings.LastIndex(useLine, tc.argsSymbol) + 1
+			fromUse, err := e.ImpactAnalysis(ctx, map[string]any{"path": useFile, "line": 2, "column": useColumn + 1, "depth": 2})
+			if err != nil {
+				t.Fatalf("use-site impact: %v", err)
+			}
+			useRoot := fromUse["root"].(map[string]any)
+			if useRoot["name"] != tc.argsSymbol || useRoot["path"] != tc.defFile {
+				t.Fatalf("use-site resolved incorrect symbol: %#v", useRoot)
+			}
+			if tc.name == "typescript" {
+				viewLine := strings.Split(tc.files["view.tsx"], "\n")[1]
+				viewColumn := strings.LastIndex(viewLine, tc.argsSymbol) + 1
+				crossExtension, err := e.ImpactAnalysis(ctx, map[string]any{"path": "view.tsx", "line": 2, "column": viewColumn + 1, "depth": 2})
+				if err != nil {
+					t.Fatalf("TSX use-site resolving TS declaration: %v", err)
+				}
+				crossRoot := crossExtension["root"].(map[string]any)
+				if crossRoot["name"] != tc.argsSymbol || crossRoot["path"] != tc.defFile {
+					t.Fatalf("TSX use-site resolved incorrect TS declaration: %#v", crossRoot)
+				}
 			}
 			// For data symbols, identify the *functions* using them, not merely
 			// the file locations returned by the raw references primitive.

@@ -156,6 +156,10 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	if err != nil {
 		return nil, err
 	}
+	p, s, d, pos, err = e.impactResolveUse(rootCtx, p, s, d, pos, in)
+	if err != nil {
+		return nil, err
+	}
 	rootNode, nonCallable := e.impactRootIdentity(rootCtx, p, s, d, pos, in)
 	referenceOnly := nonCallable || !s.Capabilities().CallHierarchy
 	if referenceOnly && !boolValDefault(in, "include_references", true) {
@@ -386,6 +390,77 @@ func (e *Engine) ImpactAnalysis(ctx context.Context, in map[string]any) (map[str
 	return result, nil
 }
 
+// impactResolveUse retargets a position that points at a *use* of a symbol to
+// the symbol's declaration, using textDocument/definition. Handle and
+// symbol_path targets, and positions already on a declaration name, are
+// returned unchanged. Retargeting only happens when LSP returns exactly one
+// definition that is a documentSymbol declaration inside the workspace and the
+// same language; an ambiguous answer is an error, and anything else (no
+// definition, external definition, local variable) keeps the original
+// position so existing behavior is preserved. No name matching is involved.
+func (e *Engine) impactResolveUse(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position, in map[string]any) (language.Profile, *session.Session, document.Document, protocol.Position, error) {
+	if stringVal(in, "symbol_id") != "" || stringVal(in, "symbol_path") != "" {
+		return p, s, d, pos, nil
+	}
+	enc := s.Capabilities().PositionEncoding
+	here, err := document.FromLSP(d.Text, pos, enc)
+	if err != nil {
+		return p, s, d, pos, nil
+	}
+	if _, _, nodes, err := e.documentNodes(ctx, p, relativeMust(e, d.Path)); err == nil {
+		if _, found := impactSelectedSymbol(nodes, here); found {
+			return p, s, d, pos, nil // already a declaration, including nested fields
+		}
+	}
+	var raw json.RawMessage
+	callCtx, cancel := e.callContext(ctx)
+	err = s.Request(callCtx, "textDocument/definition", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos}, &raw)
+	cancel()
+	if err != nil {
+		return p, s, d, pos, nil
+	}
+	total := rawLocationCount(raw)
+	if total > 1 {
+		return p, s, d, pos, core.NewError(core.InvalidArgument, "position resolves to multiple definitions; specify an exact symbol")
+	}
+	locs, err := e.locationsIn(nil, raw, enc)
+	if err != nil || total != 1 || len(locs) != 1 {
+		return p, s, d, pos, nil // none or external: do not guess
+	}
+	def := locs[0]
+	dp, err := language.FromPath(def.Path)
+	if err != nil || dp.SessionKey != p.SessionKey {
+		return p, s, d, pos, nil
+	}
+	ds, dd, nodes, err := e.documentNodes(ctx, dp, def.Path)
+	if err != nil {
+		return p, s, d, pos, nil
+	}
+	selected, found := impactSelectedSymbol(nodes, def.Range.Start)
+	if !found {
+		return p, s, d, pos, nil
+	}
+	np, err := document.ToLSP(dd.Text, selected.SelectionRange.Start, ds.Capabilities().PositionEncoding)
+	if err != nil {
+		return p, s, d, pos, nil
+	}
+	return dp, ds, dd, np, nil
+}
+
+// rawLocationCount counts the entries of a Location | Location[] |
+// LocationLink[] response, including ones that cannot be mapped into the workspace.
+func rawLocationCount(raw json.RawMessage) int {
+	var many []json.RawMessage
+	if json.Unmarshal(raw, &many) == nil {
+		return len(many)
+	}
+	var one protocol.Location
+	if json.Unmarshal(raw, &one) == nil && one.URI != "" {
+		return 1
+	}
+	return 0
+}
+
 // impactRootIdentity uses the symbol already returned by documentSymbol to
 // decide whether a call hierarchy makes sense. For constants, fields, and
 // types, references are still meaningful even though prepareCallHierarchy
@@ -411,16 +486,12 @@ func (e *Engine) impactRootIdentity(ctx context.Context, p language.Profile, s *
 		if err == nil {
 			_, _, nodes, err := e.documentNodes(ctx, p, path)
 			if err == nil {
-				for _, node := range nodes {
-					if !impactPositionInRange(position, node.SelectionRange) {
-						continue
-					}
+				if node, found := impactSelectedSymbol(nodes, position); found {
 					name, kind = node.Name, node.Kind
 					root["symbol_path"] = node.SymbolPath
 					root["symbol_id"] = e.registerNode(p, path, d.URI, d.Hash, node)
 					root["range"] = node.Range
 					root["selection_range"] = node.SelectionRange
-					break
 				}
 			}
 		}
@@ -434,6 +505,21 @@ func (e *Engine) impactRootIdentity(ctx context.Context, p language.Profile, s *
 	// LSP call hierarchy describes callable functions/methods/constructors,
 	// not declarations such as fields, constants, variables, or types.
 	return root, kind != "" && kind != "function" && kind != "method" && kind != "constructor"
+}
+
+// impactSelectedSymbol resolves an exact LSP declaration selection, including
+// nested fields and methods. Ranges of enclosing classes/structs alone never
+// classify a reference as a declaration.
+func impactSelectedSymbol(nodes []symbolNode, p core.Position) (symbolNode, bool) {
+	for _, node := range nodes {
+		if child, found := impactSelectedSymbol(node.Children, p); found {
+			return child, true
+		}
+		if impactPositionInRange(p, node.SelectionRange) {
+			return node, true
+		}
+	}
+	return symbolNode{}, false
 }
 
 // impactPositionInRange treats an LSP selection range as half-open so

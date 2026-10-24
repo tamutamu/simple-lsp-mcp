@@ -30,7 +30,7 @@ Coding agents can reason well once they have the right semantic context. The exp
 - `get_symbol_outline` — inspect structure without returning source text.
 - `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
 - `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
-- `impact_analysis` — trace likely change impact using **LSP references → enclosing document symbols → incoming call hierarchy**, alongside implementations. For a changed constant, field or type, identify the actual referencing functions (`direct.dependent_symbols`), their test candidates, and—with `depth: 2` or `3`—their upstream callers (`indirect.callers`). Functions retain direct caller analysis. A bounded response exposes `analysis_mode: call_hierarchy | references_only | reference_usage_graph` and incomplete/truncated metadata; it never claims a candidate necessarily requires an edit.
+- `impact_analysis` — trace likely change impact using **LSP references → enclosing document symbols → incoming call hierarchy**, alongside implementations. For a changed constant, field or type, identify the actual referencing functions (`direct.dependent_symbols`), their test candidates, and—with `depth: 2` or `3`—their upstream callers (`indirect.callers`). Functions retain direct caller analysis. A source position on a symbol **use-site** (including a nested field) is resolved to an unambiguous in-workspace declaration using LSP definition, not string search. A bounded response exposes `analysis_mode: call_hierarchy | references_only | reference_usage_graph` and incomplete/truncated metadata; it never claims a candidate necessarily requires an edit.
 - `verify_change` — Semantic Change Guard: compare the current Git diff with LSP impact, related tests, and current diagnostics before an agent declares the task complete.
 - `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
 - `format_document` — preview/apply document or range formatting.
@@ -42,6 +42,21 @@ Example: with `impact_analysis({"symbol_path":"TaxRate","path":"config.go","dept
 ❌ grep → read → grep → infer → edit matching text → hope
 ✅ semantic context → impact → LSP-computed edit → verify_change → finish
 ```
+
+### Make coding agents actually use the MCP
+
+**A connected tool is not necessarily a used tool.** Claude Code reads workspace `CLAUDE.md`; Codex follows `AGENTS.md`. For non-trivial multi-file changes, add a short project instruction rather than relying only on the MCP tool catalog:
+
+```md
+When `simple-lsp` MCP is connected and a task changes multiple modules,
+call `get_symbol_context` / `get_semantic_slice` and `impact_analysis`
+on the affected symbol before editing. Use `rename_symbol` for semantic
+renames, and `verify_change` plus tests afterward. Do not trust truncated
+results as complete. If MCP is unavailable or the change is trivial,
+use normal tools and continue.
+```
+
+The `/simple-lsp-mcp-setup` skill can add this policy to the relevant project's instruction file when explicitly asked to configure coding-agent use. It preserves existing content. It does **not** alter a user's project instructions for a connection check or diagnostics request.
 
 ### Measured coding-agent outcome (limited A/B pilot)
 

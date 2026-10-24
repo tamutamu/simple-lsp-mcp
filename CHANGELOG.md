@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-24
+
+### Added
+
+- Add concise project-level `CLAUDE.md` and `AGENTS.md` guidance so coding agents select the MCP for meaningful multi-file work; an explicit integration setup can install a minimal policy without overwriting existing instructions.
+- Repeat a complex refactoring A/B trial with the same project instructions in both groups, confirming real semantic-tool calls and recording independent quality gates without generalizing from a single run.
+
+### Fixed
+
+- Resolve `impact_analysis` source positions on reference use-sites to an exact in-workspace declaration via LSP definition, including nested struct fields; keep ambiguity explicit and avoid name-based guesses.
+- Add real gopls, TypeScript Language Server and Pyright coverage for use-site impact alongside existing declaration behavior.
+- Document complex coding-agent A/B trials, including the negative finding that agents did not invoke the optional MCP tools.
+
 ## [0.10.1] - 2026-10-24
 
 ### Added
