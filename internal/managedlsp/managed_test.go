@@ -132,7 +132,8 @@ chmod +x "$GOBIN/gopls"
 	if !filepath.IsAbs(path) || !strings.HasPrefix(path, filepath.Join(root, "cache")) || len(args) != 1 || args[0] != "serve" {
 		t.Fatalf("unexpected launcher %q %#v", path, args)
 	}
-	t.Setenv("PATH", root+string(os.PathListSeparator)+"/usr/bin:/bin")
+	// Hide every system Go installation, including /usr/bin/go on CI runners.
+	t.Setenv("PATH", root)
 	// gopls is cached, but Go projects still need the Go toolchain to analyze.
 	path2, ready, missing, err := Status("go")
 	if err != nil || !ready || path2 != path || missing != "go" {

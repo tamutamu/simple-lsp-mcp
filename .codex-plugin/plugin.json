@@ -1,6 +1,6 @@
 {
   "name": "simple-lsp-mcp",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Precise, bounded semantic code context for Codex via local LSP servers.",
   "mcpServers": "./.mcp.json",
   "author": {

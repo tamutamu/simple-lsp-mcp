@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-10-24
+## [0.10.1] - 2026-10-24
 
 ### Added
 
@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Isolate `PATH` completely in the missing-Go managed-LSP test; GitHub-hosted runners can include a Go binary under `/usr/bin`, which invalidated the previous test setup.
 - Reuse symbol handles for unchanged declarations and bound the process-local symbol registry with LRU eviction, preventing unbounded growth during long agent sessions.
 - Report `impact_analysis.meta.complete=false` whenever output caps or call fan-out limits truncate the semantic graph, rather than claiming full coverage.
 - Correct MCP registry metadata to describe explicit semantic edits instead of incorrectly advertising the server as fully read-only.
