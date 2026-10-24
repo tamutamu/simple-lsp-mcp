@@ -58,9 +58,23 @@ use normal tools and continue.
 
 The `/simple-lsp-mcp-setup` skill can add this policy to the relevant project's instruction file when explicitly asked to configure coding-agent use. It preserves existing content. It does **not** alter a user's project instructions for a connection check or diagnostics request.
 
-### Measured coding-agent outcome (limited A/B pilot)
+### Evidence: measured on real coding tasks
 
-In **three fresh, paired Claude Code runs** of a real Go multi-file method rename, all six runs produced *identical passing Git diffs*. With simple-lsp-mcp enabled, the median agent tool-call count was **4 instead of 18**, reported API cost was **$0.076 instead of $0.134**, and elapsed time was **22 instead of 27 seconds**. This shows a repeatable round-trip reduction for an LSP-suitable rename, **not yet a proven increase in general coding accuracy or performance**. A separate Python rename also succeeded in both modes, but cost slightly more with MCP. See the [exact prompts, results, checks, and caveats](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24).
+We compared **Claude Code with and without simple-lsp-mcp** on the official [FastAPI full-stack template](https://github.com/fastapi/full-stack-fastapi-template) (pinned commit `b1125d8`): **six tasks × three runs × two conditions = 36 independent coding sessions**. Both conditions used the same model, prompts, project instructions and file tools. **Claude's own LSP was disabled**; the only intended difference was whether simple-lsp-mcp was connected.
+
+| Task | Verified solutions without / with MCP | Average time without / with MCP | Average estimated API cost without / with MCP |
+| --- | --- | ---: | ---: |
+| Item search feature | 3/3 / 3/3 | 23.37s / 23.03s | $0.0802 / $0.0992 |
+| Pagination bug fix | 3/3 / 3/3 | 14.23s / 22.23s | $0.0495 / $0.0921 |
+| Item authorization refactor | 3/3 / 3/3 | 15.93s / 19.57s | $0.0559 / $0.0790 |
+| Owner-scoped item summary feature | 3/3 / 3/3 | 25.10s / 34.10s | $0.0755 / $0.1252 |
+| Cross-file user lookup rename | 3/3 / 3/3 | 17.03s / 19.53s | $0.0396 / $0.0919 |
+| Cross-file password helper rename | 3/3 / 3/3 | 11.73s / 17.90s | $0.0351 / $0.0793 |
+| **All tasks, equal task weight** | **18/18 / 18/18** | **17.90s / 22.73s** | **$0.0560 / $0.0945** |
+
+**What the evidence says:** in this compact real project, MCP made **no measurable difference in acceptance-test success** and increased average time (27%) and reported cost (69%). All 18 MCP-enabled sessions actually used the tools (47 MCP calls total); neither condition used Claude's LSP. This is **not** evidence of a universal coding productivity boost, and we won't advertise one. The exact task prompts, independent HTTP/AST graders, PostgreSQL cross-check, methodology and **all 36 raw outcome rows** are published in the [FastAPI A/B report](docs/benchmarks/fastapi-template-2026-10-24.md).
+
+**Why use simple-lsp-mcp anyway?** Its distinct value is direct access to LSP-backed **symbol identity, impact relations, cross-file edits and change verification**, rather than hoping text search has captured semantic connections. The [earlier three-pair Go rename pilot](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24) did show fewer tool calls and lower reported cost on that specific task; the FastAPI results show how strongly outcomes depend on workload. Prefer these semantic tools when the change is genuinely ambiguous or high-risk, **not as extra round trips for every straightforward edit**.
 
 ### Design boundaries
 

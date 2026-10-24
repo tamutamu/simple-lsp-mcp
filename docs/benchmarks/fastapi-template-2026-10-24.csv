@@ -1,0 +1,37 @@
+task,trial,condition,accepted,duration_seconds,reported_api_cost_usd,tool_calls,mcp_tool_calls,native_claude_lsp_calls,changed_files,grader_database
+search,1,without_mcp,true,21.6,0.1062774,5,0,0,backend/app/api/routes/items.py;backend/tests/api/routes/test_items.py,SQLite in-memory
+search,1,with_mcp,true,27.8,0.1378544,9,3,0,backend/app/api/routes/items.py;backend/tests/api/routes/test_items.py,SQLite in-memory
+search,2,without_mcp,true,24.4,0.0712968,6,0,0,backend/app/api/routes/items.py;backend/tests/api/routes/test_items.py,SQLite in-memory
+search,2,with_mcp,true,19.6,0.0734220,7,3,0,backend/app/api/routes/items.py,SQLite in-memory
+search,3,without_mcp,true,24.1,0.0629909,5,0,0,backend/app/api/routes/items.py;backend/tests/api/routes/test_items.py,SQLite in-memory
+search,3,with_mcp,true,21.7,0.0861889,8,3,0,backend/app/api/routes/items.py;backend/tests/api/routes/test_items.py,SQLite in-memory
+paging,1,without_mcp,true,14.5,0.0500221,4,0,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py,SQLite in-memory
+paging,1,with_mcp,true,18.5,0.0779678,7,3,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py,SQLite in-memory
+paging,2,without_mcp,true,14.6,0.0497250,4,0,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py,SQLite in-memory
+paging,2,with_mcp,true,20.6,0.0867605,12,1,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py,SQLite in-memory
+paging,3,without_mcp,true,13.6,0.0488287,4,0,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py,SQLite in-memory
+paging,3,with_mcp,true,27.6,0.1116843,10,4,0,backend/app/api/routes/items.py;backend/app/api/routes/users.py;backend/tests/api/routes/test_items.py;backend/tests/api/routes/test_users.py,SQLite in-memory
+access,1,without_mcp,true,15.2,0.0557288,7,0,0,backend/app/api/routes/items.py,SQLite in-memory
+access,1,with_mcp,true,20.2,0.0794784,10,2,0,backend/app/api/routes/items.py,SQLite in-memory
+access,2,without_mcp,true,17.0,0.0558468,7,0,0,backend/app/api/routes/items.py,SQLite in-memory
+access,2,with_mcp,true,19.0,0.0782711,10,2,0,backend/app/api/routes/items.py,SQLite in-memory
+access,3,without_mcp,true,15.6,0.0560082,7,0,0,backend/app/api/routes/items.py,SQLite in-memory
+access,3,with_mcp,true,19.5,0.0793820,10,2,0,backend/app/api/routes/items.py,SQLite in-memory
+summary,1,without_mcp,true,25.1,0.0772492,4,0,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+summary,1,with_mcp,true,33.6,0.1190934,8,1,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+summary,2,without_mcp,true,28.9,0.0815316,5,0,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+summary,2,with_mcp,true,35.6,0.1348736,14,3,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+summary,3,without_mcp,true,21.3,0.0676422,9,0,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+summary,3,with_mcp,true,33.1,0.1216766,13,2,0,backend/app/api/routes/items.py;backend/app/models.py;backend/tests/api/routes/test_items.py,PostgreSQL 16
+rename_user,1,without_mcp,true,18.7,0.0400542,3,0,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_user,1,with_mcp,true,22.8,0.0785471,6,2,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_user,2,without_mcp,true,19.8,0.0401504,3,0,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_user,2,with_mcp,true,19.7,0.1040707,8,4,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_user,3,without_mcp,true,12.6,0.0385794,3,0,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_user,3,with_mcp,true,16.1,0.0930918,7,3,0,backend/app/api/routes/login.py;backend/app/api/routes/users.py;backend/app/crud.py;backend/tests/api/routes/test_users.py;backend/tests/utils/user.py,
+rename_password,1,without_mcp,true,12.1,0.0344674,3,0,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
+rename_password,1,with_mcp,true,16.6,0.0790252,7,3,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
+rename_password,2,without_mcp,true,12.8,0.0390853,3,0,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
+rename_password,2,with_mcp,true,19.1,0.0780006,7,3,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
+rename_password,3,without_mcp,true,10.3,0.0318965,2,0,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
+rename_password,3,with_mcp,true,18.0,0.0808625,7,3,0,backend/app/api/routes/private.py;backend/app/api/routes/users.py;backend/app/core/security.py;backend/app/crud.py;backend/tests/api/routes/test_login.py,
