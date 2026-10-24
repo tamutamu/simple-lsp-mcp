@@ -10,8 +10,8 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/tools"
 )
 
-// New registers semantic navigation plus explicit LSP-backed edit tools on an MCP server.
-const serverInstructions = "Prefer high-level tools: find_symbol, get_symbol_outline, get_symbol_context, get_semantic_slice, impact_analysis, verify_change, rename_symbol, format_document, and code actions. After code changes, use verify_change before declaring completion. If it returns repair_candidates, use their apply_input with apply_code_action when appropriate. Use low-level definition/reference/call/type tools only for one exact LSP primitive. A bare symbol_path can resolve without shell path discovery. rename_symbol and format_document preview by default; apply_code_action is a write. Reuse symbol_id for follow-ups. If INCOMPLETE_SEARCH, incomplete results, or pagination is reported, continue or narrow rather than assuming absence."
+// New exposes precise LSP navigation and edits to coding agents.
+const serverInstructions = "Use individual LSP tools only when semantic information adds value beyond file reading or text search. Search symbols, then request exactly the definitions, references, implementations, or hierarchy edges needed for the task. Do not invoke every tool by default. rename_symbol and format_document preview before applying; apply_code_action writes only the selected LSP edit. Run real tests after edits; an LSP diagnostic is not a test result."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
@@ -36,7 +36,7 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 
 func toolAnnotations(name string) *mcp.ToolAnnotations {
 	closedWorld := false
-	if name == "onboard" || name == "rename_symbol" || name == "format_document" || name == "apply_code_action" {
+	if name == "rename_symbol" || name == "format_document" || name == "apply_code_action" {
 		destructive := true
 		return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &closedWorld}
 	}
@@ -53,26 +53,7 @@ type definition struct {
 // definitions is the stable public tool surface exposed by this server.
 func definitions() []definition {
 	return []definition{
-		// High-level semantic operations. Agents should prefer these because one
-		// call answers a complete code-understanding or semantic-change question.
-		{"find_symbol", "Resolve one symbol by symbol_path; path can scope the lookup. Ambiguity returns candidates.", objSchema(props("symbol_path", "path", "language", "include_source", "max_source_lines", "limit"), "symbol_path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.FindSymbol(c, i)
-		}},
-		{"get_symbol_outline", "Get a symbol's children or a file's top-level structure without source text.", objSchema(props("symbol_path", "path", "language", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.SymbolOutline(c, i)
-		}},
-		{"get_symbol_context", "Get selected source and immediate callers, callees, references, or implementations in one call; prefer this over separate relationship tools.", objSchema(props("symbol_path", "symbol_id", "path", "line", "column", "language", "include", "limit", "max_source_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.SymbolContext(c, i)
-		}},
-		{"get_semantic_slice", "Get a byte-bounded semantic source neighborhood for understanding or changing one symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "max_source_lines", "max_bytes")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.SemanticSlice(c, i)
-		}},
-		{"impact_analysis", "Trace change impact via LSP references, enclosing symbols, callers and implementations; report incomplete graphs.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "limit", "include_references", "include_implementations")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.ImpactAnalysis(c, i)
-		}},
-		{"verify_change", "Semantic Change Guard: verify the Git working-tree diff against LSP impact and diagnostics; read-only.", objSchema(props("base", "depth", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.VerifyChange(c, i)
-		}},
+		// Exact LSP operations. The agent chooses which relation to inspect.
 		{"rename_symbol", "Preview an LSP semantic rename; apply=true writes the validated cross-file WorkspaceEdit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
@@ -96,31 +77,23 @@ func definitions() []definition {
 		{"list_workspace_symbols", "Enumerate configured source symbols page by page; follow next_cursor until absent.", objSchema(props("language", "kinds", "limit", "cursor")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ListWorkspaceSymbols(c, i)
 		}},
-		{"get_document_symbols", "Get hierarchical LSP symbols for one file; prefer it over reading source text.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_document_symbols", "Get the hierarchical LSP symbol structure for one source file.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
-		}},
-		{"get_symbol", "Get a previously returned symbol_id and optional source.", objSchema(props("symbol_id", "include_source"), "symbol_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.GetSymbol(c, i)
 		}},
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
 
-		// Low-level LSP primitives remain public for callers that need one exact
-		// relationship instead of the aggregate high-level tools above.
-		{"get_definition", "Low-level LSP primitive: definition locations for a target.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "Low-level LSP primitive: reference locations for a target.", objSchema(targetProps("include_declaration")), relation("find_references", "textDocument/references", "references")},
-		{"find_implementations", "Low-level LSP primitive: implementation locations for a target.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
-		{"get_type_definition", "Low-level LSP primitive: type-definition locations for a target.", targetSchema(), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
-		{"get_declaration", "Low-level LSP primitive: declaration locations for a target.", targetSchema(), relation("get_declaration", "textDocument/declaration", "declaration")},
-		{"get_incoming_calls", "Low-level LSP primitive: direct callers.", targetSchema(), hierarchy("get_incoming_calls")},
-		{"get_outgoing_calls", "Low-level LSP primitive: direct callees.", targetSchema(), hierarchy("get_outgoing_calls")},
-		{"get_supertypes", "Low-level LSP primitive: direct supertypes.", targetSchema(), hierarchy("get_supertypes")},
-		{"get_subtypes", "Low-level LSP primitive: direct subtypes.", targetSchema(), hierarchy("get_subtypes")},
-
-		{"onboard", "Detect projects and generate .simple-lsp.yaml; this is an explicit configuration write.", objSchema(props("workspace", "overwrite")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
-			return e.Onboard(c, i)
-		}},
+		// Ask for one exact semantic relationship at a time.
+		{"get_definition", "LSP: definition locations for a target.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
+		{"find_references", "LSP: reference locations for a target.", objSchema(targetProps("include_declaration")), relation("find_references", "textDocument/references", "references")},
+		{"find_implementations", "LSP: implementation locations for a target.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
+		{"get_type_definition", "LSP: type-definition locations for a target.", targetSchema(), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
+		{"get_declaration", "LSP: declaration locations for a target.", targetSchema(), relation("get_declaration", "textDocument/declaration", "declaration")},
+		{"get_incoming_calls", "LSP: direct callers.", targetSchema(), hierarchy("get_incoming_calls")},
+		{"get_outgoing_calls", "LSP: direct callees.", targetSchema(), hierarchy("get_outgoing_calls")},
+		{"get_supertypes", "LSP: direct supertypes.", targetSchema(), hierarchy("get_supertypes")},
+		{"get_subtypes", "LSP: direct subtypes.", targetSchema(), hierarchy("get_subtypes")},
 	}
 }
 
@@ -162,16 +135,7 @@ func allProperties() map[string]any {
 		"language":                 describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; target tools infer it when possible."),
 		"kinds":                    describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
-		"include_source":           describe(map[string]any{"type": "boolean"}, "Include source; default true."),
 		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
-		"overwrite":                describe(map[string]any{"type": "boolean"}, "Overwrite existing configuration."),
-		"workspace":                describe(stringSchema(), "Running workspace root; normally omit."),
-		"max_source_lines":         describe(positiveIntegerSchema(), "Maximum source lines; default 200."),
-		"max_bytes":                describe(positiveIntegerSchema(), "Serialized JSON byte budget; default 24576, range 2048-81920."),
-		"depth":                    describe(positiveIntegerSchema(), "Traversal depth; max 3."),
-		"include":                  describe(map[string]any{"type": "array", "items": enumStringSchema("source", "incoming_calls", "outgoing_calls", "references", "implementations")}, "Context sections to return."),
-		"include_references":       describe(map[string]any{"type": "boolean"}, "Include references; default true."),
-		"include_implementations":  describe(map[string]any{"type": "boolean"}, "Include implementations; default true."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),
@@ -183,7 +147,6 @@ func allProperties() map[string]any {
 		"trim_final_newlines":      describe(map[string]any{"type": "boolean"}, "Formatting trimFinalNewlines."),
 		"code_action_kinds":        describe(map[string]any{"type": "array", "items": stringSchema()}, "Requested code-action kinds."),
 		"action_id":                describe(stringSchema(), "action_id returned by get_code_actions."),
-		"base":                     describe(stringSchema(), "Git base revision for verify_change; default HEAD."),
 	}
 }
 

@@ -1,5 +1,5 @@
 # Claude Code project guidance
 
-For cross-file changes, debugging, or substantial refactoring, **actually call** the connected `simple-lsp` MCP's `get_symbol_context` / `get_semantic_slice` and `impact_analysis` for the relevant symbol before editing. Tool discovery alone is not enough. Prefer semantic `rename_symbol` over text substitutions; after changing code use `verify_change` and real tests. If MCP is unavailable, use normal tools and do not block.
+The connected `simple-lsp` MCP is a set of precise **optional LSP primitives**, not a mandatory workflow. For ambiguous symbols, cross-file renames, inheritance, or call dependencies, select exactly the semantic query needed (`get_definition`, `find_references`, `get_incoming_calls`, `find_implementations`, etc.). Prefer semantic `rename_symbol` when appropriate. Do not call MCP tools for routine edits or for the sake of tool usage; use normal file tools and tests as needed. The agent decides how to combine results.
 
-Follow the remaining project conventions in `AGENTS.md`. Do not force MCP use for documentation, literal text search, or trivial edits.
+See `AGENTS.md` for the project's remaining conventions.

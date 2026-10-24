@@ -6,10 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -20,7 +17,6 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
 	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
-	"github.com/tamutamu/simple-lsp-mcp/internal/onboard"
 	"github.com/tamutamu/simple-lsp-mcp/internal/symbol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
@@ -160,39 +156,6 @@ func (e *Engine) requestDocumentSymbolTree(ctx context.Context, p language.Profi
 	return raw, err
 }
 
-// GetSymbol returns a previously acquired symbol after checking its file hash.
-func (e *Engine) GetSymbol(_ context.Context, in map[string]any) (map[string]any, error) {
-	r, err := e.Symbols.Get(stringVal(in, "symbol_id"))
-	if err != nil {
-		return nil, err
-	}
-	full, err := e.WS.Resolve(r.Path)
-	if err != nil {
-		return nil, core.NewError(core.StaleSymbol, "symbol file no longer exists")
-	}
-	b, err := os.ReadFile(full)
-	if err != nil {
-		return nil, core.NewError(core.StaleSymbol, "symbol file no longer exists")
-	}
-	h := hash(b)
-	if h != r.FileHash {
-		return nil, core.NewError(core.StaleSymbol, "symbol changed; search again")
-	}
-	v := core.SymbolSummary{SymbolID: r.ID, Name: r.Name, Kind: r.Kind, ContainerName: r.ContainerName, Language: languageName(r.SessionKey), Path: r.Path, Range: r.Range, SelectionRange: r.SelectionRange}
-	m := map[string]any{"symbol": v, "meta": core.Meta{Complete: true}}
-	if boolValDefault(in, "include_source", true) {
-		source := sliceRange(b, r.Range)
-		tr := false
-		if len(source) > 64<<10 {
-			source = source[:64<<10]
-			tr = true
-		}
-		m["symbol"] = map[string]any{"symbol_id": v.SymbolID, "name": v.Name, "kind": v.Kind, "container_name": v.ContainerName, "language": v.Language, "path": v.Path, "range": v.Range, "selection_range": v.SelectionRange, "source": string(source)}
-		m["meta"] = core.Meta{Complete: true, SourceTruncated: tr}
-	}
-	return m, nil
-}
-
 // Relationship resolves a target and invokes one location-based LSP method.
 func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in map[string]any) (map[string]any, error) {
 	p, s, d, pos, err := e.target(ctx, in)
@@ -230,8 +193,7 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 }
 
 // locationsAt runs one location-based LSP method against an already-resolved
-// target, so a caller that has already resolved a position (impact_analysis,
-// in particular) does not need to re-resolve it or re-sync the document.
+// target without re-resolving or re-syncing the document.
 func (e *Engine) locationsAt(ctx context.Context, c *fileCache, s *session.Session, uri string, pos protocol.Position, method string, extra map[string]any) ([]core.Location, error) {
 	params := map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: uri}, "position": pos}
 	for k, v := range extra {
@@ -336,42 +298,4 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 		ds = ds[:limit]
 	}
 	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete, Truncated: tr}}, nil
-}
-
-// Onboard writes configuration only within the current workspace, on an explicit
-// tool call. The running engine does not hot-reload server profiles.
-func (e *Engine) Onboard(ctx context.Context, in map[string]any) (map[string]any, error) {
-	wsDir := stringVal(in, "workspace")
-	if wsDir == "" {
-		wsDir = e.WS.Root()
-	} else if !filepath.IsAbs(wsDir) {
-		wsDir = filepath.Join(e.WS.Root(), wsDir)
-	}
-	target, err := workspace.Open(wsDir)
-	if err != nil {
-		return nil, core.WithCause(core.InvalidPath, "onboard workspace must be an existing directory inside the current workspace", err)
-	}
-	rel, err := filepath.Rel(e.WS.Root(), target.Root())
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, core.NewError(core.InvalidPath, "onboard workspace escapes the current workspace")
-	}
-	if rel != "." {
-		return nil, core.NewError(core.InvalidPath, "onboard must target the running workspace root; start with --workspace to configure another project")
-	}
-	info, err := os.Stat(target.Root())
-	if err != nil || !info.IsDir() {
-		return nil, core.NewError(core.InvalidPath, "onboard workspace must be a directory")
-	}
-	res, err := onboard.Run(onboard.Options{
-		Workspace: target.Root(),
-		Overwrite: boolValDefault(in, "overwrite", false),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"config_path":      res.ConfigPath,
-		"detected":         res.Detected,
-		"restart_required": true,
-	}, nil
 }

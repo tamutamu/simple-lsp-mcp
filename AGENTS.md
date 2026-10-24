@@ -12,12 +12,8 @@ Uses the default five canonical triage labels. See `docs/agents/triage-labels.md
 
 Uses a single-context layout. See `docs/agents/domain.md`.
 
-### Semantic coding with simple-lsp MCP
+### Focused LSP bridge
 
-When the `simple-lsp` MCP is connected, use it for **semantic** work, not routine text search:
+Use `simple-lsp` only when the requested code task benefits from semantic identity rather than text search. For example, use `search_symbols` or `get_document_symbols` to locate a declaration, `find_references` for exact uses, `get_incoming_calls` / `get_outgoing_calls` for direct call edges, and `find_implementations` or type-hierarchy tools for polymorphism. Follow up with **only** the specific relation you need. The MCP does not decide impact or implementation strategy: the coding agent does.
 
-- **Before a cross-file feature or refactor**, call `get_symbol_context` or `get_semantic_slice` on the primary symbol and `impact_analysis` for likely affected callers, implementations, and tests. Discover the tool if necessary; do not stop after merely discovering it.
-- Use `find_symbol` to disambiguate names. Prefer `rename_symbol` (preview first) for symbol renames instead of identifier text replacement.
-- After edits, use `verify_change` as an additional semantic check and run relevant real tests. An incomplete/truncated impact result is **not** proof that nothing else is affected.
-- Keep grep/read for literal text, configuration, and documentation. If the MCP is unavailable or fails, use standard code tools and continue; do not install it or block the task.
-- Avoid repeated calls that do not answer a concrete coding question. The goal is accurate, minimal changes, not maximizing MCP usage.
+Prefer `rename_symbol` for a semantic rename where name collisions are possible; preview writes by default. For routine edits use normal code-reading, editing and tests, without unnecessary MCP round trips. After code changes, run actual tests; call `get_diagnostics` only if type/diagnostic feedback would help. Never treat diagnostics as a substitute for tests. If the MCP is not connected, continue with ordinary tools rather than installing anything.

@@ -5,62 +5,32 @@
 [![Latest release](https://img.shields.io/github/v/release/tamutamu/simple-lsp-mcp)](https://github.com/tamutamu/simple-lsp-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A semantic development layer for coding agents, powered by the language servers you already trust.**
+**A lightweight bridge between coding agents and real language servers.**
 
-`simple-lsp-mcp` gives Claude Code, Codex, and other MCP clients one consistent API to **understand code and make LSP-computed changes** across languages. It keeps the language server's semantic precision, but packages common coding-agent tasks into fewer, bounded tool calls.
+`simple-lsp-mcp` exposes **18 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
 
 ```text
-understand  → get_semantic_slice / get_symbol_context
-assess      → impact_analysis
-verify      → verify_change
-rename      → rename_symbol
-format      → format_document
-quick-fix   → get_code_actions → apply_code_action
+find a symbol   → search_symbols / get_document_symbols / list_workspace_symbols
+follow a link   → get_definition / find_references / find_implementations
+inspect calls   → get_incoming_calls / get_outgoing_calls
+inspect types   → get_type_definition / get_supertypes / get_subtypes
+make a change   → rename_symbol / format_document / code actions
+check a file    → get_diagnostics
 ```
-
-The high-level tools come first because they answer complete agent tasks. The precise LSP primitives — definitions, references, implementations, callers/callees, supertypes/subtypes, declarations, and type definitions — **remain available** when a caller needs exactly one relation. Nothing useful is hidden behind a separate mode.
 
 ### Why this exists
 
-Coding agents can reason well once they have the right semantic context. The expensive part is often finding that context and changing code without guessing from text. Plain grep produces name collisions and string matches; reading whole files burns context; raw LSP calls can require several model-visible round trips.
+Text search finds spelling matches; LSP resolves **which declaration a use refers to**, including languages with overloaded names, interface implementations, and large dependency graphs. Instead of reading unrelated files, an agent can ask precisely for one semantic relationship and choose its next step based on the result. When text search is already sufficient, skip the LSP call. No mandatory analysis or verification sequence is imposed.
 
-`simple-lsp-mcp` turns those primitives into agent-oriented operations:
+### When coding agents should use it
 
-- `find_symbol` — resolve a human-readable symbol without first knowing its file.
-- `get_symbol_outline` — inspect structure without returning source text.
-- `get_symbol_context` — source plus selected callers, callees, references, and implementations in one call.
-- `get_semantic_slice` — gather a bounded semantic source neighborhood for understanding or changing a symbol.
-- `impact_analysis` — trace likely change impact using **LSP references → enclosing document symbols → incoming call hierarchy**, alongside implementations. For a changed constant, field or type, identify the actual referencing functions (`direct.dependent_symbols`), their test candidates, and—with `depth: 2` or `3`—their upstream callers (`indirect.callers`). Functions retain direct caller analysis. A source position on a symbol **use-site** (including a nested field) is resolved to an unambiguous in-workspace declaration using LSP definition, not string search. A bounded response exposes `analysis_mode: call_hierarchy | references_only | reference_usage_graph` and incomplete/truncated metadata; it never claims a candidate necessarily requires an edit.
-- `verify_change` — Semantic Change Guard: compare the current Git diff with LSP impact, related tests, and current diagnostics before an agent declares the task complete.
-- `rename_symbol` — preview/apply a cross-file rename calculated by the language server.
-- `format_document` — preview/apply document or range formatting.
-- `get_code_actions` / `apply_code_action` — inspect and apply WorkspaceEdit-backed LSP fixes.
+A connected MCP is optional. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. Otherwise use the normal editor, grep and tests. Never use the MCP merely to satisfy a fixed tool-call checklist. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
 
-Example: with `impact_analysis({"symbol_path":"TaxRate","path":"config.go","depth":2})`, the MCP can show a reference inside `Invoice` and then its caller `HandleInvoice` even when `HandleInvoice` does not mention `TaxRate` at all. It can also mark `TestTaxRate` as a **test candidate** when that test directly references the symbol. All identities and edges come from LSP results, not identifier-string guesses. This is a navigation aid, **not proof of a bug or missing edit**. The same feature was exercised on the real [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) (`settings → send_email → recover_password`); see [measured evidence](docs/evidence.md#real-application-verification-not-only-synthetic-fixtures).
-
-```text
-❌ grep → read → grep → infer → edit matching text → hope
-✅ semantic context → impact → LSP-computed edit → verify_change → finish
-```
-
-### Make coding agents actually use the MCP
-
-**A connected tool is not necessarily a used tool.** Claude Code reads workspace `CLAUDE.md`; Codex follows `AGENTS.md`. For non-trivial multi-file changes, add a short project instruction rather than relying only on the MCP tool catalog:
-
-```md
-When `simple-lsp` MCP is connected and a task changes multiple modules,
-call `get_symbol_context` / `get_semantic_slice` and `impact_analysis`
-on the affected symbol before editing. Use `rename_symbol` for semantic
-renames, and `verify_change` plus tests afterward. Do not trust truncated
-results as complete. If MCP is unavailable or the change is trivial,
-use normal tools and continue.
-```
-
-The `/simple-lsp-mcp-setup` skill can add this policy to the relevant project's instruction file when explicitly asked to configure coding-agent use. It preserves existing content. It does **not** alter a user's project instructions for a connection check or diagnostics request.
+The `/simple-lsp-mcp-setup` skill can append a short **conditional** policy to your project's `CLAUDE.md` or `AGENTS.md` when explicitly requested. It does not overwrite instructions or force a call on every task.
 
 ### Evidence: measured on real coding tasks
 
-We compared **Claude Code with and without simple-lsp-mcp** on the official [FastAPI full-stack template](https://github.com/fastapi/full-stack-fastapi-template) (pinned commit `b1125d8`): **six tasks × three runs × two conditions = 36 independent coding sessions**. Both conditions used the same model, prompts, project instructions and file tools. **Claude's own LSP was disabled**; the only intended difference was whether simple-lsp-mcp was connected.
+We compared **Claude Code with and without the previous 26-tool simple-lsp-mcp v0.10.2** on the official [FastAPI full-stack template](https://github.com/fastapi/full-stack-fastapi-template) (pinned commit `b1125d8`): **six tasks × three runs × two conditions = 36 independent coding sessions**. Both conditions used the same model, prompts, project instructions and file tools. **Claude's own LSP was disabled**; the only intended difference was whether simple-lsp-mcp was connected.
 
 | Task | Verified solutions without / with MCP | Average time without / with MCP | Average estimated API cost without / with MCP |
 | --- | --- | ---: | ---: |
@@ -74,7 +44,7 @@ We compared **Claude Code with and without simple-lsp-mcp** on the official [Fas
 
 **What the evidence says:** in this compact real project, MCP made **no measurable difference in acceptance-test success** and increased average time (27%) and reported cost (69%). All 18 MCP-enabled sessions actually used the tools (47 MCP calls total); neither condition used Claude's LSP. This is **not** evidence of a universal coding productivity boost, and we won't advertise one. The exact task prompts, independent HTTP/AST graders, PostgreSQL cross-check, methodology and **all 36 raw outcome rows** are published in the [FastAPI A/B report](docs/benchmarks/fastapi-template-2026-10-24.md).
 
-**Why use simple-lsp-mcp anyway?** Its distinct value is direct access to LSP-backed **symbol identity, impact relations, cross-file edits and change verification**, rather than hoping text search has captured semantic connections. The [earlier three-pair Go rename pilot](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24) did show fewer tool calls and lower reported cost on that specific task; the FastAPI results show how strongly outcomes depend on workload. Prefer these semantic tools when the change is genuinely ambiguous or high-risk, **not as extra round trips for every straightforward edit**.
+**What we changed afterward:** the benchmark tested the old composite-tool architecture, **not** this 18-tool version. We removed the composite analysis/guard tools and eliminated the mandatory tool workflow. The previous [three-pair Go rename pilot](docs/evidence.md#coding-agent-outcome-ab-pilot-2026-10-24) did show savings on that one task; the FastAPI results show why one workload cannot justify blanket productivity claims. The lean bridge still requires its own A/B study.
 
 ### Design boundaries
 
@@ -82,9 +52,9 @@ We compared **Claude Code with and without simple-lsp-mcp** on the official [Fas
 - **No hidden index or embeddings.** Results come live from configured local language servers.
 - **Bounded project warm-up where needed.** TypeScript/Pyright project-wide relations open only candidate source files containing the target spelling, under hard file/byte/match limits; semantic answers still come from the LSP.
 - **No external indexing service.** Workspace code stays local to the MCP/LSP processes.
-- **Bounded context.** High-level responses have result/source/byte budgets and fail closed when a bounded search cannot finish.
+- **Bounded results.** Searches and symbol listings enforce result/pagination budgets and surface incomplete operations.
 - **Cross-language API.** The same semantic operations work across supported LSP profiles; language is inferred for most target-based tools.
-- **Low-level primitives remain public.** High-level tools guide the common path without removing precise LSP access.
+- **Direct LSP operations.** The agent—not the MCP—decides whether and how to combine the results.
 - **Lazy startup.** A language server starts only when a request needs it.
 
 See [SECURITY.md](SECURITY.md) for the write/confinement model and [docs/evidence.md](docs/evidence.md) for what is proven by real-language-server tests.
@@ -150,8 +120,7 @@ LSP executables are reported rather than downloaded.
 
 An existing `.simple-lsp.yaml` (or `.simple-lsp.yml`) always wins over discovery
 and the managed defaults. For custom language servers, project-specific settings
-or unusual layouts, call the optional `onboard` MCP tool to generate a starter
-configuration, then restart/reconnect the MCP server. **Ordinary projects need
+or unusual layouts, create `.simple-lsp.yaml` yourself; CLI `setup` and `doctor` handle client registration and diagnostics. **Ordinary projects need
 no YAML and no restart after detection.**
 
 ### Inspect without installing
@@ -276,7 +245,7 @@ For direct MCP registration instead of the plugin package, add the following to 
 command = "simple-lsp-mcp"
 ```
 
-In Codex, begin with `get_semantic_slice` when you need enough code to understand or change one symbol, `get_symbol_context` when you need its immediate neighborhood, or `get_symbol_outline` when you only need structure. `language` is usually unnecessary: `get_document_symbols(path="src/greeting.ts")` infers TypeScript from the path, while `find_symbol(symbol_path="formatGreeting")` can search configured profiles when no path is known.
+In Codex, call the particular LSP primitive that answers your question: `search_symbols` to find a name, `get_document_symbols(path="src/greeting.ts")` to inspect one file, `find_references` for exact usages, and `rename_symbol` for an LSP-calculated refactor. The MCP infers the language from file paths or symbol handles when possible.
 
 ## Claude Code configuration
 
@@ -309,96 +278,36 @@ claude plugin install simple-lsp-mcp@simple-lsp-mcp
 
 The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code to install the binary and verify LSPs from inside the agent. Codex includes the same skill as `$simple-lsp-mcp-setup`. If you install the binary separately, it still needs to be resolvable by the MCP client or registered by absolute path; a session restart may be necessary.
 
-## MCP tools
+## MCP tools (18 focused operations)
 
-The complete tool surface is intentionally retained. Tools are exposed in this order: **high-level semantic workflows**, **discovery/inspection**, **precise LSP relationship primitives**, then **setup**. Agents should normally start with the high-level group; direct primitives remain useful for exact queries.
+Every tool returns structured data. Positions are **one-based**, paths workspace-relative. A target may be a `symbol_id` from another tool, a `symbol_path` such as `UserService/createUser` (optionally scoped with `path`), or a file `path` plus `line` and `column`. Use `search_symbols` / `get_document_symbols` to discover identifiers, then request **only the specific relation needed**. Tool calls are not mandatory.
 
-Every tool returns structured data. Symbol, position, and range lines and columns are **one-based**; paths are relative to the workspace.
+| Tool | LSP operation / purpose |
+| --- | --- |
+| `search_symbols` | `workspace/symbol` name query (requires `query`, `language`) |
+| `list_workspace_symbols` | Paginated complete workspace traversal using document symbols (no query required) |
+| `get_document_symbols` | `textDocument/documentSymbol` for a file |
+| `get_hover` | `textDocument/hover` for type and documentation |
+| `get_definition` | `textDocument/definition` |
+| `get_declaration` | `textDocument/declaration` |
+| `get_type_definition` | `textDocument/typeDefinition` |
+| `find_references` | `textDocument/references` |
+| `find_implementations` | `textDocument/implementation` |
+| `get_incoming_calls` | Prepare call hierarchy, then direct incoming calls |
+| `get_outgoing_calls` | Prepare call hierarchy, then direct outgoing calls |
+| `get_supertypes` | Prepare type hierarchy, then direct supertypes |
+| `get_subtypes` | Prepare type hierarchy, then direct subtypes |
+| `get_diagnostics` | Pull/push LSP diagnostics |
+| `rename_symbol` | Preview / apply LSP `textDocument/rename` |
+| `format_document` | Preview / apply document or range formatting |
+| `get_code_actions` | List LSP code actions |
+| `apply_code_action` | Apply one selected, validated WorkspaceEdit-backed LSP action |
 
-A **target** identifies one symbol or position, in exactly one of three forms: a `symbol_id` returned by an earlier call, a human-readable `symbol_path` such as `"UserService/createUser"` (optionally scoped to one file with `path`; see [Finding a symbol by name](#finding-a-symbol-by-name) below), or `path` together with `line` and `column`.
+`list_workspace_symbols(limit=100)` yields `next_cursor` when another page exists. Continue until absent; it does **not** require a query and remains available for full workspace enumeration. Workspace scans omit ignored dependency and generated directories and surface incomplete searches rather than silently returning false negatives.
 
-### High-level semantic workflows
+All position-target tools also accept a `symbol_path`; if you do not know its exact shape, inspect `get_document_symbols` first. Paths are based on the language server's own document symbol tree. Ambiguous names return `AMBIGUOUS_SYMBOL` with candidates instead of guessing. When a pathless search cannot finish inside the bounded workspace traversal, it reports `INCOMPLETE_SEARCH`; supply `path` to narrow the request.
 
-| Tool | Purpose | Required input |
-| --- | --- | --- |
-| `find_symbol` | Resolve one symbol by `symbol_path` without knowing its file | `symbol_path` |
-| `get_symbol_outline` | Structure without source text | target or `path` |
-| `get_symbol_context` | Source plus selected callers/callees/references/implementations | target |
-| `get_semantic_slice` | Byte-bounded semantic source neighborhood | target |
-| `impact_analysis` | Refactor blast radius and affected files | target |
-| `verify_change` | Semantic Change Guard for the current Git diff | None (`base` defaults to `HEAD`) |
-| `rename_symbol` | Preview/apply an LSP semantic rename | target, `new_name` |
-| `format_document` | Preview/apply document or range formatting | `path` |
-| `get_code_actions` | List LSP code actions without writing | `path`, `line`, `column` |
-| `apply_code_action` | Apply one WorkspaceEdit-backed action | `path`, `line`, `column`, `action_id` |
-| `get_diagnostics` | LSP diagnostics for a file/cached workspace state | `path` when file-specific |
-
-### Discovery and direct inspection
-
-| Tool | Purpose | Required input |
-| --- | --- | --- |
-| `search_symbols` | Search workspace symbols by name | `query`, `language` |
-| `list_workspace_symbols` | Enumerate all configured source symbols page by page | None |
-| `get_document_symbols` | Hierarchical symbols for one file | `path` |
-| `get_symbol` | Reuse an acquired `symbol_id` and optional source | `symbol_id` |
-| `get_hover` | LSP hover/type information for an exact target | target |
-
-### Precise LSP relationship primitives
-
-These stay public intentionally. Use them when one exact LSP relation is preferable to an aggregate high-level result.
-
-| Tool | Purpose | Required input |
-| --- | --- | --- |
-| `get_definition` | Definition locations | target |
-| `find_references` | Reference locations | target |
-| `find_implementations` | Implementation locations | target |
-| `get_type_definition` | Type-definition locations | target |
-| `get_declaration` | Declaration locations | target |
-| `get_incoming_calls` | Direct callers | target |
-| `get_outgoing_calls` | Direct callees | target |
-| `get_supertypes` | Direct supertypes | target |
-| `get_subtypes` | Direct subtypes | target |
-
-### Setup
-
-| Tool | Purpose | Required input |
-| --- | --- | --- |
-| `onboard` | Detect projects and generate `.simple-lsp.yaml` | None |
-
-`search_symbols` requires a non-empty name query. **`list_workspace_symbols` really lists the workspace**, without a query, by fetching `textDocument/documentSymbol` for each source file. Use `get_document_symbols` for just one file.
-
-To enumerate, call `list_workspace_symbols(limit=100)` and repeat with `cursor=<next_cursor>` until `next_cursor` is absent. Optional `language` and `kinds` filter the results; without `language`, all configured language profiles are included. Each call visits at most 32 files and returns at most 100 symbols, including nested symbols, with paths, ranges, and reusable `symbol_id`/`symbol_path` values. `meta.complete=false` and `meta.truncated=true` mean more pages remain, not a failed search. A page may contain no symbols when files have none; continue while `next_cursor` exists. `.git`, dependency, cache, and generated-output directories (for example `node_modules`, `dist`, `build`) and symlinks are excluded. This is a live traversal, not a snapshot: restart without a cursor if the workspace changes during pagination. Errors are returned explicitly rather than silently skipping failed LSP requests.
-
-### Finding a symbol by name
-
-`find_symbol`, `get_symbol_outline`, `get_symbol_context`, and every target-based tool above accept `symbol_path`: the names of a symbol and its enclosing symbols, joined by `/`, such as `UserService/createUser`. A trailing portion alone (`createUser`) is accepted when it is unambiguous anywhere in the searched file or workspace; prefix the path with `/` to require an exact match instead. Escape a literal `/` inside a name as `%2F`.
-
-A `symbol_path` reflects whatever shape the language server's own `documentSymbol` response has — it is never inferred or restructured. Methods commonly nest under their type (`UserService/createUser`), but some language servers report them as one flat, already-qualified name instead (for example Go's `gopls`, which reports `(*UserService).CreateUser` as a single segment). Call `get_symbol_outline` or `get_document_symbols` first if you are unsure which form a given server uses.
-
-When no file is specified, the server searches every configured LSP instance for the selected language and inspects every server-returned candidate up to a 128-file safety limit. If the lookup cannot finish, it raises `INCOMPLETE_SEARCH` rather than reporting a false unique result or false not-found. Supply `path` to narrow an incomplete search. Completeness refers to the LSP-returned candidate set: language-server indexes may themselves omit unindexed files.
-
-When a `symbol_path` matches more than one symbol, `find_symbol`, `get_symbol_outline`, and `get_symbol_context` return `{"ambiguous": true, "candidates": [...]}` instead of failing — each candidate carries its own `symbol_id`, so the next call can target it directly. The same ambiguity on any other tool is an `AMBIGUOUS_SYMBOL` error listing candidates in its message, since those tools' output shape has nowhere else to put them.
-
-### Semantic Change Guard
-
-`verify_change` is the post-edit guard for coding agents. With no arguments it compares the current Git working tree to `HEAD`; `base` can select another commit. It is read-only.
-
-The guard:
-
-1. reads staged, unstaged, and untracked working-tree changes,
-2. maps changed lines to the innermost current LSP symbols,
-3. reuses semantic impact/context to find callers, references, implementations, and affected files,
-4. lists related test files,
-5. checks LSP error diagnostics on changed files and declaration-affected files,
-6. when current errors exist, materializes the committed `base` into a bounded temporary snapshot and asks an isolated LSP engine whether each error already existed,
-7. for newly introduced diagnostics, asks the current language server for applicable WorkspaceEdit-backed code actions and returns reusable `apply_code_action` inputs, and
-8. returns `PASS`, `WARNING`, or `FAIL` with structured findings.
-
-A declaration change that reaches an untouched non-test file is a warning by itself. An LSP error becomes `FAIL` only when it is **new relative to the committed base**. Pre-existing errors remain visible in `diagnostics` and `diagnostic_diff.unchanged_count`, but do not make an unrelated change fail. If the base snapshot cannot be verified safely, current errors are downgraded to warnings instead of being presented as proven regressions. `repair_candidates` are suggestions only: `verify_change` remains read-only, and the agent must explicitly call `apply_code_action` to write a selected LSP fix.
-
-The base snapshot is created outside the worktree with `git archive`; it never changes Git metadata or source files. Extraction is bounded to 20,000 files / 512 MiB, rejects links and path escapes, and uses the same generated/cache-directory exclusions as workspace traversal. A clean current diagnostic set skips the baseline LSP entirely, so the common successful path does not pay for a second language-server startup.
-
-This still does **not** prove business correctness and does not yet build a complete before/after semantic graph for the base commit. The current semantic impact graph comes from the working tree; the base snapshot is used for diagnostic regression comparison. Future relation-graph comparison can strengthen change classification without changing the public `verify_change` API.
+**Removed in the lean interface:** `find_symbol`, `get_symbol_outline`, `get_symbol_context`, `get_semantic_slice`, `impact_analysis`, `verify_change`, `get_symbol`, and the in-band `onboard` configurator. Ordinary file tools / Git and the agent compose any needed workflow. Client installation still uses `simple-lsp-mcp setup` / `doctor`; no MCP-only setup tool is required.
 
 ### LSP-backed editing
 
@@ -414,7 +323,7 @@ Before any write, every edit is validated: paths must stay inside the running wo
 
 Run `go test ./...` and `go test -race ./...` before contributing. CI also runs integration tests against actual Go, TypeScript, and Python language servers.
 
-For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and follows cross-file calls with `get_semantic_slice` on both sides. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
+For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and allows separate reference and call-hierarchy lookups. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
 
 See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify semantic navigation and LSP-computed edits; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
 

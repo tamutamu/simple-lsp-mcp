@@ -94,7 +94,7 @@ func runDoctor(args []string, out io.Writer) error {
 		report.Issues = append(report.Issues, "invalid configuration: "+err.Error())
 	} else {
 		if len(runtime.Servers) == 0 {
-			report.Issues = append(report.Issues, "no supported language project detected; add a supported project marker or use onboard to configure manually")
+			report.Issues = append(report.Issues, "no supported language project detected; add a supported project marker or write .simple-lsp.yaml explicitly")
 		}
 		profiles := make([]string, 0, len(runtime.Servers))
 		for profile := range runtime.Servers {

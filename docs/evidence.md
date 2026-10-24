@@ -1,12 +1,15 @@
 # Evidence
 
-This page separates what `simple-lsp-mcp` can currently prove from what is still a hypothesis. The goal is to make performance and usefulness claims reproducible rather than promotional.
+> **Version note (2026-10-24):** All composition-heavy tools and the 26-tool catalog described in earlier dated sections below are **historical evidence for v0.10.2**, not the current public API. The subsequent lean 18-tool bridge removed those experimental orchestration tools. The original measured results remain unchanged for reproducibility.
 
-## Proven in automated tests
+
+This page preserves **historical, version-specific** tests and experiments, including tools removed after v0.10.2. For the current lean release, the core suite tests direct Go/TypeScript/Python LSP operations, workspace enumeration, symbol-path targeting, and preview/apply edits. Historic sections are not current API documentation.
+
+## Historical automated-test evidence (v0.10.2 and earlier)
 
 ### Real language servers, not protocol mocks
 
-CI launches `gopls`, TypeScript Language Server, and Pyright as real subprocesses. The integration suite verifies document symbols, symbol lookup, stale-symbol handling, monorepo search, semantic slices, workspace enumeration, semantic rename, formatting, and WorkspaceEdit-backed code actions.
+At the time of the original tests, CI launched `gopls`, TypeScript Language Server, and Pyright as real subprocesses to verify both the former composites and precise LSP tools. Current CI retains tests for document symbols, monorepo search, workspace enumeration, direct LSP relations, rename, formatting, and WorkspaceEdit-backed code actions.
 
 ### One MCP engine can serve a mixed React + FastAPI monorepo
 

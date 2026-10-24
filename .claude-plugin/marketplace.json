@@ -10,7 +10,7 @@
       "name": "simple-lsp-mcp",
       "source": "./",
       "description": "Precise, bounded semantic code context for Claude Code, Codex, and other MCP clients via local LSP servers.",
-      "version": "0.10.2",
+      "version": "0.11.0",
       "author": {
         "name": "tamutamu",
         "url": "https://github.com/tamutamu"

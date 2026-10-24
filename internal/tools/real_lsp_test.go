@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -70,19 +69,6 @@ func TestRealLanguageServers(t *testing.T) {
 			if _, err := engine.DocumentSymbols(ctx, map[string]any{"path": tc.filename}); err != nil {
 				t.Fatalf("real documentSymbol: %v", err)
 			}
-			hit, err := engine.FindSymbol(ctx, map[string]any{"path": tc.filename, "symbol_path": "Add"})
-			if err != nil {
-				t.Fatalf("real find_symbol: %v", err)
-			}
-			symbol, ok := hit["symbol"].(map[string]any)
-			if !ok {
-				t.Fatalf("missing unique symbol: %#v", hit)
-			}
-			id, _ := symbol["symbol_id"].(string)
-			src, _ := symbol["source"].(string)
-			if id == "" || !strings.Contains(src, tc.original) {
-				t.Fatalf("symbol source = %#v", symbol)
-			}
 			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{})
 			if err != nil {
 				t.Fatalf("real workspace enumeration: %v", err)
@@ -100,21 +86,7 @@ func TestRealLanguageServers(t *testing.T) {
 			if !foundAdd {
 				t.Fatalf("workspace enumeration missed Add: %#v", listed)
 			}
-			modified := strings.Replace(tc.source, tc.original, tc.changed, 1)
-			if err := os.WriteFile(filepath.Join(root, tc.filename), []byte(modified), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := engine.GetSymbol(ctx, map[string]any{"symbol_id": id}); err == nil {
-				t.Fatal("stale symbol accepted after source change")
-			}
-			updated, err := engine.FindSymbol(ctx, map[string]any{"path": tc.filename, "symbol_path": "Add"})
-			if err != nil {
-				t.Fatalf("real symbol lookup after edit: %v", err)
-			}
-			updatedSymbol, ok := updated["symbol"].(map[string]any)
-			if !ok || !strings.Contains(updatedSymbol["source"].(string), tc.changed) {
-				t.Fatalf("updated symbol = %#v", updated)
-			}
+
 		})
 	}
 }
@@ -153,25 +125,10 @@ func TestRealGoMonorepoSearchesEveryServer(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	var found map[string]any
-	for ctx.Err() == nil {
-		found, err = e.FindSymbol(ctx, map[string]any{"symbol_path": "AlphaB", "language": "go"})
-		if err == nil {
-			break
+	for _, path := range []string{"apps/a/a.go", "apps/b/b.go"} {
+		if _, err := e.DocumentSymbols(ctx, map[string]any{"path": path}); err != nil {
+			t.Fatalf("monorepo document symbols %s: %v", path, err)
 		}
-		// gopls may need time to finish indexing both workspaces.
-		if !strings.Contains(err.Error(), "SYMBOL_NOT_FOUND") {
-			t.Fatalf("monorepo lookup: %v", err)
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatalf("monorepo search did not index second workspace: %v", err)
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	symbol, ok := found["symbol"].(map[string]any)
-	if !ok || symbol["path"] != "apps/b/b.go" {
-		t.Fatalf("wrong monorepo symbol: %#v", found)
 	}
 	// The low-level workspace tool must aggregate every configured server too.
 	workspaceResult, err := e.SearchSymbols(ctx, map[string]any{"language": "go", "query": "AlphaB"})
@@ -195,75 +152,6 @@ func TestRealGoMonorepoSearchesEveryServer(t *testing.T) {
 
 // TestRealGoSemanticSlice validates semantic context content rather than only
 // successful LSP initialization. This is a deterministic offline quality gate.
-func TestRealGoSemanticSlice(t *testing.T) {
-	if os.Getenv("SIMPLE_LSP_REAL_LSP") != "1" && os.Getenv("SIMPLE_LSP_REAL_LSP") != "go" {
-		t.Skip("requires real gopls")
-	}
-	if _, err := exec.LookPath("gopls"); err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	files := map[string]string{
-		"go.mod":          "module example.com/semantics\n\ngo 1.26.0\n",
-		"service.go":      "package semantics\nfunc Add(a, b int) int { return a+b }\nfunc Twice(v int) int { return Add(v,v) }\n",
-		"service_test.go": "package semantics\nimport \"testing\"\nfunc TestTwice(t *testing.T) { if Twice(2) != 4 { t.Fatal(\"bad\") } }\n",
-	}
-	for path, content := range files {
-		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	ws, err := workspace.Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := New(ws, config.Runtime{Workspace: root, MaxResults: 100, RequestTimeout: 30 * time.Second, Servers: map[string][]config.Server{
-		"go": {{Command: "gopls", Directory: "."}},
-	}})
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		e.Sessions.Shutdown(ctx)
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	if _, err := e.DocumentSymbols(ctx, map[string]any{"path": "service_test.go"}); err != nil {
-		t.Fatalf("test file document symbols: %v", err)
-	}
-	slice, err := e.SemanticSlice(ctx, map[string]any{"path": "service.go", "symbol_path": "Twice", "max_bytes": 24576, "depth": 2})
-	if err != nil {
-		t.Fatalf("semantic slice: %v", err)
-	}
-	rootSymbol, ok := slice["root"].(map[string]any)
-	if !ok || rootSymbol["name"] != "Twice" || !strings.Contains(rootSymbol["source"].(string), "Add(v,v)") {
-		t.Fatalf("root source was not recovered: %#v", slice)
-	}
-	deps, ok := slice["dependencies"].([]any)
-	if !ok {
-		t.Fatalf("dependencies: %#v", slice)
-	}
-	foundAdd := false
-	for _, raw := range deps {
-		dep, ok := raw.(map[string]any)
-		if ok && dep["name"] == "Add" && strings.Contains(dep["source"].(string), "a+b") {
-			foundAdd = true
-		}
-	}
-	if !foundAdd {
-		t.Fatalf("semantic slice omitted callee source: %#v", slice)
-	}
-	if got := encodedSize(slice); got > 24576 {
-		t.Fatalf("JSON response size %d exceeded max_bytes", got)
-	}
-	for _, raw := range slice["related_tests"].([]any) {
-		candidate := raw.(map[string]any)
-		if candidate["path"] == "service_test.go" {
-			return
-		}
-	}
-	t.Fatalf("semantic slice omitted reference-backed test file: %#v", slice)
-}
-
 // TestRealWorkspaceEnumeration verifies that listing works without a name query,
 // includes multiple module roots, and resumes after a symbol-level page break.
 func TestRealWorkspaceEnumeration(t *testing.T) {
@@ -334,9 +222,6 @@ func TestRealWorkspaceEnumeration(t *testing.T) {
 				t.Fatalf("repeated symbol on subsequent page: %s", symbol.Name)
 			}
 			seen[symbol.Name] = symbol.Path
-			if _, err := e.GetSymbol(ctx, map[string]any{"symbol_id": symbol.SymbolID}); err != nil {
-				t.Fatalf("listed symbol cannot be retrieved: %v", err)
-			}
 		}
 		next, more := page["next_cursor"].(string)
 		meta := page["meta"].(core.Meta)
@@ -428,43 +313,12 @@ func TestRealReactFastAPIMonorepoExample(t *testing.T) {
 	defer cancel()
 
 	tsPath := "apps/web/src/components/UserList.tsx"
-	// Agent-facing discovery must work before the caller knows a path. tsserver
-	// and Pyright can have an empty/uninitialized workspace-symbol index here.
-	for _, tc := range []struct {
-		language, symbol, wantPath string
-	}{
-		{"typescript", "loadUsers", tsPath},
-		{"python", "list_users", "apps/api/app/routes/users.py"},
-	} {
-		found, err := e.FindSymbol(ctx, map[string]any{"language": tc.language, "symbol_path": tc.symbol})
-		if err != nil {
-			t.Fatalf("pathless %s symbol discovery: %v", tc.language, err)
-		}
-		symbol, _ := found["symbol"].(map[string]any)
-		if symbol["path"] != tc.wantPath {
-			t.Fatalf("pathless %s discovery = %#v", tc.language, found)
-		}
-	}
-
-	tsFound, err := e.FindSymbol(ctx, map[string]any{"path": tsPath, "symbol_path": "loadUsers"})
-	if err != nil {
-		t.Fatalf("TypeScript symbol lookup: %v", err)
-	}
-	tsSymbol, ok := tsFound["symbol"].(map[string]any)
-	if !ok || tsSymbol["language"] != "typescriptreact" || !strings.Contains(tsSymbol["source"].(string), "fetchUsers(apiBase)") {
-		t.Fatalf("wrong TypeScript symbol: %#v", tsFound)
-	}
-
 	pyPath := "apps/api/app/routes/users.py"
-	pyFound, err := e.FindSymbol(ctx, map[string]any{"path": pyPath, "symbol_path": "list_users"})
-	if err != nil {
-		t.Fatalf("Python symbol lookup: %v", err)
+	for _, path := range []string{tsPath, pyPath} {
+		if _, err := e.DocumentSymbols(ctx, map[string]any{"path": path}); err != nil {
+			t.Fatalf("document symbols %s: %v", path, err)
+		}
 	}
-	pySymbol, ok := pyFound["symbol"].(map[string]any)
-	if !ok || pySymbol["language"] != "python" || !strings.Contains(pySymbol["source"].(string), "get_users()") {
-		t.Fatalf("wrong Python symbol: %#v", pyFound)
-	}
-
 	listed, err := e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 200})
 	if err != nil {
 		t.Fatalf("mixed-language workspace enumeration: %v", err)
@@ -488,29 +342,4 @@ func TestRealReactFastAPIMonorepoExample(t *testing.T) {
 		t.Fatalf("one workspace listing did not cover both projects: languages=%v symbols=%#v", languages, symbols)
 	}
 
-	for _, tc := range []struct {
-		name, path, symbol, dependency string
-	}{
-		{"typescript", tsPath, "loadUsers", "fetchUsers"},
-		{"python", pyPath, "list_users", "get_users"},
-	} {
-		t.Run(tc.name+"_semantic_slice", func(t *testing.T) {
-			slice, err := e.SemanticSlice(ctx, map[string]any{"path": tc.path, "symbol_path": tc.symbol, "depth": 1, "max_bytes": 24576})
-			if err != nil {
-				t.Fatalf("semantic slice: %v", err)
-			}
-			rootSymbol, ok := slice["root"].(map[string]any)
-			if !ok || rootSymbol["name"] != tc.symbol {
-				t.Fatalf("wrong semantic root: %#v", slice)
-			}
-			deps, _ := slice["dependencies"].([]any)
-			for _, raw := range deps {
-				dep, _ := raw.(map[string]any)
-				if dep["name"] == tc.dependency && strings.TrimSpace(dep["source"].(string)) != "" {
-					return
-				}
-			}
-			t.Fatalf("semantic slice did not follow %s -> %s across files: %#v", tc.symbol, tc.dependency, slice)
-		})
-	}
 }

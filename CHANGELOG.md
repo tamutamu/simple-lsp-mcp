@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-24
+
+### Changed
+
+- Replace the 26-tool aggregate MCP surface with **18 focused LSP primitives**; agents now choose individual semantic queries without mandatory workflows. This removes eight publicly exposed tools: `find_symbol`, `get_symbol_outline`, `get_symbol_context`, `get_semantic_slice`, `impact_analysis`, `verify_change`, `get_symbol`, and `onboard`.
+- Delete the unused composite impact/slice/verification implementations and Git baseline/diff helper subsystem; preserve workspace-wide symbol listing, symbol-path and symbol-id targets, and LSP rename, formatting, code actions and diagnostics.
+- Update Claude/Codex project instructions, MCP server instructions, setup skill, and current README to avoid unnecessary forced calls. Historic A/B benchmark data remain explicitly labeled as the old 26-tool version, not a measurement of this lean variant.
+
 ## [0.10.2] - 2026-10-24
 
 ### Added
