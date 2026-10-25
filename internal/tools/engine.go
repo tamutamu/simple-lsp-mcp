@@ -116,6 +116,10 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 
 // DocumentSymbols returns hierarchical symbols when supported by the server.
 func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
+	detail := stringVal(in, "detail")
+	if detail != "" && detail != "outline" && detail != "full" {
+		return nil, core.NewError(core.InvalidArgument, "detail must be outline or full")
+	}
 	path := stringVal(in, "path")
 	p, s, d, err := e.document(ctx, path, stringVal(in, "language"))
 	if err != nil {
@@ -127,7 +131,11 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 	}
 	var tree []protocol.DocumentSymbol
 	if json.Unmarshal(raw, &tree) == nil && tree != nil {
-		return map[string]any{"symbols": e.documentTree(p, s, d, tree)}, nil
+		symbols := e.documentTree(p, s, d, tree)
+		if detail == "full" {
+			return map[string]any{"symbols": symbols}, nil
+		}
+		return map[string]any{"path": path, "symbols": outlineDocumentSymbols(symbols)}, nil
 	}
 	var flat []protocol.SymbolInformation
 	if err := json.Unmarshal(raw, &flat); err != nil {
@@ -139,7 +147,10 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 			out = append(out, x)
 		}
 	}
-	return map[string]any{"symbols": out}, nil
+	if detail == "full" {
+		return map[string]any{"symbols": out}, nil
+	}
+	return map[string]any{"path": path, "symbols": outlineFlatSymbols(out)}, nil
 }
 
 // requestDocumentSymbolTree fetches the raw textDocument/documentSymbol

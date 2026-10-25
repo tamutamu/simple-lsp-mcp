@@ -77,7 +77,7 @@ func definitions() []definition {
 		{"list_workspace_symbols", "Enumerate configured source symbols page by page; follow next_cursor until absent.", objSchema(props("language", "kinds", "limit", "cursor")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ListWorkspaceSymbols(c, i)
 		}},
-		{"get_document_symbols", "Get the hierarchical LSP symbol structure for one source file.", objSchema(props("path", "language"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_document_symbols", "Get a concise source-file outline by default (top-level symbols and nested declarations, excluding local variables). detail=full returns all LSP symbols and exact ranges.", objSchema(props("path", "language", "detail"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -136,6 +136,7 @@ func allProperties() map[string]any {
 		"kinds":                    describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
+		"detail":                   describe(enumStringSchema("outline", "full"), "Default outline omits local variables and repeated ranges; full returns complete LSP document symbols."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Return concise navigable `get_document_symbols` outlines by default; `detail=full` preserves the complete previous output including local variables and full ranges. Retain `symbol_id` for semantic follow-up. No extra public MCP tools.
+
+### Evidence
+
+- Measured 196,189 of 225,177 bytes (87%) of successful MCP tool text output in the 36-session Codex FastAPI study came from document-symbol dumps. On a fresh Pyright request the default output dropped from 9,800 to 611 bytes (93.8%); TypeScript from 4,733 to 731 bytes (84.6%). This is **not** a coding-agent productivity measurement.
+
 ### Fixed
 
 - Position-based `find_references` and incoming hierarchy requests now reuse the LSP's read-only rename preparation to identify the symbol before bounded project warm-up, avoiding incomplete Python/TypeScript cross-file results on the first query.

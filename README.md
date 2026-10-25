@@ -48,6 +48,8 @@ We compared **Claude Code with and without the previous 26-tool simple-lsp-mcp v
 
 **2026-10-25: real Codex A/B on the lean 18-tool build.** Six pinned FastAPI tasks × three runs × two conditions (**36 accepted solutions / 36 attempts**) with Codex CLI 0.147.0, gpt-5.6-sol, and a shared conditional mandatory-MCP `AGENTS.md`: adding Simple LSP did **not** improve focused grader acceptance (**18/18 in both arms**). Mean duration was **66.08 s without MCP vs 70.01 s with MCP (+5.95%)**; average reported input tokens were **307,843 vs 477,106 (+55.0%)**. The agent made 48 MCP calls, of which **11 `rename_symbol` calls were cancelled by Codex** (including read-only previews), and one run did not connect to MCP. This is not evidence of a general benefit or a significant slowdown beyond these tasks. The [complete measured report](docs/benchmarks/fastapi-codex-lean-2026-10-25.md), [36-row data](docs/benchmarks/fastapi-codex-lean-2026-10-25.csv) and [reproducible runner](docs/benchmarks/run_fastapi_codex_ab.py) are published; the rename approval issue is the first remediation priority.
 
+**MCP payload audit:** In the real Codex traces, `get_document_symbols` accounted for **87% of successful MCP response bytes**. The default response now returns a compact outline and preserves `detail="full"` for the complete tree. On representative FastAPI files, direct Pyright/TypeScript payloads decreased by **84–94%** with semantic symbol handles still usable. This is **not** an agent-task speedup claim; details and limits are in the [payload audit](docs/benchmarks/fastapi-codex-mcp-payload-audit-2026-10-25.md).
+
 **Lean bridge follow-up (direct LSP only):** A [three-pair test on the same FastAPI checkout](docs/benchmarks/fastapi-template-lean-direct-2026-10-24.md) confirmed that the 18-tool catalog is 29.6% smaller and that position-based Python reference searches now return **13** actual references at first request rather than **1** (a previously hidden incomplete result). This improvement needs about 163 ms for that initial reference request versus about 5 ms before the fix; the entire direct-tool sequence was about 6.6% slower. **It is a direct-tool test, not an agent A/B result.** The independent Codex coding-agent A/B result is reported immediately above.
 
 ### Design boundaries
@@ -290,7 +292,7 @@ Every tool returns structured data. Positions are **one-based**, paths workspace
 | --- | --- |
 | `search_symbols` | `workspace/symbol` name query (requires `query`, `language`) |
 | `list_workspace_symbols` | Paginated complete workspace traversal using document symbols (no query required) |
-| `get_document_symbols` | `textDocument/documentSymbol` for a file |
+| `get_document_symbols` | Concise file outline by default (top-level symbols, nested declarations and class members); `detail=full` returns the complete LSP tree |
 | `get_hover` | `textDocument/hover` for type and documentation |
 | `get_definition` | `textDocument/definition` |
 | `get_declaration` | `textDocument/declaration` |
@@ -306,6 +308,8 @@ Every tool returns structured data. Positions are **one-based**, paths workspace
 | `format_document` | Preview / apply document or range formatting |
 | `get_code_actions` | List LSP code actions |
 | `apply_code_action` | Apply one selected, validated WorkspaceEdit-backed LSP action |
+
+By default, `get_document_symbols(path="src/example.ts")` returns one file path and compact `name`, `kind`, one-based `line`, and `symbol_id` fields, with nested declarations and relevant class members. Function-local variables and duplicate ranges/path fields are omitted. Use `detail="full"` for the legacy complete symbol tree with exact ranges and all locals. Handles returned by the outline remain usable for LSP navigation. This is a tool-payload optimization, **not** evidence of faster coding agents.
 
 `list_workspace_symbols(limit=100)` yields `next_cursor` when another page exists. Continue until absent; it does **not** require a query and remains available for full workspace enumeration. Workspace scans omit ignored dependency and generated directories and surface incomplete searches rather than silently returning false negatives.
 
