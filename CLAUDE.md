@@ -2,6 +2,7 @@
 
 When the `simple-lsp` MCP server is connected, **you MUST use at least one of its actual LSP tools before editing source code**. First identify the file or symbol with regular file search if necessary, then call a focused LSP tool that contributes to the task:
 
+- For multiple **known** functions, pass a `targets` array (up to 8) to `inspect_symbol(view="edit")`; avoid separate reads of code already returned.
 - To discover structure, use `get_document_symbols`. To read an actual function or class implementation, use `inspect_symbol(view="source")` on its `symbol_id` or `symbol_path`; use `view="signature"` or `view="location"` when full code is not needed.
 - For changing declarations or public interfaces, use `find_references(relation_view="lines")` to see semantically exact usages with their source lines (and `find_implementations` if relevant).
 - For renaming a function, method, or type across files: prefer `rename_symbol` to generate a semantic preview and apply the LSP edit when valid.

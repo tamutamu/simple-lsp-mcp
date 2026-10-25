@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -98,5 +99,29 @@ func TestInspectEditViewUsesExactSymbolAndKeepsOriginalSource(t *testing.T) {
 		if view == "" {
 			t.Fatal("empty view")
 		}
+	}
+}
+
+func TestInspectBatchRejectsInvalidInputs(t *testing.T) {
+	var e Engine
+	for _, tc := range []struct {
+		name  string
+		input map[string]any
+	}{
+		{"empty", map[string]any{"targets": []any{}}},
+		{"too_many", map[string]any{"targets": make([]any, 9)}},
+		{"not_array", map[string]any{"targets": "bad"}},
+		{"not_target", map[string]any{"targets": []any{"bad"}}},
+		{"wrong_field", map[string]any{"targets": []any{map[string]any{"path": "x.go", "symbol_path": "foo", "view": "source"}}}},
+		{"duplicate", map[string]any{"targets": []any{map[string]any{"symbol_id": "x"}, map[string]any{"symbol_id": "x"}}}},
+		{"ambiguous_top_level", map[string]any{"path": "x.go", "targets": []any{map[string]any{"symbol_id": "x"}}}},
+		{"missing_identity", map[string]any{"targets": []any{map[string]any{"path": "x.go"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := e.InspectSymbol(context.Background(), tc.input)
+			if err == nil {
+				t.Fatal("expected invalid argument to be rejected")
+			}
+		})
 	}
 }

@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+### Coding-agent tool economy (2026-10-26)
+
+- Extend `inspect_symbol` with `targets` for 1–8 exact semantic symbols, returning a bounded array of code views with explicit errors. Preserve the original single-target response.
+- Add opt-in `--tool-profile coding`: 11 read-only everyday semantic tools; preserve 19 tools with default `--tool-profile full`. Advanced rename/refactoring and type-hierarchy operations require full.
+- Measured MCP catalog JSON shrank **20,319 → 11,507 B (−43.4%)**, but this does not yet establish a Codex token savings. Batching three symbol reads into one MCP request produced identical source and no significant warm-backend latency reduction.
+- [Audit and measurement method](docs/benchmarks/coding-profile-batch-2026-10-26.md).
 ## [Unreleased]
 
 ### Editing context

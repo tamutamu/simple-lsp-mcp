@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -17,10 +18,81 @@ const (
 	signatureMaxLines        = 12
 )
 
-// InspectSymbol returns exactly the information needed to inspect a semantic
+// InspectSymbol accepts one semantic target, or a small list of known targets.
+// The latter reduces agent/model turns for edits affecting multiple functions
+// while retaining exact LSP identity and per-target source boundaries.
+func (e *Engine) InspectSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
+	if items, present := in["targets"]; present {
+		return e.inspectBatch(ctx, in, items)
+	}
+	return e.inspectSingle(ctx, in)
+}
+
+func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any) (map[string]any, error) {
+	targets, ok := value.([]any)
+	if !ok || len(targets) < 1 || len(targets) > 8 {
+		return nil, core.NewError(core.InvalidArgument, "targets must be an array of 1 to 8 semantic targets")
+	}
+	for _, field := range []string{"symbol_id", "symbol_path", "path", "line", "column", "language"} {
+		if _, exists := in[field]; exists {
+			return nil, core.NewError(core.InvalidArgument, "targets cannot be combined with top-level target "+field)
+		}
+	}
+	// Validate the whole batch before any LSP request. No partial result is
+	// reported as success when one target is ambiguous, stale or malformed.
+	seen := make(map[string]bool)
+	for index, value := range targets {
+		target, ok := value.(map[string]any)
+		if !ok {
+			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d] must be an object", index))
+		}
+		for key := range target {
+			switch key {
+			case "symbol_id", "symbol_path", "path", "line", "column", "language":
+			default:
+				return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("unsupported field in targets[%d]: %s", index, key))
+			}
+		}
+		if err := targetOf(target).Validate(); err != nil {
+			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d]: %v", index, err))
+		}
+		key, _ := json.Marshal(target)
+		if seen[string(key)] {
+			return nil, core.NewError(core.InvalidArgument, "duplicate semantic target in batch")
+		}
+		seen[string(key)] = true
+	}
+	results := make([]map[string]any, 0, len(targets))
+	for index, value := range targets {
+		target := value.(map[string]any)
+		perItem := map[string]any{
+			"view":      stringVal(in, "view"),
+			"max_lines": intVal(in, "max_lines"),
+		}
+		for key, value := range target {
+			perItem[key] = value
+		}
+		result, err := e.inspectSingle(ctx, perItem)
+		if err != nil {
+			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d]: %v", index, err))
+		}
+		results = append(results, result)
+	}
+	out := map[string]any{"results": results}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, core.WithCause(core.InternalError, "could not encode batched symbol result", err)
+	}
+	if len(data) > 32*1024 {
+		return nil, core.NewError(core.InvalidArgument, "batched result exceeds 32 KiB; request fewer symbols or use view=signature")
+	}
+	return out, nil
+}
+
+// inspectSingle returns exactly the requested information for one LSP-verified
 // declaration. It never reads outside the workspace, changes files, or silently
 // claims that truncated source contains the whole declaration.
-func (e *Engine) InspectSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
+func (e *Engine) inspectSingle(ctx context.Context, in map[string]any) (map[string]any, error) {
 	view := stringVal(in, "view")
 	if view == "" {
 		view = "source"

@@ -162,3 +162,28 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 		}
 	}
 }
+
+func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
+	full := definitionsForProfile("full")
+	coding := definitionsForProfile("coding")
+	if len(full) != 19 || len(coding) != 11 {
+		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
+	}
+	for _, d := range coding {
+		switch d.name {
+		case "rename_symbol", "format_document", "get_code_actions", "apply_code_action":
+			t.Fatalf("writing tool exposed in opt-in read/navigation profile: %s", d.name)
+		}
+	}
+	catalog := make([]*mcp.Tool, 0, len(coding))
+	for _, d := range coding {
+		catalog = append(catalog, &mcp.Tool{Name: d.name, Description: d.description, InputSchema: d.schema, OutputSchema: objectSchema(), Annotations: toolAnnotations(d.name)})
+	}
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) >= 12*1024 {
+		t.Fatalf("coding catalog still too large: %d bytes", len(data))
+	}
+}

@@ -11,11 +11,18 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "Choose evidence by coding action. For literal text use rg. For a known declaration use inspect_symbol(path,symbol_path,view=source|signature|location) directly; do not fetch an outline first. For file structure use get_document_symbols; for ambiguous names search_symbols. find_references(relation_view=lines) returns exact usages with source lines; locations-only is the default. Do not invoke every tool or reread code already provided. rename_symbol/format_document preview first; apply writes. Run real tests: diagnostics are not tests."
+const serverInstructions = "Choose evidence by action. Use rg for literal text. inspect_symbol(view=edit) returns real source and context; targets[] fetches multiple known functions in one call. For structure use get_document_symbols; semantic uses via find_references(relation_view=lines). Do not invoke every tool or reread returned code. rename_symbol/format_document preview before apply; run real tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
+	return NewWithProfile(engine, version, "full")
+}
+
+// NewWithProfile preserves the full API by default. The opt-in "coding"
+// profile avoids sending irrelevant refactor/format/type-hierarchy schemas
+// on everyday search/read/edit jobs. The omitted tools remain in "full".
+func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
-	for _, d := range definitions() {
+	for _, d := range definitionsForProfile(profile) {
 		def := d
 		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: objectSchema(), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var in map[string]any
@@ -41,6 +48,32 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 		return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &closedWorld}
 	}
 	return &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &closedWorld}
+}
+
+// definitionsForProfile only filters the exposed schema. It never changes
+// LSP resolution, stored identities, or behavior of exposed operations.
+// All semantic refactors and advanced relationship tools stay accessible via
+// --tool-profile full.
+func definitionsForProfile(profile string) []definition {
+	all := definitions()
+	if profile != "coding" {
+		return all
+	}
+	allowed := map[string]bool{
+		"search_symbols": true, "list_workspace_symbols": true,
+		"get_document_symbols": true, "inspect_symbol": true,
+		"get_hover": true, "get_definition": true,
+		"find_references": true, "find_implementations": true,
+		"get_diagnostics": true, "get_incoming_calls": true,
+		"get_outgoing_calls": true,
+	}
+	out := make([]definition, 0, len(allowed))
+	for _, d := range all {
+		if allowed[d.name] {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // definition binds MCP metadata to an engine operation.
@@ -83,7 +116,7 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Read one LSP-identified symbol: source (default), edit context (view=edit includes decorators + referenced imports/module bindings), signature or location. All code comes from the current file; truncated output is explicit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Read real code/context/signature/location; targets[] batches up to 8 known symbols in one call.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
@@ -127,22 +160,28 @@ func objSchema(properties map[string]any, required ...string) map[string]any {
 // allProperties is the full catalogue of tool input properties, each documented once.
 func allProperties() map[string]any {
 	return map[string]any{
-		"query":                    describe(stringSchema(), "Non-empty symbol query."),
-		"cursor":                   describe(stringSchema(), "next_cursor from a prior workspace-symbol page."),
-		"path":                     describe(stringSchema(), "Workspace-relative file path."),
-		"symbol_id":                describe(stringSchema(), "Previously returned symbol_id."),
-		"symbol_path":              describe(stringSchema(), "Symbol path like UserService/createUser; a unique suffix is allowed, leading / requires exact, and path scopes the file."),
-		"line":                     describe(positiveIntegerSchema(), "One-based line."),
-		"column":                   describe(positiveIntegerSchema(), "One-based column."),
-		"limit":                    describe(positiveIntegerSchema(), "Maximum results."),
-		"language":                 describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; target tools infer it when possible."),
-		"kinds":                    describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
-		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
-		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
-		"detail":                   describe(enumStringSchema("compact", "outline", "full"), "List/search default compact: symbol name/kind/path/line/handle; document symbols default outline. full returns all LSP details."),
-		"view":                     describe(enumStringSchema("source", "signature", "location", "edit"), "source: declaration code; edit: code plus decorators/referenced imports/bindings; signature: header; location: range only."),
-		"relation_view":            describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
-		"max_lines":                describe(positiveIntegerSchema(), "Maximum source lines (default 120, maximum 500; source truncation is explicit)."),
+		"query":               describe(stringSchema(), "Non-empty symbol query."),
+		"cursor":              describe(stringSchema(), "next_cursor from a prior workspace-symbol page."),
+		"path":                describe(stringSchema(), "Workspace-relative file path."),
+		"symbol_id":           describe(stringSchema(), "Previously returned symbol_id."),
+		"symbol_path":         describe(stringSchema(), "Symbol path like UserService/createUser; a unique suffix is allowed, leading / requires exact, and path scopes the file."),
+		"line":                describe(positiveIntegerSchema(), "One-based line."),
+		"column":              describe(positiveIntegerSchema(), "One-based column."),
+		"limit":               describe(positiveIntegerSchema(), "Maximum results."),
+		"language":            describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; target tools infer it when possible."),
+		"kinds":               describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
+		"severities":          describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
+		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
+		"detail":              describe(enumStringSchema("compact", "outline", "full"), "compact (default), outline or full LSP details."),
+		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
+		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
+		"max_lines":           describe(positiveIntegerSchema(), "Source lines: default 120, max 500; reports truncation."),
+		"targets": describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 8,
+			"items": map[string]any{"type": "object", "properties": map[string]any{
+				"path": stringSchema(), "symbol_id": stringSchema(),
+				"symbol_path": stringSchema(), "line": positiveIntegerSchema(),
+				"column": positiveIntegerSchema(), "language": stringSchema(),
+			}}}, "Batch 1–8 targets sharing one view; no top-level target."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),

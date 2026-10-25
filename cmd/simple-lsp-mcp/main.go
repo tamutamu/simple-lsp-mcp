@@ -47,7 +47,7 @@ func main() {
 		}
 		return
 	}
-	var root, logLevel string
+	var root, logLevel, toolProfile string
 	var timeout, wait time.Duration
 	var max int
 	var showVersion, autoInstallLSP bool
@@ -55,6 +55,7 @@ func main() {
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
 	flag.StringVar(&logLevel, "log-level", "info", "debug|info|warn|error")
+	flag.StringVar(&toolProfile, "tool-profile", "full", "MCP tool surface: full (all 19), coding (11 daily navigation/inspection tools)")
 	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 180s with managed LSP)")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
 	flag.IntVar(&max, "max-results", 500, "maximum result count")
@@ -66,6 +67,10 @@ func main() {
 	if showVersion {
 		fmt.Printf("simple-lsp-mcp %s\n", ver)
 		return
+	}
+	if toolProfile != "full" && toolProfile != "coding" {
+		fmt.Fprintln(os.Stderr, "invalid --tool-profile: expected full or coding")
+		os.Exit(2)
 	}
 	if root == "" {
 		var err error
@@ -100,7 +105,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := mcpserver.New(engine, ver)
+	server := mcpserver.NewWithProfile(engine, ver, toolProfile)
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil {
 		slog.Error("mcp server stopped", "error", err)
 	}

@@ -100,6 +100,25 @@ func TestRealLanguageServers(t *testing.T) {
 					t.Fatalf("source missing implementation expression %s: %q", tc.original, code)
 				}
 			}
+			batched, err := engine.InspectSymbol(ctx, map[string]any{
+				"view": "edit",
+				"targets": []any{
+					map[string]any{"symbol_path": "Add", "path": tc.filename},
+					map[string]any{"symbol_path": "Twice", "path": tc.filename},
+				},
+			})
+			if err != nil {
+				t.Fatalf("real multi-target inspect_symbol: %v", err)
+			}
+			results, ok := batched["results"].([]map[string]any)
+			if !ok || len(results) != 2 {
+				t.Fatalf("unexpected batched result: %#v", batched)
+			}
+			if results[0]["name"] != "Add" || results[1]["name"] != "Twice" ||
+				!strings.Contains(results[0]["code"].(string), tc.original) ||
+				!strings.Contains(results[1]["code"].(string), "Add(") {
+				t.Fatalf("batch returned wrong symbols or source: %#v", batched)
+			}
 			refs, err := engine.Relationship(ctx, "find_references", "textDocument/references", "references",
 				map[string]any{"symbol_id": addID, "relation_view": "lines", "include_declaration": true})
 			if err != nil {

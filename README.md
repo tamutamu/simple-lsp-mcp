@@ -286,6 +286,15 @@ The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code t
 
 **Design reference:** [39 coding-agent actions mapped to required information and appropriate providers](docs/agent-coding-information-needs.md). The [action-first MCP tool and small Codex A/B report](docs/benchmarks/fastapi-codex-action-first-2026-10-25.md) includes direct wire-size checks and an independently graded two-task sample (4/4 passes); this preliminary sample is **not** evidence of universal productivity improvement. This is the source of truth for selecting LSP-derived information; file reading, Git, tests and judgment remain outside the MCP.
 
+## MCP tool profiles
+
+Default `--tool-profile full` exposes all **19** LSP operations. Opt-in `--tool-profile coding` exposes **11** everyday read-only search/navigation/inspection tools, including workspace-symbol enumeration, and omits rename, format, code actions, and advanced type hierarchy. Restart to change profiles. The full profile stays the default.
+
+Direct JSON-RPC measurement of `tools/list`: **20,319 bytes full vs 11,507 bytes coding (−43.4%)**. This is a schema-size reduction; lower model tokens are **not yet demonstrated**.
+
+When several exact functions are known, call `inspect_symbol(view="edit", targets=[{"path":"backend/app/api/routes/items.py","symbol_path":"read_items"},{"path":"backend/app/api/routes/users.py","symbol_path":"read_users"}])` for their actual source contexts in one call. Supports 1–8 targets, rejects ambiguous/duplicate results and results above 32 KiB. Single-symbol requests are unchanged. In the direct warm-language-server test, three calls took **12.37 ms** vs **12.75 ms** batched and produced **4,117 B** vs **4,133 B** of data. Thus batching saves client calls, **not** backend latency.
+
+[Measurements and limitations](docs/benchmarks/coding-profile-batch-2026-10-26.md).
 ## MCP tools (19 goal-oriented operations)
 
 Every tool returns structured data. Positions are **one-based**, paths workspace-relative. A target may be a `symbol_id` from another tool, a `symbol_path` such as `UserService/createUser` (optionally scoped with `path`), or a file `path` plus `line` and `column`. Use `search_symbols` / `get_document_symbols` to discover identifiers, then request **only the specific relation needed**. Tool calls are not mandatory.
