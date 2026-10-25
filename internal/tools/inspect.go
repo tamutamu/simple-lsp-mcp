@@ -25,8 +25,8 @@ func (e *Engine) InspectSymbol(ctx context.Context, in map[string]any) (map[stri
 	if view == "" {
 		view = "source"
 	}
-	if view != "source" && view != "signature" && view != "location" {
-		return nil, core.NewError(core.InvalidArgument, "view must be source, signature or location")
+	if view != "source" && view != "signature" && view != "location" && view != "edit" {
+		return nil, core.NewError(core.InvalidArgument, "view must be source, signature, location or edit")
 	}
 	maxLines := intVal(in, "max_lines")
 	if maxLines == 0 {
@@ -85,6 +85,25 @@ func (e *Engine) InspectSymbol(ctx context.Context, in map[string]any) (map[stri
 	lines, truncated, err := extractSymbolSource(d.Text, selected.Range, maxLines, maxSymbolSourceBytes, view == "signature")
 	if err != nil {
 		return nil, err
+	}
+	if view == "edit" {
+		// Keep function body plus necessary syntax *outside* the LSP range:
+		// Python route decorators, referenced module imports and assignments.
+		// These are current source slices, not synthesised code or claims of
+		// full dependency resolution.
+		context := selectEditContext(d.Text, selected.Range, lines, maxSymbolSourceBytes)
+		if context.Prefix != "" {
+			lines = context.Prefix + lines
+			result["code_start_line"] = selected.Range.Start.Line - strings.Count(context.Prefix, "\n")
+		}
+		if context.Imports != "" {
+			result["imports"] = context.Imports
+		}
+		if context.Bindings != "" {
+			result["module_bindings"] = context.Bindings
+		}
+		result["context_selection"] = "referenced-module-declarations"
+		truncated = truncated || context.Truncated
 	}
 	result["code"] = lines
 	result["meta"] = core.Meta{Complete: !truncated, Truncated: truncated}

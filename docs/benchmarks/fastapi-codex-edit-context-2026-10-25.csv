@@ -1,0 +1,13 @@
+version,case,mode,repeat,seconds,completed,graded,accepted,input_tokens,cached_tokens,output_tokens,reasoning_tokens,mcp_calls,valid_mcp_calls,command_calls,uncached_input_tokens
+initial-edit-context,access,baseline,1,47.93,True,True,True,228561,207360,1832,266,0,0,5,21201
+initial-edit-context,access,baseline,2,58.12,True,True,True,380180,357248,2526,401,0,0,10,22932
+initial-edit-context,access,mcp,1,57.29,True,True,True,327981,306688,2921,373,3,3,9,21293
+initial-edit-context,access,mcp,2,56.57,True,True,True,442099,411904,2314,446,4,4,6,30195
+initial-edit-context,paging,baseline,1,50.96,True,True,True,257301,240768,2431,415,0,0,6,16533
+initial-edit-context,paging,baseline,2,61.36,True,True,True,337079,318208,3236,604,0,0,12,18871
+initial-edit-context,paging,mcp,1,64.01,True,True,True,493206,449664,2961,522,2,2,11,43542
+initial-edit-context,paging,mcp,2,49.64,True,True,True,352333,331904,2504,520,2,2,8,20429
+referenced-binding-imports,access,baseline,1,54.73,True,True,True,366909,339584,2588,381,0,0,9,27325
+referenced-binding-imports,access,mcp,1,48.62,True,True,True,389827,364416,2434,421,3,3,7,25411
+referenced-binding-imports,paging,baseline,1,58.19,True,True,True,310733,287360,2804,525,0,0,8,23373
+referenced-binding-imports,paging,mcp,1,58.69,True,True,True,426923,387456,2610,419,2,2,9,39467

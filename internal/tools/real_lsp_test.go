@@ -81,7 +81,7 @@ func TestRealLanguageServers(t *testing.T) {
 			if addID == "" {
 				t.Fatalf("outline did not return navigable Add: %#v", documentOutline)
 			}
-			for _, view := range []string{"location", "signature", "source"} {
+			for _, view := range []string{"location", "signature", "source", "edit"} {
 				inspected, err := engine.InspectSymbol(ctx, map[string]any{"symbol_id": addID, "view": view})
 				if err != nil {
 					t.Fatalf("real inspect_symbol(%s): %v", view, err)
@@ -96,7 +96,7 @@ func TestRealLanguageServers(t *testing.T) {
 				if view != "location" && (!hasCode || !strings.Contains(code, "Add(")) {
 					t.Fatalf("%s did not return real declaration text: %#v", view, inspected)
 				}
-				if view == "source" && !strings.Contains(code, tc.original) {
+				if (view == "source" || view == "edit") && !strings.Contains(code, tc.original) {
 					t.Fatalf("source missing implementation expression %s: %q", tc.original, code)
 				}
 			}

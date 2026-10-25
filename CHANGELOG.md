@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Editing context
+
+- Add \`inspect_symbol(view=edit)\`: return precisely one semantically located source declaration with leading decorators and small, referenced current-module import/assignment context when present. Ordinary \`view=source|signature|location\` behavior stays intact; neither the whole file nor unrelated imports are dumped by default.
+- Declare source limits and lexical dependency-selection limits explicitly. Preserve exact LSP target identity; reuse current workspace snapshot; no external dependency files are read without request.
+- Test Python route decorators/multiline imports, module binding dependencies, TypeScript imports, scope isolation, UTF-8/bounds and real Go/Python/TypeScript LSP operations.
+- Benchmark against the same pinned FastAPI tasks with independent acceptance tests. Smaller tool outputs do **not** guarantee lower model token use or faster coding; see [evaluation](docs/benchmarks/fastapi-codex-edit-context-2026-10-25.md).
+
 ### Evidence
 
 - Verify the new output contracts on the pinned FastAPI template using real MCP requests: compact eight-symbol listing 1,649 B versus detailed 3,062 B (−46.1%); complete 14-location reference results remain consistent when actual source lines are requested.

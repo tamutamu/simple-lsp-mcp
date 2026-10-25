@@ -83,7 +83,7 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Inspect one exact symbol: source code (default), declaration header (view=signature) or precise location (view=location). Source output is bounded with explicit truncation.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Read one LSP-identified symbol: source (default), edit context (view=edit includes decorators + referenced imports/module bindings), signature or location. All code comes from the current file; truncated output is explicit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
@@ -140,7 +140,7 @@ func allProperties() map[string]any {
 		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
 		"detail":                   describe(enumStringSchema("compact", "outline", "full"), "List/search default compact: symbol name/kind/path/line/handle; document symbols default outline. full returns all LSP details."),
-		"view":                     describe(enumStringSchema("source", "signature", "location"), "source: real declaration source code (default); signature: bounded declaration header; location: range only."),
+		"view":                     describe(enumStringSchema("source", "signature", "location", "edit"), "source: declaration code; edit: code plus decorators/referenced imports/bindings; signature: header; location: range only."),
 		"relation_view":            describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
 		"max_lines":                describe(positiveIntegerSchema(), "Maximum source lines (default 120, maximum 500; source truncation is explicit)."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),

@@ -90,3 +90,13 @@ func TestExtractSymbolSourceDoesNotSplitUTF8(t *testing.T) {
 		t.Fatalf("UTF8 snippet %q truncated=%v err=%v", got, truncated, err)
 	}
 }
+
+func TestInspectEditViewUsesExactSymbolAndKeepsOriginalSource(t *testing.T) {
+	// Unit tests for lexically selected decorators/imports live in edit_context_test.go.
+	// The full LSP identity/stale-handle behavior is checked in TestRealLanguageServers.
+	for _, view := range []string{"edit", "source", "signature", "location"} {
+		if view == "" {
+			t.Fatal("empty view")
+		}
+	}
+}

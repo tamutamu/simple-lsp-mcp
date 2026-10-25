@@ -17,11 +17,11 @@
 | B03 | 探索 | 1ファイルの構造を知る | トップレベル/ネスト宣言 | LSP | get_document_symbols：小さなツリー |
 | B04 | 探索 | ワークスペース全シンボルを列挙 | ページ、名前、種類、パス、識別子 | LSP | list_workspace_symbols：ページング、完全性 |
 | C01 | 理解 | 参照地点から定義を特定 | 正確な宣言の位置 | LSP | get_definition / get_declaration / get_type_definition：パスと範囲 |
-| C02 | 理解 | 関数の実装内容を理解 | **実際の関数コード本文** | LSP＋ソース | inspect_symbol(view=source)：単一実装、上限、完全性 |
+| C02 | 理解 | 関数の実装内容を理解 | **実際の関数コード本文** | LSP＋ソース | inspect_symbol(view=source)：本文だけ。view=edit：本文＋必要なデコレータ・参照import・モジュール定義（元ソース、上限と完全性） |
 | C03 | 理解 | 引数・戻り値・公開APIを確認 | シグネチャ、型 | LSP＋ソース | inspect_symbol(view=signature) / get_hover |
 | C04 | 理解 | 編集位置だけ確定する | 宣言の正確な範囲 | LSP | inspect_symbol(view=location)：コード不要 |
 | C05 | 理解 | 式・変数の推論型を調べる | 型、最小限の説明 | LSP | get_hover：関係する型情報 |
-| C06 | 理解 | 制御フロー/例外/副作用を確認 | 該当関数本文と必要な隣接コード | LSP＋ソース | 対象の実装コード。足りなければ限定的なファイル読み込み |
+| C06 | 理解 | 制御フロー/例外/副作用を確認 | 該当関数本文と必要な隣接コード | LSP＋ソース | inspect_symbol(view=edit)のコードと近傍コンテキスト。動的依存や関連テストは通常の限定的ファイル読み込みで補う |
 | C07 | 理解 | 外部ライブラリのAPIを調べる | バージョン、公開仕様、例 | 通常 | 依存コード、ドキュメント |
 | C08 | 理解 | DB・スキーマ・設定を把握 | スキーマ、設定、クエリ、利用コード | 通常＋LSP | 実コードを中心に、型参照はLSP |
 | C09 | 理解 | 類似実装・既存パターンを探す | 似た処理の実コード | 通常 | rg と必要部分の読み取り |
@@ -53,7 +53,7 @@
 | エージェントの質問 | 推奨MCP | **デフォルトで必要な情報だけ** | 要求時だけ拡張 |
 |---|---|---|---|
 | このファイルに何がある？ | get_document_symbols | 共有path、名前、種類、行、ネスト、symbol_id | detail=full で全LSPノード |
-| この関数は何をしている？ | inspect_symbol | 実コード本文、ファイル、範囲、切捨て有無 | view=signature / location、max_lines |
+| この関数は何をしている？ | inspect_symbol | 実コード本文、ファイル、範囲、切捨て有無 | view=edit / signature / location、max_lines |
 | このAPIの宣言は？ | inspect_symbol | 宣言ヘッダと識別子 | view=signature |
 | この識別子はどこ？ | get_definition / get_declaration / get_type_definition / inspect_symbol | 正確なpath + range | source は特定シンボルにだけ要求 |
 | どこから参照される？ | find_references | path + range、完全性・件数 | relation_view=lines でソース行追加 |
@@ -86,3 +86,10 @@
 - `rename_symbol` のCodex承認キャンセル11件は別問題。成功した通常編集をLSPリネームの成果と数えない。
 
 重要な区別：**LSPの提供可能情報**と**コーディングエージェントが必要とする情報**は同義ではない。上の行動表と情報契約を変更の起点とする。
+
+## 5. 編集文脈の追加検証（2026-10-25）
+
+- MCP実応答で \`inspect_symbol(view=edit)\` を検証した。FastAPIの \`read_items\` は本体と \`@router.get\` デコレータ、\`router = APIRouter(...)\` とそのimportなどを合計1,763バイトのJSONで返す。単一の実装では \`get_user_by_email\` が594バイト、TSの \`ItemsTable\` が524バイト。
+- 参照識別子に基づいて、**同一ファイルの実際のimport文と単純なモジュール代入文だけ**を選ぶ。輸入定義の実行時条件、動的import、遠隔依存、複数ファイルの制御フローまで完全に解析したわけではない。完全性を偽らない。
+- 必要な関連テストは引き続きテストファイルから取得する。MCPで独自のテスト実行環境やGit操作を重複実装しない。
+- [Codexの独立採点つき再評価](benchmarks/fastapi-codex-edit-context-2026-10-25.md)では返却テキストの削減を確認したが、入力トークンと作業時間は改善していない。MCP利用のみを成功条件としない。
