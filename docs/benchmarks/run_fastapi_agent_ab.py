@@ -7,6 +7,7 @@ prompts are held out from the agent worktrees. Never publish raw agent traces.
 from __future__ import annotations
 import argparse
 import csv
+import hashlib
 import json
 import os
 import select
@@ -23,12 +24,11 @@ REPO = Path(__file__).resolve().parents[2]
 TASKS = json.loads((REPO / "docs/benchmarks/fastapi-template-tasks.json").read_text())
 GRADER = REPO / "docs/benchmarks/fastapi-template-grader.py"
 PINNED = "b1125d8839482cb7bbae603ddc6d0081bf87532e"
-POLICY = (
-    "# Identical agent guidance in both conditions\n"
-    "Select source-reading, text search, editing, and semantic tools only as "
-    "needed. No tool is mandatory. Use tests to establish correctness. "
-    "Do not modify project instructions or install new dependencies.\n"
-)
+# Copy the exact same checked-in CLAUDE.md into baseline and treatment.
+# If the MCP is connected, this file REQUIRES an actual semantic LSP tool call.
+# If it is absent, the exact same file tells Claude to proceed normally.
+POLICY = (REPO / "CLAUDE.md").read_text()
+
 SUFFIX = (
     "Work only on this pinned official FastAPI template checkout. "
     "No PostgreSQL is available to the agent. Do not edit generated clients. "
@@ -103,7 +103,16 @@ def execute_trial(args, case, mode, rep):
     directory = args.output / "runs" / (case + "-" + mode + "-" + str(rep))
     result_file = directory / "result.json"
     if args.resume and result_file.exists():
-        return json.loads(result_file.read_text())
+        existing = json.loads(result_file.read_text())
+        if existing["completed"] or not args.retry_incomplete:
+            return existing
+        # Preserve evidence of quota failures and partial changes; never repeat
+        # successful agent work or overwrite a previous trace.
+        archived = args.output / "incomplete-attempts" / directory.name
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        if archived.exists():
+            raise RuntimeError("Archived failed attempt already exists: " + str(archived))
+        directory.rename(archived)
     if directory.exists():
         raise RuntimeError("Existing incomplete trial: " + str(directory))
     directory.mkdir(parents=True)
@@ -159,8 +168,12 @@ def execute_trial(args, case, mode, rep):
         "exit_code": exitcode, "completed": bool(final) and exitcode == 0
                      and not final.get("is_error"),
         "cost_usd": final.get("total_cost_usd"), "turns": final.get("num_turns"),
+        "api_error_status": final.get("api_error_status"),
+        "terminal_reason": final.get("terminal_reason"),
         "tool_calls": len(tools),
         "mcp_calls": sum(str(tool).startswith("mcp__simple-lsp__") for tool in tools),
+        "mcp_used_as_required": mode != "mcp" or any(
+            str(tool).startswith("mcp__simple-lsp__") for tool in tools),
         "native_lsp_calls": tools.count("LSP"),
         "graded": False, "accepted": False, "grader": None,
         "changed_files": call(["git", "diff", "--name-only"], cwd=work).stdout.splitlines(),
@@ -174,6 +187,13 @@ def execute_trial(args, case, mode, rep):
 def score(args, rows):
     for row in rows:
         if row["graded"]:
+            continue
+        if not row["completed"]:
+            row["graded"] = False
+            row["accepted"] = False
+            row["grader"] = {"incomplete": True, "reason": row.get("terminal_reason", "agent did not finish")}
+            (Path(row["worktree"]).parent / "result.json").write_text(json.dumps(row, indent=2) + "\n")
+            print("NOT GRADED", row["case"], row["mode"], row["repeat"], row["grader"], flush=True)
             continue
         if row["case"] == "summary" and not args.postgres_url:
             row["grader"] = {"error": "PostgreSQL required; not graded"}
@@ -201,7 +221,7 @@ def report(args, rows):
     path = args.output / "results.csv"
     keys = ("case", "mode", "repeat", "seconds", "exit_code", "completed",
             "cost_usd", "turns", "tool_calls", "mcp_calls", "native_lsp_calls",
-            "graded", "accepted")
+            "graded", "accepted", "mcp_used_as_required")
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, keys)
         writer.writeheader()
@@ -209,15 +229,20 @@ def report(args, rows):
             writer.writerow({k: row.get(k) for k in keys})
     print("CSV:", path, flush=True)
     print("All graded:", all(row["graded"] for row in rows), flush=True)
+    print("Treatment runs with real MCP calls:",
+          sum(r.get("mcp_used_as_required", False) for r in rows if r["mode"] == "mcp"),
+          "/", sum(r["mode"] == "mcp" for r in rows), flush=True)
     for case in args.cases:
         groups = {mode: [r for r in rows if r["case"] == case and r["mode"] == mode]
                   for mode in ("baseline", "mcp")}
         for mode, group in groups.items():
-            t = statistics.mean(r["seconds"] for r in group) if group else 0
-            cost = [r["cost_usd"] for r in group if r["cost_usd"] is not None]
-            print("SUMMARY", case, mode, "pass", sum(r["accepted"] for r in group),
-                  "/", len(group), "mean_seconds", round(t, 2),
-                  "mean_cost", round(statistics.mean(cost), 4) if len(cost) == len(group) else None)
+            done = [r for r in group if r["completed"] and r["graded"]]
+            t = statistics.mean(r["seconds"] for r in done) if done else None
+            cost = [r["cost_usd"] for r in done if r["cost_usd"] is not None]
+            print("SUMMARY", case, mode, "pass", sum(r["accepted"] for r in done),
+                  "/", len(done), "complete out of", len(group),
+                  "mean_seconds", round(t, 2) if t is not None else None,
+                  "mean_cost", round(statistics.mean(cost), 4) if len(cost) == len(done) and done else None)
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -238,10 +263,17 @@ def main():
     ap.add_argument("--postgres-url", default="")
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--retry-incomplete", action="store_true",
+                    help="With --resume, archive quota/timeouts and rerun only incomplete trials")
+    ap.add_argument("--rescore-only", action="store_true",
+                    help="Re-evaluate existing completed agent runs; do not call the model")
     ap.add_argument("--skip-network-check", action="store_true")
     args = ap.parse_args()
-    for k in ("source", "mcp", "python", "output"):
+    for k in ("source", "mcp", "output"):
         setattr(args, k, getattr(args, k).resolve())
+    # Preserve the virtual environment's Python symlink; resolving it bypasses
+    # the venv and silently breaks the independent FastAPI acceptance grader.
+    args.python = Path(os.path.abspath(args.python))
     sha = call(["git", "rev-parse", "HEAD"], cwd=args.source, check=True).stdout.strip()
     if sha != PINNED:
         ap.error("Template must be pinned to " + PINNED + " (found " + sha + ")")
@@ -257,6 +289,20 @@ def main():
     print("Pinned", sha, "tasks", len(args.cases), "repeats", args.repeats,
           "trials", len(names), "output", args.output, flush=True)
     if args.plan: return
+    if args.rescore_only:
+        existing = []
+        for case, mode, rep in names:
+            path = args.output / "runs" / (case + "-" + mode + "-" + str(rep)) / "result.json"
+            if not path.exists():
+                print("MISSING", path, flush=True)
+                continue
+            row = json.loads(path.read_text())
+            row["graded"] = False
+            row["accepted"] = False
+            existing.append(row)
+        score(args, existing)
+        report(args, existing)
+        return
     if "summary" in args.cases and not args.postgres_url:
         ap.error("Summary requires --postgres-url for a disposable local PostgreSQL bench database")
     if not shutil.which(args.claude):
@@ -266,6 +312,11 @@ def main():
         try: socket.getaddrinfo("api.anthropic.com", 443)
         except OSError as ex: ap.error("Claude API endpoint unreachable (DNS): " + str(ex))
     args.output.mkdir(parents=True, exist_ok=True)
+    snapshot = args.output / "CLAUDE.md"
+    if snapshot.exists() and snapshot.read_text() != POLICY:
+        ap.error("Existing benchmark directory has a different CLAUDE.md policy; use a new output directory")
+    snapshot.write_text(POLICY)
+    print("Shared CLAUDE.md sha256:", hashlib.sha256(POLICY.encode()).hexdigest(), flush=True)
     with ThreadPoolExecutor(max_workers=args.parallel) as pool:
         pending = [pool.submit(execute_trial, args, *name) for name in names]
         rows = [future.result() for future in as_completed(pending)]
