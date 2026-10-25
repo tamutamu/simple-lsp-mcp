@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "Use individual LSP tools only when semantic information adds value beyond file reading or text search. Search symbols, then request exactly the definitions, references, implementations, or hierarchy edges needed for the task. Do not invoke every tool by default. rename_symbol and format_document preview before applying; apply_code_action writes only the selected LSP edit. Run real tests after edits; an LSP diagnostic is not a test result."
+const serverInstructions = "Choose evidence by coding action. For literal text use rg. For a known declaration use inspect_symbol(path,symbol_path,view=source|signature|location) directly; do not fetch an outline first. For file structure use get_document_symbols; for ambiguous names search_symbols. find_references(relation_view=lines) returns exact usages with source lines; locations-only is the default. Do not invoke every tool or reread code already provided. rename_symbol/format_document preview first; apply writes. Run real tests: diagnostics are not tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
@@ -71,25 +71,28 @@ func definitions() []definition {
 		}},
 
 		// Discovery and direct symbol inspection.
-		{"search_symbols", "Search workspace symbols by non-empty name query; language selects the LSP profile.", objSchema(props("query", "language", "kinds", "limit"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"search_symbols", "Find semantically identified declarations; return only name/kind/path/line/handle by default, detail=full for exact ranges.", objSchema(props("query", "language", "kinds", "limit", "detail"), "query", "language"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.SearchSymbols(c, i)
 		}},
-		{"list_workspace_symbols", "Enumerate configured source symbols page by page; follow next_cursor until absent.", objSchema(props("language", "kinds", "limit", "cursor")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"list_workspace_symbols", "Enumerate compact symbol identities page by page; follow next_cursor until absent. detail=full adds complete ranges.", objSchema(props("language", "kinds", "limit", "cursor", "detail")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ListWorkspaceSymbols(c, i)
 		}},
-		{"get_document_symbols", "Get a concise source-file outline by default (top-level symbols and nested declarations, excluding local variables). detail=full returns all LSP symbols and exact ranges.", objSchema(props("path", "language", "detail"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_document_symbols", "Get compact file declaration tree with reusable symbol_id; detail=full includes all LSP symbols and exact ranges.", objSchema(props("path", "language", "detail"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
+		{"inspect_symbol", "Inspect one exact symbol: source code (default), declaration header (view=signature) or precise location (view=location). Source output is bounded with explicit truncation.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.InspectSymbol(c, i)
+		}},
 
 		// Ask for one exact semantic relationship at a time.
-		{"get_definition", "LSP: definition locations for a target.", targetSchema(), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "LSP: reference locations for a target.", objSchema(targetProps("include_declaration")), relation("find_references", "textDocument/references", "references")},
-		{"find_implementations", "LSP: implementation locations for a target.", targetSchema(), relation("find_implementations", "textDocument/implementation", "implementation")},
-		{"get_type_definition", "LSP: type-definition locations for a target.", targetSchema(), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
-		{"get_declaration", "LSP: declaration locations for a target.", targetSchema(), relation("get_declaration", "textDocument/declaration", "declaration")},
+		{"get_definition", "LSP: definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_definition", "textDocument/definition", "definition")},
+		{"find_references", "LSP: reference locations for a target.", objSchema(targetProps("include_declaration", "relation_view")), relation("find_references", "textDocument/references", "references")},
+		{"find_implementations", "LSP: implementation locations for a target.", objSchema(targetProps("relation_view")), relation("find_implementations", "textDocument/implementation", "implementation")},
+		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
+		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
 		{"get_incoming_calls", "LSP: direct callers.", targetSchema(), hierarchy("get_incoming_calls")},
 		{"get_outgoing_calls", "LSP: direct callees.", targetSchema(), hierarchy("get_outgoing_calls")},
 		{"get_supertypes", "LSP: direct supertypes.", targetSchema(), hierarchy("get_supertypes")},
@@ -136,7 +139,10 @@ func allProperties() map[string]any {
 		"kinds":                    describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":               describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration":      describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
-		"detail":                   describe(enumStringSchema("outline", "full"), "Default outline omits local variables and repeated ranges; full returns complete LSP document symbols."),
+		"detail":                   describe(enumStringSchema("compact", "outline", "full"), "List/search default compact: symbol name/kind/path/line/handle; document symbols default outline. full returns all LSP details."),
+		"view":                     describe(enumStringSchema("source", "signature", "location"), "source: real declaration source code (default); signature: bounded declaration header; location: range only."),
+		"relation_view":            describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
+		"max_lines":                describe(positiveIntegerSchema(), "Maximum source lines (default 120, maximum 500; source truncation is explicit)."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),

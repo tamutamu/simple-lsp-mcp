@@ -1,0 +1,5 @@
+case,mode,repeat,seconds,completed,graded,accepted,input_tokens,cached_tokens,output_tokens,reasoning_tokens,mcp_calls,valid_mcp_calls,command_calls
+access,baseline,1,60.88,True,True,True,251286,237312,3191,639,0,0,8
+access,mcp,1,47.98,True,True,True,295824,254720,1983,202,5,5,6
+paging,baseline,1,60.53,True,True,True,346241,328960,3375,553,0,0,9
+paging,mcp,1,49.29,True,True,True,349712,325248,2461,406,4,4,5

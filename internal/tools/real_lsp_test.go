@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,10 +67,54 @@ func TestRealLanguageServers(t *testing.T) {
 			})
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
-			if _, err := engine.DocumentSymbols(ctx, map[string]any{"path": tc.filename}); err != nil {
+			documentOutline, err := engine.DocumentSymbols(ctx, map[string]any{"path": tc.filename})
+			if err != nil {
 				t.Fatalf("real documentSymbol: %v", err)
 			}
-			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{})
+			var addID string
+			for _, entry := range documentOutline["symbols"].([]any) {
+				item := entry.(map[string]any)
+				if item["name"] == "Add" {
+					addID, _ = item["symbol_id"].(string)
+				}
+			}
+			if addID == "" {
+				t.Fatalf("outline did not return navigable Add: %#v", documentOutline)
+			}
+			for _, view := range []string{"location", "signature", "source"} {
+				inspected, err := engine.InspectSymbol(ctx, map[string]any{"symbol_id": addID, "view": view})
+				if err != nil {
+					t.Fatalf("real inspect_symbol(%s): %v", view, err)
+				}
+				if inspected["name"] != "Add" || inspected["path"] != tc.filename {
+					t.Fatalf("incorrect declaration %s: %#v", view, inspected)
+				}
+				code, hasCode := inspected["code"].(string)
+				if view == "location" && hasCode {
+					t.Fatalf("location-only view returned source: %#v", inspected)
+				}
+				if view != "location" && (!hasCode || !strings.Contains(code, "Add(")) {
+					t.Fatalf("%s did not return real declaration text: %#v", view, inspected)
+				}
+				if view == "source" && !strings.Contains(code, tc.original) {
+					t.Fatalf("source missing implementation expression %s: %q", tc.original, code)
+				}
+			}
+			refs, err := engine.Relationship(ctx, "find_references", "textDocument/references", "references",
+				map[string]any{"symbol_id": addID, "relation_view": "lines", "include_declaration": true})
+			if err != nil {
+				t.Fatalf("real reference source previews: %v", err)
+			}
+			foundPreview := false
+			for _, at := range refs["locations"].([]core.Location) {
+				if strings.Contains(at.Preview, "Add(") {
+					foundPreview = true
+				}
+			}
+			if !foundPreview {
+				t.Fatalf("LSP reference previews omitted actual use: %#v", refs)
+			}
+			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{"detail": "full"})
 			if err != nil {
 				t.Fatalf("real workspace enumeration: %v", err)
 			}
@@ -131,7 +176,7 @@ func TestRealGoMonorepoSearchesEveryServer(t *testing.T) {
 		}
 	}
 	// The low-level workspace tool must aggregate every configured server too.
-	workspaceResult, err := e.SearchSymbols(ctx, map[string]any{"language": "go", "query": "AlphaB"})
+	workspaceResult, err := e.SearchSymbols(ctx, map[string]any{"language": "go", "query": "AlphaB", "detail": "full"})
 	if err != nil {
 		t.Fatalf("monorepo workspace search: %v", err)
 	}
@@ -202,7 +247,7 @@ func TestRealWorkspaceEnumeration(t *testing.T) {
 	seen := map[string]string{}
 	cursor := ""
 	for iteration := 0; iteration < 12; iteration++ {
-		in := map[string]any{"limit": 1}
+		in := map[string]any{"limit": 1, "detail": "full"}
 		if cursor != "" {
 			in["cursor"] = cursor
 		}
@@ -319,7 +364,7 @@ func TestRealReactFastAPIMonorepoExample(t *testing.T) {
 			t.Fatalf("document symbols %s: %v", path, err)
 		}
 	}
-	listed, err := e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 200})
+	listed, err := e.ListWorkspaceSymbols(ctx, map[string]any{"limit": 200, "detail": "full"})
 	if err != nil {
 		t.Fatalf("mixed-language workspace enumeration: %v", err)
 	}

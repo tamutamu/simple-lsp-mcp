@@ -24,7 +24,7 @@ Text search finds spelling matches; LSP resolves **which declaration a use refer
 
 ### When coding agents should use it
 
-Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` on the affected file supplies an accurate outline; use the normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
+Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` supplies a compact file outline, and `inspect_symbol(view="source")` reads the actual relevant implementation without dumping unrelated functions. Use normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
 
 The `/simple-lsp-mcp-setup` skill can append a short **conditional** policy to your project's `CLAUDE.md` or `AGENTS.md` when explicitly requested. The checked-in `CLAUDE.md` for this repository now **requires at least one relevant LSP tool call before source edits when MCP is connected**. For the FastAPI A/B study, that exact conditional policy is shared by both groups; disconnected runs use ordinary tools.
 
@@ -284,7 +284,9 @@ claude plugin install simple-lsp-mcp@simple-lsp-mcp
 
 The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code to install the binary and verify LSPs from inside the agent. Codex includes the same skill as `$simple-lsp-mcp-setup`. If you install the binary separately, it still needs to be resolvable by the MCP client or registered by absolute path; a session restart may be necessary.
 
-## MCP tools (18 focused operations)
+**Design reference:** [39 coding-agent actions mapped to required information and appropriate providers](docs/agent-coding-information-needs.md). The [action-first MCP tool and small Codex A/B report](docs/benchmarks/fastapi-codex-action-first-2026-10-25.md) includes direct wire-size checks and an independently graded two-task sample (4/4 passes); this preliminary sample is **not** evidence of universal productivity improvement. This is the source of truth for selecting LSP-derived information; file reading, Git, tests and judgment remain outside the MCP.
+
+## MCP tools (19 goal-oriented operations)
 
 Every tool returns structured data. Positions are **one-based**, paths workspace-relative. A target may be a `symbol_id` from another tool, a `symbol_path` such as `UserService/createUser` (optionally scoped with `path`), or a file `path` plus `line` and `column`. Use `search_symbols` / `get_document_symbols` to discover identifiers, then request **only the specific relation needed**. Tool calls are not mandatory.
 
@@ -294,10 +296,11 @@ Every tool returns structured data. Positions are **one-based**, paths workspace
 | `list_workspace_symbols` | Paginated complete workspace traversal using document symbols (no query required) |
 | `get_document_symbols` | Concise file outline by default (top-level symbols, nested declarations and class members); `detail=full` returns the complete LSP tree |
 | `get_hover` | `textDocument/hover` for type and documentation |
-| `get_definition` | `textDocument/definition` |
+| `inspect_symbol` | Read one LSP-identified declaration as **real source code**, a bounded signature/header preview, or precise location (`view`) |
+| `get_definition` | `textDocument/definition` with optional `relation_view="lines"` for actual source-line evidence |
 | `get_declaration` | `textDocument/declaration` |
 | `get_type_definition` | `textDocument/typeDefinition` |
-| `find_references` | `textDocument/references` |
+| `find_references` | `textDocument/references`; `relation_view="lines"` also returns the matching source line |
 | `find_implementations` | `textDocument/implementation` |
 | `get_incoming_calls` | Prepare call hierarchy, then direct incoming calls |
 | `get_outgoing_calls` | Prepare call hierarchy, then direct outgoing calls |
@@ -310,6 +313,8 @@ Every tool returns structured data. Positions are **one-based**, paths workspace
 | `apply_code_action` | Apply one selected, validated WorkspaceEdit-backed LSP action |
 
 By default, `get_document_symbols(path="src/example.ts")` returns one file path and compact `name`, `kind`, one-based `line`, and `symbol_id` fields, with nested declarations and relevant class members. Function-local variables and duplicate ranges/path fields are omitted. Use `detail="full"` for the legacy complete symbol tree with exact ranges and all locals. Handles returned by the outline remain usable for LSP navigation. This is a tool-payload optimization, **not** evidence of faster coding agents.
+
+**Choosing the right return shape:** Use `get_document_symbols(path="src/app.ts")` for a compact file outline. When a symbol name and file are already known, call `inspect_symbol(path="src/app.ts", symbol_path="MyFunction", view="source")` directly rather than requiring a separate outline lookup. Use `inspect_symbol(symbol_id="...", view="source")` for a specific function's real code body, `view="signature"` for a bounded declaration header, or `view="location"` when only its exact range matters. The same tool also accepts a `symbol_path` or file `path` with one-based `line`/`column`. `find_references(symbol_id="...", relation_view="lines")` returns semantic references with bounded real source lines; omitting the view returns positions only. Source responses are capped at 120 lines/16 KiB by default (maximum `max_lines=500`) and explicitly report when incomplete. Do not reread entire files if the source snippet already answers the coding question. `rg` remains the right tool for literal text search.
 
 `list_workspace_symbols(limit=100)` yields `next_cursor` when another page exists. Continue until absent; it does **not** require a query and remains available for full workspace enumeration. Workspace scans omit ignored dependency and generated directories and surface incomplete searches rather than silently returning false negatives.
 

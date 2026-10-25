@@ -40,6 +40,10 @@ var workspaceListExcludedDirs = map[string]bool{
 // Each page is limited by both symbols and files, so empty or huge workspaces
 // cannot trigger unbounded LSP requests in a single call.
 func (e *Engine) ListWorkspaceSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
+	detail, err := symbolListDetail(in)
+	if err != nil {
+		return nil, err
+	}
 	if _, exists := in["query"]; exists {
 		return nil, core.NewError(core.InvalidArgument, "list_workspace_symbols does not search by query; use search_symbols")
 	}
@@ -138,11 +142,11 @@ func (e *Engine) ListWorkspaceSymbols(ctx context.Context, in map[string]any) (m
 					next.Index = 0
 					next.Hash = ""
 				}
-				return workspaceListPage(out, next, len(files)), nil
+				return projectSymbolPage(workspaceListPage(out, next, len(files)), detail), nil
 			}
 		}
 	}
-	return workspaceListPage(out, workspaceListCursor{Scope: scope, File: i}, len(files)), nil
+	return projectSymbolPage(workspaceListPage(out, workspaceListCursor{Scope: scope, File: i}, len(files)), detail), nil
 }
 
 func workspaceListPage(symbols []core.SymbolSummary, next workspaceListCursor, totalFiles int) map[string]any {

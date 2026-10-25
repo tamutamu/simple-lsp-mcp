@@ -10,7 +10,7 @@ import (
 
 var expectedTools = []string{
 	"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
-	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover",
+	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
 	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
 }
@@ -50,7 +50,7 @@ func TestToolCatalogStaysSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(encoded) > 18*1024 {
+	if len(encoded) > 20*1024 {
 		t.Fatalf("MCP tool catalog uses %d bytes", len(encoded))
 	}
 }
@@ -76,7 +76,7 @@ func TestWorkspaceListingRemainsIndependentOfSearch(t *testing.T) {
 }
 
 func TestDirectTargetToolsRetainSymbolHandlesAndPaths(t *testing.T) {
-	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover", "rename_symbol"} {
+	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover", "inspect_symbol", "rename_symbol"} {
 		found := false
 		for _, d := range definitions() {
 			if d.name != name {

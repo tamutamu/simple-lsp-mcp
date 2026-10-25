@@ -51,6 +51,10 @@ func New(ws *workspace.Workspace, cfg config.Runtime) *Engine {
 // just the first monorepo root. Failure of one server is an incomplete search
 // and must not masquerade as a successful empty or unique result.
 func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
+	detail, err := symbolListDetail(in)
+	if err != nil {
+		return nil, err
+	}
 	limit, err := e.limit(in)
 	if err != nil {
 		return nil, err
@@ -111,14 +115,14 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	if truncated {
 		all = all[:limit]
 	}
-	return map[string]any{"symbols": all, "meta": core.Meta{Complete: true, Truncated: truncated, Servers: []string{p.SessionKey}}}, nil
+	return map[string]any{"symbols": projectSymbols(all, detail), "meta": core.Meta{Complete: true, Truncated: truncated, Servers: []string{p.SessionKey}}}, nil
 }
 
 // DocumentSymbols returns hierarchical symbols when supported by the server.
 func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[string]any, error) {
 	detail := stringVal(in, "detail")
-	if detail != "" && detail != "outline" && detail != "full" {
-		return nil, core.NewError(core.InvalidArgument, "detail must be outline or full")
+	if detail != "" && detail != "outline" && detail != "compact" && detail != "full" {
+		return nil, core.NewError(core.InvalidArgument, "detail must be compact, outline or full")
 	}
 	path := stringVal(in, "path")
 	p, s, d, err := e.document(ctx, path, stringVal(in, "language"))
@@ -169,6 +173,10 @@ func (e *Engine) requestDocumentSymbolTree(ctx context.Context, p language.Profi
 
 // Relationship resolves a target and invokes one location-based LSP method.
 func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in map[string]any) (map[string]any, error) {
+	view := stringVal(in, "relation_view")
+	if view != "" && view != "locations" && view != "lines" {
+		return nil, core.NewError(core.InvalidArgument, "relation_view must be locations or lines")
+	}
 	p, s, d, pos, err := e.target(ctx, in)
 	if err != nil {
 		return nil, err
@@ -199,6 +207,11 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	tr := len(locs) > limit
 	if tr {
 		locs = locs[:limit]
+	}
+	if view == "lines" {
+		if err := e.populateLocationPreviews(locs); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]any{"locations": locs, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
 }

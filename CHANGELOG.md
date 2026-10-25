@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Evidence
+
+- Verify the new output contracts on the pinned FastAPI template using real MCP requests: compact eight-symbol listing 1,649 B versus detailed 3,062 B (−46.1%); complete 14-location reference results remain consistent when actual source lines are requested.
+- Complete a cautiously scoped two-task Codex A/B (four independently accepted coding runs) after usage quota reset. MCP-assisted runs used nine successful tools, completed both sample tasks faster, but consumed more input tokens. **Insufficient repetitions to establish a general benefit.** See [measured study](docs/benchmarks/fastapi-codex-action-first-2026-10-25.md).
+
+### Design
+
+- Start from **39 documented coding-agent actions**: map action to minimum evidence and authoritative provider. Leave grep, file edits, Git, test runners and decisions outside the MCP. See [action-to-information matrix](docs/agent-coding-information-needs.md).
+- Return compact symbol discovery results by default; `detail=full` retains original ranges. Return actual implementation text only for a requested symbol using `inspect_symbol(view=source)`.
+- When a file and symbol path are known, call `inspect_symbol` directly without an unnecessary outline call.
+
+### Added
+
+- Introduce `inspect_symbol` with `view=source|signature|location`. An agent can request actual code, a bounded declaration header or only a range for the same semantic LSP target. Source is workspace-confined and truncation is explicitly reported.
+- Add `relation_view=lines` to semantic definition/reference/declaration/implementation tools to return the exact source line with each LSP location on demand; location-only responses remain the default.
+
+### Changed
+
+- Update Claude/Codex instructions and the setup skill to select the smallest useful response for the coding task and avoid redundant full-file reads.
+
 ### Changed
 
 - Return concise navigable `get_document_symbols` outlines by default; `detail=full` preserves the complete previous output including local variables and full ranges. Retain `symbol_id` for semantic follow-up. No extra public MCP tools.

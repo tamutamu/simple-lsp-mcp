@@ -202,6 +202,7 @@ func TestSearchSymbolsWithGopls(t *testing.T) {
 	res, err := engine.SearchSymbols(context.Background(), map[string]any{
 		"language": "go",
 		"query":    "New",
+		"detail":   "full",
 	})
 	if err != nil {
 		t.Fatalf("SearchSymbols failed: %v", err)
@@ -250,6 +251,7 @@ apps/api:
 	res, err := engine.SearchSymbols(context.Background(), map[string]any{
 		"language": "go",
 		"query":    "ServerConfig",
+		"detail":   "full",
 	})
 	if err != nil {
 		t.Fatalf("SearchSymbols in subdirectory failed: %v", err)
