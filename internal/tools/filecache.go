@@ -18,9 +18,10 @@ const fileCacheMaxBytes = 32 << 20
 // concerns the rest of this package's read-only design avoids.
 type fileCache struct {
 	mu    sync.Mutex
-	bytes map[string][]byte
-	hash  map[string]string
-	total int
+	bytes     map[string][]byte
+	hash      map[string]string
+	positions map[string]*editPositionIndex
+	total     int
 }
 
 func newFileCache() *fileCache {
@@ -44,6 +45,12 @@ func (c *fileCache) read(ws *workspace.Workspace, path string) ([]byte, error) {
 		return nil, err
 	}
 	c.mu.Lock()
+	// Another reader may have populated this request-local cache while we
+	// were reading. Use its snapshot consistently for ranges and hashes.
+	if existing, ok := c.bytes[path]; ok {
+		c.mu.Unlock()
+		return existing, nil
+	}
 	if c.total+len(b) <= fileCacheMaxBytes {
 		c.bytes[path] = b
 		c.total += len(b)
@@ -85,4 +92,26 @@ func readWorkspaceFile(ws *workspace.Workspace, path string) ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(full)
+}
+
+// positionIndex reuses line boundaries for every location in the same source.
+// Only index bytes that are already cached: oversized files must not bypass
+// the request-local 32 MiB retention limit via a second unbounded cache.
+func (c *fileCache) positionIndex(path string, content []byte) *editPositionIndex {
+	if c == nil {
+		return newEditPositionIndex(content)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cached := c.positions[path]; cached != nil {
+		return cached
+	}
+	idx := newEditPositionIndex(content)
+	if _, retained := c.bytes[path]; retained {
+		if c.positions == nil {
+			c.positions = make(map[string]*editPositionIndex)
+		}
+		c.positions[path] = idx
+	}
+	return idx
 }
