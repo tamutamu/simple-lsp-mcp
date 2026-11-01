@@ -62,7 +62,12 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 	// The filesystem scan is bounded and fails closed instead of accepting a
 	// potentially partial semantic rename.
 	if p.SessionKey == "typescript-javascript" || p.SessionKey == "python" {
-		name := e.renameWarmName(in, d.Text, preparation)
+		// prepareRename is optional in LSP. With only path/line/column,
+		// name-based candidate warm-up previously became a no-op when the
+		// server omitted that capability, risking incomplete cross-file edits.
+		// This spelling only selects files to open; textDocument/rename
+		// remains the sole authority for semantic edit locations.
+		name := e.renameWarmCandidateName(in, d.Text, preparation, pos, caps.PositionEncoding)
 		if name != "" {
 			if err := e.warmProjectSymbolCandidates(ctx, p, s, name); err != nil {
 				return nil, err
@@ -105,6 +110,14 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 		result["warnings"] = warnings
 	}
 	return result, nil
+}
+
+func (e *Engine) renameWarmCandidateName(in map[string]any, text []byte, preparation map[string]any, position protocol.Position, encoding string) string {
+	name := e.renameWarmName(in, text, preparation)
+	if name != "" {
+		return name
+	}
+	return warmIdentifierAtPosition(text, position, encoding)
 }
 
 func (e *Engine) renameWarmName(in map[string]any, text []byte, preparation map[string]any) string {
