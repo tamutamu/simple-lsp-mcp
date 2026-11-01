@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestReadServerRequestWithStringID(t *testing.T) {
@@ -93,5 +94,63 @@ func TestNotifyRejectsShortFrameWrite(t *testing.T) {
 	transport := New(bytes.NewReader(nil), shortWriter{})
 	if err := transport.Notify("initialized", map[string]any{}); !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("Notify short write = %v, want io.ErrShortWrite", err)
+	}
+}
+
+func TestRunAnswersServerInitiatedStringIDRequest(t *testing.T) {
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	defer inputWriter.Close()
+	defer outputReader.Close()
+	defer outputWriter.Close()
+
+	transport := New(inputReader, outputWriter)
+	transport.OnRequest(func(_ context.Context, request Message) (any, *ResponseError) {
+		if request.Method != "workspace/configuration" {
+			t.Errorf("method = %q", request.Method)
+		}
+		return []any{"strict"}, nil
+	})
+	done := make(chan error, 1)
+	go func() { done <- transport.Run(context.Background()) }()
+
+	body := []byte(`{"jsonrpc":"2.0","id":"cfg/α","method":"workspace/configuration","params":{"items":[{"section":"python.analysis"}]}}`)
+	frame := append([]byte("Content-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"), body...)
+	if _, err := inputWriter.Write(frame); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read from a pipe rather than a shared bytes.Buffer to exercise the
+	// complete asynchronous JSON-RPC dispatch path without data races.
+	result := make(chan Message, 1)
+	readError := make(chan error, 1)
+	go func() {
+		reply, err := read(bufio.NewReader(outputReader))
+		if err != nil {
+			readError <- err
+		} else {
+			result <- reply
+		}
+	}()
+	select {
+	case reply := <-result:
+		if string(reply.ID) != `"cfg/α"` || string(reply.Result) != `["strict"]` || reply.Error != nil {
+			t.Fatalf("invalid string-ID reply: %#v", reply)
+		}
+	case err := <-readError:
+		t.Fatalf("reading server reply: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("transport failed to answer a server-initiated string-ID request")
+	}
+	if err := inputWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("transport stopped with %v, want EOF", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("transport did not exit after input EOF")
 	}
 }
