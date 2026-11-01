@@ -121,13 +121,13 @@ func definitions() []definition {
 		{"list_workspace_symbols", "Enumerate compact symbol identities page by page; follow next_cursor until absent. detail=full adds complete ranges.", objSchema(props("language", "kinds", "limit", "cursor", "detail")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ListWorkspaceSymbols(c, i)
 		}},
-		{"get_document_symbols", "Get compact file declaration tree with reusable symbol_id; detail=full includes all LSP symbols and exact ranges.", objSchema(props("path", "language", "detail"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_document_symbols", "Discover names and structure in an unfamiliar file. Skip this before inspect_symbol when the function name is already known.", objSchema(props("path", "language", "detail"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.DocumentSymbols(c, i)
 		}},
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Before editing a known function, fetch its exact current source with view=edit (includes decorators/relevant imports); targets[] batches 1–8 known functions in one call instead of full-file reads.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "DIRECT FIRST CALL for a known file/function: inspect_symbol(path,symbol_path,view=edit). No outline/sed needed; returns code, decorators/imports. targets[] batches 1–8.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
