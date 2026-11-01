@@ -37,7 +37,7 @@ def parse_bool(v):
     return str(v).lower() in ("1", "true", "yes")
 
 
-def read_paired(path, study, treatment):
+def read_paired(path, study, treatment="mcp"):
     rows = list(csv.DictReader(Path(path).open(encoding="utf-8", newline="")))
     pairs = defaultdict(dict)
     for row in rows:
