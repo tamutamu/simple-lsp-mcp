@@ -33,12 +33,16 @@ type Session struct {
 	caps        protocol.Capabilities
 	crashed     error
 	diagnostics map[string][]protocol.Diagnostic
+	// The last didOpen/didChange version sent to this server. A late
+	// publishDiagnostics from an older version must not be treated as a
+	// clean/current report after the agent edits the file.
+	documentVersions map[string]int32
 	diagnosticEvent chan struct{} // broadcast when push diagnostics arrive or become stale
 	pullDiagnosticsUnsupported bool // -32601 is stable until session restart
 }
 
 func New(key, root string, cfg config.Server) *Session {
-	return &Session{key: key, root: root, cfg: cfg, diagnostics: map[string][]protocol.Diagnostic{}, diagnosticEvent: make(chan struct{})}
+	return &Session{key: key, root: root, cfg: cfg, diagnostics: map[string][]protocol.Diagnostic{}, documentVersions: map[string]int32{}, diagnosticEvent: make(chan struct{})}
 }
 
 // Generation identifies the currently initialized server incarnation.
@@ -89,6 +93,7 @@ func (s *Session) start(ctx context.Context) error {
 	// Never return cached diagnostics from a crashed server incarnation.
 	s.mu.Lock()
 	s.diagnostics = make(map[string][]protocol.Diagnostic)
+	s.documentVersions = make(map[string]int32)
 	s.pullDiagnosticsUnsupported = false
 	s.signalDiagnosticsLocked()
 	s.mu.Unlock()
@@ -258,9 +263,9 @@ func (s *Session) Notify(method string, params any) error {
 		if body, ok := params.(map[string]any); ok {
 			switch document := body["textDocument"].(type) {
 			case protocol.TextDocumentItem:
-				s.invalidateDiagnostics(document.URI)
+				s.noteDocumentVersion(document.URI, document.Version)
 			case protocol.VersionedTextDocumentIdentifier:
-				s.invalidateDiagnostics(document.URI)
+				s.noteDocumentVersion(document.URI, document.Version)
 			}
 		}
 	}
@@ -272,6 +277,19 @@ func (s *Session) signalDiagnosticsLocked() {
 	}
 	s.diagnosticEvent = make(chan struct{})
 }
+// noteDocumentVersion invalidates old diagnostics atomically with advancing
+// the version. A concurrent older publish can never slip in between them.
+func (s *Session) noteDocumentVersion(uri string, version int32) {
+	s.mu.Lock()
+	if s.documentVersions == nil {
+		s.documentVersions = make(map[string]int32)
+	}
+	s.documentVersions[uri] = version
+	delete(s.diagnostics, uri)
+	s.signalDiagnosticsLocked()
+	s.mu.Unlock()
+}
+
 func (s *Session) invalidateDiagnostics(uri string) {
 	s.mu.Lock()
 	delete(s.diagnostics, uri)
@@ -370,10 +388,19 @@ func (s *Session) notification(m transport.Message) {
 	}
 	var p struct {
 		URI         string                `json:"uri"`
+		Version     *int32                `json:"version"`
 		Diagnostics []protocol.Diagnostic `json:"diagnostics"`
 	}
 	if json.Unmarshal(m.Params, &p) == nil {
 		s.mu.Lock()
+		if current, known := s.documentVersions[p.URI]; known && p.Version != nil && *p.Version != current {
+			// LSP 3.17 allows an optional version on push diagnostics.
+			// Older results must not wake WaitDiagnostics or overwrite the
+			// report for the latest document revision. Unversioned servers
+			// remain supported as a best-effort fallback.
+			s.mu.Unlock()
+			return
+		}
 		s.diagnostics[p.URI] = p.Diagnostics
 		s.signalDiagnosticsLocked()
 		s.mu.Unlock()
