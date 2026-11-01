@@ -172,12 +172,34 @@ func warmIdentifierByte(b byte) bool {
 		b >= '0' && b <= '9'
 }
 
+// Match the actual source spelling first. JS/TS permits Unicode escapes
+// inside identifiers, including mixed literal and escaped characters. Such
+// files must be opened before semantic references or rename is requested.
+func warmContainsProjectIdentifier(content, name []byte, sessionKey string) bool {
+	if warmContainsIdentifier(content, name) {
+		return true
+	}
+	return sessionKey == "typescript-javascript" &&
+		bytes.Contains(content, []byte(`\u`)) &&
+		warmContainsIdentifier(warmDecodeJSEscapes(content), name)
+}
+
 // warmBuildIndex records short names as well as trigrams. Previously the
 // trigram index could never reject a one- or two-byte needle: a repeat search
 // reread every uncached (over-budget) source, even for absent names. The byte
 // bitmap is exact; pair hashes may have false positives, never false negatives.
 // Only uncached files pay the cost of constructing these filters.
 func warmBuildIndex(idx *warmFileIndex, content []byte) {
+	warmBuildIndexBytes(idx, content)
+	// The Bloom filter must cover decoded spellings too. Otherwise an
+	// uncached large source with i\u0064 is incorrectly rejected for "id"
+	// before the lexical candidate matcher can examine it.
+	if bytes.Contains(content, []byte(`\u`)) {
+		warmBuildIndexBytes(idx, warmDecodeJSEscapes(content))
+	}
+}
+
+func warmBuildIndexBytes(idx *warmFileIndex, content []byte) {
 	warmBloomAdd(&idx.bloom, content)
 	for i, b := range content {
 		idx.shortBytes[b/8] |= 1 << (b % 8)
@@ -350,7 +372,7 @@ func (e *Engine) scanProjectWarmCandidates(
 			warmBuildIndex(&current, content)
 		}
 		next[path] = current
-		if !warmContainsIdentifier(content, needle) {
+		if !warmContainsProjectIdentifier(content, needle, p.SessionKey) {
 			return nil
 		}
 		stats.Matches++
