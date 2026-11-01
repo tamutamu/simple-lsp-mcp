@@ -26,11 +26,11 @@ const (
 )
 
 type warmFileIndex struct {
-	info    fs.FileInfo
+	info       fs.FileInfo
 	bloom      [warmBloomBytes]byte
-	shortBytes [32]byte // Exact presence of one-byte names.
+	shortBytes [32]byte           // Exact presence of one-byte names.
 	shortPairs [warmBloomBytes]byte // Two-byte name Bloom filter.
-	content    []byte // Source bytes cached opportunistically, bounded per project.
+	content    []byte              // Source bytes cached opportunistically, bounded per project.
 }
 
 type warmSourceIndex struct {
