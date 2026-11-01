@@ -226,12 +226,21 @@ func (e *Engine) scanProjectWarmCandidates(
 		var content []byte
 		if unchanged {
 			if old.content != nil {
-				// The small-source fast path avoids constructing a Bloom
-				// filter on the first scan, and avoids both disk reads and
-				// false-positive Bloom checks on subsequent scans.
-				cachedBytes += len(old.content)
+				// A newly inserted/changed earlier file may already have
+				// consumed the remaining cache budget. Never blindly carry
+				// forward old cached bytes: that grows the published
+				// snapshot past the advertised 8 MiB bound.
 				content = old.content
 				stats.SkippedRead++
+				if len(content) <= warmIndexMaxCachedBytes-cachedBytes {
+					cachedBytes += len(content)
+				} else {
+					// Evict this source's byte snapshot while preserving
+					// the negative-query filter. We have the bytes in
+					// memory already, so this does not cause disk I/O.
+					current = warmFileIndex{info: info}
+					warmBloomAdd(&current.bloom, content)
+				}
 			} else if !warmBloomMayContain(&old.bloom, needle) {
 				next[path] = old
 				stats.SkippedRead++
