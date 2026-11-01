@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "Choose evidence by action. Use rg for literal text. inspect_symbol(view=edit) returns real source and context; targets[] fetches multiple known functions in one call. For structure use get_document_symbols; semantic uses via find_references(relation_view=lines). Do not invoke every tool or reread returned code. rename_symbol/format_document preview before apply; run real tests."
+const serverInstructions = "When editing a known function, prefer inspect_symbol(view=edit) to a full-file read: it returns exact source, decorators and referenced imports. Use targets[] for several known functions in one call. Use rg for unknown files or literal search; get_document_symbols for file structure; find_references(relation_view=lines) for semantic uses. Do not invoke every tool or reread returned code. rename_symbol/format_document preview before apply; run real tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -124,7 +124,7 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Read real code/context/signature/location; targets[] batches up to 8 known symbols in one call.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Before editing a known function, fetch its exact current source with view=edit (includes decorators/relevant imports); targets[] batches 1–8 known functions in one call instead of full-file reads.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
