@@ -164,6 +164,10 @@ func warmIdentifierAtPosition(text []byte, position protocol.Position, encoding 
 	}
 	line := []rune(strings.TrimSuffix(lines[point.Line-1], "\r"))
 	offset := point.Column - 1
+	// JavaScript identifiers may spell a character as \\uXXXX or \\u{...}.
+	// Decode the token and cursor together so a position inside an escape
+	// still yields the semantic spelling used by cross-file warm-up.
+	line, offset = warmDecodeLinePosition(line, offset)
 	if offset == len(line) && offset > 0 {
 		offset--
 	}
