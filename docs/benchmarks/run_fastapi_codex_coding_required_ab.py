@@ -71,13 +71,10 @@ def evaluate(o,case,mode,rep):
         bins=os.pathsep.join([str(o.node.parent),str(o.lsp_bin),
                               os.environ.get("PATH", "/usr/bin:/bin")])
         cmd+=["-c",'mcp_servers.simple-lsp.command="'+str(o.mcp)+'"',
-              "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'"]',
+              "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'","--tool-profile","coding","--result-format","text"]',
               "-c",'mcp_servers.simple-lsp.env.PATH="'+bins+'"']
         if o.tsserver:
             cmd+=["-c",'mcp_servers.simple-lsp.env.SIMPLE_LSP_TSSERVER_PATH="'+o.tsserver+'"']
-    if mode=="mcp":
-        # Explicit opt-in. The default public 19-tool profile stays unchanged.
-        cmd += ["-c", 'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'","--tool-profile","coding"]']
     cmd.append(TASKS[case]+" "+SUFFIX)
     env=os.environ.copy()
     env["PATH"]=os.pathsep.join([str(o.node.parent),str(o.lsp_bin),env.get("PATH","")])
