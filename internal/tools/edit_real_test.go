@@ -121,9 +121,11 @@ func TestRealLSPEditing(t *testing.T) {
 		if err := os.WriteFile(mainPath, []byte(ugly), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		preview, err := engine.FormatDocument(context.Background(), map[string]any{"path": "main.go"})
+		preview, err := engine.PreviewFormat(context.Background(), map[string]any{
+			"path": "main.go", "apply": true,
+		})
 		if err != nil {
-			t.Fatalf("format preview: %v", err)
+			t.Fatalf("read-only format preview: %v", err)
 		}
 		if preview["applied"] != false || preview["edit_count"].(int) == 0 {
 			t.Fatalf("unexpected format preview: %#v", preview)
