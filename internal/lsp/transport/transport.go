@@ -17,7 +17,7 @@ const maxFrame = 32 << 20
 
 type Message struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      *uint64         `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
@@ -78,9 +78,16 @@ func (t *Transport) Run(ctx context.Context) error {
 		if m.ID == nil {
 			continue
 		}
+		// Client requests use numeric IDs, but server-initiated requests may
+		// use JSON-RPC string IDs. Preserve their raw form for replies while
+		// matching only numeric response IDs to our pending requests.
+		id, err := strconv.ParseUint(string(m.ID), 10, 64)
+		if err != nil {
+			continue
+		}
 		t.pendingMu.Lock()
-		ch := t.pending[*m.ID]
-		delete(t.pending, *m.ID)
+		ch := t.pending[id]
+		delete(t.pending, id)
 		t.pendingMu.Unlock()
 		if ch != nil {
 			ch <- m
@@ -96,8 +103,19 @@ func (t *Transport) reply(ctx context.Context, m Message) {
 	} else {
 		e = &ResponseError{Code: -32601, Message: "method not found"}
 	}
-	b, _ := json.Marshal(result)
-	t.write(Message{JSONRPC: "2.0", ID: m.ID, Result: b, Error: e})
+	// JSON-RPC responses must contain exactly one of result or error.
+	// Sending both causes strict language servers to reject configuration
+	// and other server-initiated request replies.
+	if e != nil {
+		_ = t.write(Message{JSONRPC: "2.0", ID: m.ID, Error: e})
+		return
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		_ = t.write(Message{JSONRPC: "2.0", ID: m.ID, Error: &ResponseError{Code: -32603, Message: "could not encode response"}})
+		return
+	}
+	_ = t.write(Message{JSONRPC: "2.0", ID: m.ID, Result: b})
 }
 func (t *Transport) Request(ctx context.Context, method string, params any, result any) error {
 	t.pendingMu.Lock()
@@ -106,7 +124,7 @@ func (t *Transport) Request(ctx context.Context, method string, params any, resu
 	ch := make(chan Message, 1)
 	t.pending[id] = ch
 	t.pendingMu.Unlock()
-	if err := t.write(Message{JSONRPC: "2.0", ID: &id, Method: method, Params: mustJSON(params)}); err != nil {
+	if err := t.write(Message{JSONRPC: "2.0", ID: json.RawMessage(strconv.FormatUint(id, 10)), Method: method, Params: mustJSON(params)}); err != nil {
 		t.remove(id)
 		return err
 	}
@@ -159,12 +177,22 @@ func (t *Transport) write(m Message) error {
 	}
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	_, err = fmt.Fprintf(t.w, "Content-Length: %d\r\n\r\n", len(b))
+	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(b))
+	n, err := io.WriteString(t.w, header)
 	if err != nil {
 		return err
 	}
-	_, err = t.w.Write(b)
-	return err
+	if n != len(header) {
+		return io.ErrShortWrite
+	}
+	n, err = t.w.Write(b)
+	if err != nil {
+		return err
+	}
+	if n != len(b) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 func read(r *bufio.Reader) (Message, error) {
 	var n = -1
