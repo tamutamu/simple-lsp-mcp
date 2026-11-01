@@ -27,8 +27,10 @@ const (
 
 type warmFileIndex struct {
 	info    fs.FileInfo
-	bloom   [warmBloomBytes]byte
-	content []byte // Source bytes cached opportunistically, bounded per project.
+	bloom      [warmBloomBytes]byte
+	shortBytes [32]byte // Exact presence of one-byte names.
+	shortPairs [warmBloomBytes]byte // Two-byte name Bloom filter.
+	content    []byte // Source bytes cached opportunistically, bounded per project.
 }
 
 type warmSourceIndex struct {
@@ -169,6 +171,41 @@ func warmIdentifierByte(b byte) bool {
 		b >= '0' && b <= '9'
 }
 
+// warmBuildIndex records short names as well as trigrams. Previously the
+// trigram index could never reject a one- or two-byte needle: a repeat search
+// reread every uncached (over-budget) source, even for absent names. The byte
+// bitmap is exact; pair hashes may have false positives, never false negatives.
+// Only uncached files pay the cost of constructing these filters.
+func warmBuildIndex(idx *warmFileIndex, content []byte) {
+	warmBloomAdd(&idx.bloom, content)
+	for i, b := range content {
+		idx.shortBytes[b/8] |= 1 << (b % 8)
+		if i+1 < len(content) {
+			pair := [3]byte{0, b, content[i+1]}
+			a, c := warmTrigram(pair[:])
+			idx.shortPairs[a/8] |= 1 << (a % 8)
+			idx.shortPairs[c/8] |= 1 << (c % 8)
+		}
+	}
+}
+
+func warmIndexedMayContain(idx *warmFileIndex, needle []byte) bool {
+	switch len(needle) {
+	case 0:
+		return false
+	case 1:
+		b := needle[0]
+		return idx.shortBytes[b/8]&(1<<(b%8)) != 0
+	case 2:
+		pair := [3]byte{0, needle[0], needle[1]}
+		a, c := warmTrigram(pair[:])
+		return idx.shortPairs[a/8]&(1<<(a%8)) != 0 &&
+			idx.shortPairs[c/8]&(1<<(c%8)) != 0
+	default:
+		return warmBloomMayContain(&idx.bloom, needle)
+	}
+}
+
 // scanProjectWarmCandidates discovers sources anew on every call, but reads
 // their contents only for newly modified files or possible substring matches.
 // A failed or interrupted scan is never published as a complete index.
@@ -239,9 +276,9 @@ func (e *Engine) scanProjectWarmCandidates(
 					// the negative-query filter. We have the bytes in
 					// memory already, so this does not cause disk I/O.
 					current = warmFileIndex{info: info}
-					warmBloomAdd(&current.bloom, content)
+					warmBuildIndex(&current, content)
 				}
-			} else if !warmBloomMayContain(&old.bloom, needle) {
+			} else if !warmIndexedMayContain(&old, needle) {
 				next[path] = old
 				stats.SkippedRead++
 				return nil
@@ -267,7 +304,7 @@ func (e *Engine) scanProjectWarmCandidates(
 			cachedBytes += len(content)
 		}
 		if !unchanged && current.content == nil {
-			warmBloomAdd(&current.bloom, content)
+			warmBuildIndex(&current, content)
 		}
 		next[path] = current
 		if !warmContainsIdentifier(content, needle) {
