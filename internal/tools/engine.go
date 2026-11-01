@@ -31,6 +31,7 @@ type Engine struct {
 	Timeout         time.Duration
 	DiagnosticsWait time.Duration
 	MaxResults      int
+	warmIndex       warmSourceIndex
 }
 
 // New builds an engine with session-local document and symbol stores.
