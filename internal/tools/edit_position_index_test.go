@@ -153,7 +153,7 @@ func TestIndexedLSPPositionSparseLargeGeneratedFile(t *testing.T) {
 	if !idx.sparse || len(idx.lineStarts) > (idx.lineCount/sparseLineStride)+1 {
 		t.Fatalf("expected bounded sparse index: lines=%d checkpoints=%d", idx.lineCount, len(idx.lineStarts))
 	}
-	for _, line := range []int{0, 1, 31, 32, 33, maxDenseLineStarts-1, maxDenseLineStarts, maxDenseLineStarts+127, maxDenseLineStarts+128} {
+	for _, line := range []int{0, 1, 31, 32, 33, maxDenseLineStarts-1, maxDenseLineStarts, maxDenseLineStarts+126, maxDenseLineStarts+127} {
 		for _, column := range []int{0, 1} {
 			got, off, err := idx.point(protocol.Position{Line: line, Character: column}, "utf-16")
 			if err != nil || got != (core.Position{Line: line+1, Column: column+1}) || off != line*2+column {
