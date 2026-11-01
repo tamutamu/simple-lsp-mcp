@@ -56,6 +56,26 @@ func warmScan(t *testing.T, e *Engine, p language.Profile, root, name string) ([
 	return found, stats
 }
 
+func TestRenameWarmCandidateNameWithoutPrepareRename(t *testing.T) {
+	e := &Engine{}
+	src := "const v = service.updateUser(id);\n"
+	pos := protocol.Position{Line: 0, Character: strings.Index(src, "updateUser") + 3}
+	name := e.renameWarmCandidateName(map[string]any{
+		"path": "src/service.ts", "line": 1, "column": pos.Character + 1,
+	}, []byte(src), nil, pos, "utf-16")
+	if name != "updateUser" {
+		t.Fatalf("no prepareRename: name=%q, want updateUser", name)
+	}
+	// A valid semantic symbol path must take priority over an unrelated
+	// lexical token; source extraction is a fallback for position-only calls.
+	name = e.renameWarmCandidateName(map[string]any{
+		"symbol_path": "UserService/updateUser",
+	}, []byte(src), nil, protocol.Position{Line: 99, Character: 0}, "utf-16")
+	if name != "updateUser" {
+		t.Fatalf("symbol path fallback=%q", name)
+	}
+}
+
 func TestWarmIdentifierAtPositionAvoidsRedundantLSPPrepareRename(t *testing.T) {
 	// UTF-16 positions are zero-based; emoji consumes two UTF-16 units.
 	cases := []struct {
