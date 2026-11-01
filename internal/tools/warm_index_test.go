@@ -133,8 +133,7 @@ func TestWarmIndexFailedScanCannotPoisonSubsequentResults(t *testing.T) {
 
 func TestWarmBloomNeverExcludesAContainedSubstring(t *testing.T) {
 	contents := [][]byte{
-		[]byte(""), []byte("ab"), []byte("abc"), []byte("alpha beta
-fooBar"),
+		[]byte(""), []byte("ab"), []byte("abc"), []byte("alpha beta\nfooBar"),
 		[]byte("日本語と🚀と変数名"), bytes.Repeat([]byte("0123456789_"), 150),
 	}
 	for _, content := range contents {
