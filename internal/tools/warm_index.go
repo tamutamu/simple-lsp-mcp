@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -206,6 +207,40 @@ func warmIndexedMayContain(idx *warmFileIndex, needle []byte) bool {
 	}
 }
 
+// readStableWarmSource verifies that the bytes we index and send to an LSP
+// belong to the same file version observed during the directory walk. A
+// replacement, truncation, or in-place edit between stat and read must fail
+// closed instead of publishing an index for bytes paired with stale metadata.
+// Open the file once so a symlink swap cannot make us silently read a different
+// inode; bound growth during concurrent writes.
+func readStableWarmSource(path string, expected fs.FileInfo) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	before, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !warmSameFile(expected, before) {
+		return nil, fmt.Errorf("source changed before reading: %s", path)
+	}
+	content, err := io.ReadAll(io.LimitReader(f, int64(projectWarmMaxBytes)+1))
+	if err != nil {
+		return nil, err
+	}
+	after, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !warmSameFile(before, after) || int64(len(content)) != after.Size() ||
+		len(content) > projectWarmMaxBytes {
+		return nil, fmt.Errorf("source changed while reading: %s", path)
+	}
+	return content, nil
+}
+
 // scanProjectWarmCandidates discovers sources anew on every call, but reads
 // their contents only for newly modified files or possible substring matches.
 // A failed or interrupted scan is never published as a complete index.
@@ -286,7 +321,7 @@ func (e *Engine) scanProjectWarmCandidates(
 		}
 		if content == nil {
 			var err error
-			content, err = os.ReadFile(path)
+			content, err = readStableWarmSource(path, info)
 			if err != nil {
 				return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
 			}
