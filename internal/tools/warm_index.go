@@ -226,16 +226,24 @@ func readStableWarmSource(path string, expected fs.FileInfo) ([]byte, error) {
 	if !warmSameFile(expected, before) {
 		return nil, fmt.Errorf("source changed before reading: %s", path)
 	}
-	content, err := io.ReadAll(io.LimitReader(f, int64(projectWarmMaxBytes)+1))
-	if err != nil {
-		return nil, err
+	if before.Size() < 0 || before.Size() > projectWarmMaxBytes {
+		return nil, fmt.Errorf("source size exceeded warm-up limit: %s", path)
+	}
+	// Allocate once using the verified file size instead of growing an
+	// io.ReadAll buffer, which can double memory use for large sources.
+	content := make([]byte, int(before.Size()))
+	if _, err := io.ReadFull(f, content); err != nil {
+		return nil, fmt.Errorf("source changed while reading %s: %w", path, err)
+	}
+	var extra [1]byte
+	if n, err := f.Read(extra[:]); n != 0 || err != io.EOF {
+		return nil, fmt.Errorf("source grew while reading %s: %v", path, err)
 	}
 	after, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	if !warmSameFile(before, after) || int64(len(content)) != after.Size() ||
-		len(content) > projectWarmMaxBytes {
+	if !warmSameFile(before, after) {
 		return nil, fmt.Errorf("source changed while reading: %s", path)
 	}
 	return content, nil
