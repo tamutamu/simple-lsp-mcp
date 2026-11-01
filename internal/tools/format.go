@@ -8,6 +8,18 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
 
+// PreviewFormat is a separately annotated read-only API. The existing
+// FormatDocument handles both preview and apply for backward compatibility,
+// so its MCP annotation must remain destructive even when apply is false.
+func (e *Engine) PreviewFormat(ctx context.Context, in map[string]any) (map[string]any, error) {
+	preview := make(map[string]any, len(in)+1)
+	for key, value := range in {
+		preview[key] = value
+	}
+	preview["apply"] = false
+	return e.FormatDocument(ctx, preview)
+}
+
 // FormatDocument previews or applies LSP formatting. Supplying a complete
 // start/end range switches to textDocument/rangeFormatting.
 func (e *Engine) FormatDocument(ctx context.Context, in map[string]any) (map[string]any, error) {

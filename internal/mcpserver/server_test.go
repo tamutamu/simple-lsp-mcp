@@ -9,7 +9,7 @@ import (
 )
 
 var expectedTools = []string{
-	"rename_symbol", "preview_rename", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
+	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics",
 	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
 	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
@@ -50,7 +50,7 @@ func TestToolCatalogStaysSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(encoded) > 22*1024 {
+	if len(encoded) > 24*1024 {
 		t.Fatalf("MCP tool catalog uses %d bytes", len(encoded))
 	}
 }
@@ -110,7 +110,7 @@ func TestSimpleServerInstructions(t *testing.T) {
 			t.Fatalf("mandatory/composite instruction remains: %s", deleted)
 		}
 	}
-	for _, wanted := range []string{"Do not invoke every tool", "preview_rename", "inspect_symbol", "tests"} {
+	for _, wanted := range []string{"Do not invoke every tool", "preview_rename", "preview_format", "inspect_symbol", "tests"} {
 		if !strings.Contains(serverInstructions, wanted) {
 			t.Fatalf("instructions missing %q", wanted)
 		}
@@ -162,6 +162,34 @@ func TestRenamePreviewIsReadOnlyAndRetainsExplicitWriteOperation(t *testing.T) {
 	}
 }
 
+func TestFormatPreviewCannotRequestWrites(t *testing.T) {
+	var preview, formatter *definition
+	ds := definitions()
+	for i := range ds {
+		if ds[i].name == "preview_format" {
+			preview = &ds[i]
+		}
+		if ds[i].name == "format_document" {
+			formatter = &ds[i]
+		}
+	}
+	if preview == nil || formatter == nil {
+		t.Fatal("expected read-only preview_format and write-capable format_document")
+	}
+	if !toolAnnotations("preview_format").ReadOnlyHint {
+		t.Fatal("preview formatting is incorrectly marked destructive")
+	}
+	if !*toolAnnotations("format_document").DestructiveHint {
+		t.Fatal("formatting application needs destructive authorization")
+	}
+	if _, ok := preview.schema["properties"].(map[string]any)["apply"]; ok {
+		t.Fatal("read-only formatting preview must not expose apply")
+	}
+	if _, ok := formatter.schema["properties"].(map[string]any)["apply"]; !ok {
+		t.Fatal("format_document must preserve backward-compatible apply")
+	}
+}
+
 func TestResultStructuredAndTextContentMatch(t *testing.T) {
 	v := map[string]any{"symbols": []string{"one"}}
 	r := result(v, false)
@@ -194,7 +222,7 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 20 || len(coding) != 11 {
+	if len(full) != 21 || len(coding) != 11 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
 	for _, d := range coding {
