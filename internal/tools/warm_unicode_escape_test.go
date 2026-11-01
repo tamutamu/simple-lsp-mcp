@@ -23,14 +23,14 @@ func TestWarmEscapedJSIdentifiersMatchExactSpellings(t *testing.T) {
 		{`const \u0069dentifier = 1;`, false},
 		{`const \u0069d2 = 1;`, false},
 		{`const grid = 1;`, false},
-		{`const \\uD835\\uDC9C = 1;`, false}, // Decodes to a different identifier.
+		{`const \uD835\uDC9C = 1;`, false}, // Decodes to a different identifier.
 	}
 	for _, tc := range cases {
 		if got := warmContainsProjectIdentifier([]byte(tc.source), []byte("id"), "typescript-javascript"); got != tc.want {
 			t.Errorf("source=%q: got %v, want %v", tc.source, got, tc.want)
 		}
 	}
-	if got := warmDecodeJSEscapes([]byte(`const \\uD835\\uDC9C = 1;`)); !strings.Contains(string(got), "𝒜") {
+	if got := warmDecodeJSEscapes([]byte(`const \uD835\uDC9C = 1;`)); !strings.Contains(string(got), "𝒜") {
 		t.Fatalf("surrogate-pair escape was not decoded: %q", got)
 	}
 	// Python does not permit JS-style Unicode escapes in identifier spelling.
