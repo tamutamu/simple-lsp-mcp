@@ -7,7 +7,7 @@
 
 **A lightweight bridge between coding agents and real language servers.**
 
-`simple-lsp-mcp` exposes **19 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
+`simple-lsp-mcp` exposes **20 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
 
 ```text
 find a symbol   → search_symbols / get_document_symbols / list_workspace_symbols
@@ -24,7 +24,7 @@ Text search finds spelling matches; LSP resolves **which declaration a use refer
 
 ### When coding agents should use it
 
-Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` supplies a compact file outline, and `inspect_symbol(view="source")` reads the actual relevant implementation without dumping unrelated functions. Use normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
+Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a **known file/function**, call `inspect_symbol(path=..., symbol_path=..., view="edit")` directly, rather than fetching an outline first or rereading the same file. For cross-file renames, call the **read-only** `preview_rename` before any write-capable `rename_symbol(apply=true)` request; this separates safe inspection from tools requiring destructive-operation approval. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` supplies a compact file outline, and `inspect_symbol(view="source")` reads the actual relevant implementation without dumping unrelated functions. Use normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
 
 The `/simple-lsp-mcp-setup` skill can append a short **conditional** policy to your project's `CLAUDE.md` or `AGENTS.md` when explicitly requested. The checked-in `CLAUDE.md` for this repository now **requires at least one relevant LSP tool call before source edits when MCP is connected**. For the FastAPI A/B study, that exact conditional policy is shared by both groups; disconnected runs use ordinary tools.
 
@@ -54,7 +54,7 @@ We compared **Claude Code with and without the previous 26-tool simple-lsp-mcp v
 
 ### Design boundaries
 
-- **Reads stay read-only; writes are explicit.** `rename_symbol` and `format_document` preview by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
+- **Reads stay read-only; writes are explicit.** `preview_rename` is strictly read-only; the backward-compatible `rename_symbol` previews by default but is marked write-capable because `apply=true` mutates files. `format_document` previews by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
 - **No hidden index or embeddings.** Results come live from configured local language servers.
 - **Bounded project warm-up where needed.** TypeScript/Pyright project-wide relations open only candidate source files containing the target spelling, under hard file/byte/match limits; semantic answers still come from the LSP.
 - **No external indexing service.** Workspace code stays local to the MCP/LSP processes.

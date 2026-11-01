@@ -63,9 +63,15 @@ func TestRealLSPEditing(t *testing.T) {
 			"language":    "go",
 			"new_name":    "NewName",
 		}
-		preview, err := engine.RenameSymbol(context.Background(), input)
+		// Even a caller that mistakenly supplies apply=true must never write
+		// through the separately annotated read-only preview operation.
+		input["apply"] = true
+		preview, err := engine.PreviewRename(context.Background(), input)
 		if err != nil {
-			t.Fatalf("rename preview: %v", err)
+			t.Fatalf("read-only rename preview: %v", err)
+		}
+		if input["apply"] != true {
+			t.Fatal("preview mutated the caller's rename options")
 		}
 		if preview["applied"] != false {
 			t.Fatalf("preview applied unexpectedly: %#v", preview)

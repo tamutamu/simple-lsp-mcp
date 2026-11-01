@@ -25,6 +25,12 @@ func setupCommandOptions(client, binary string, autoInstall bool) (string, []str
 			args = append(args, "--scope", "user")
 		}
 		args = append(args, "simple-lsp", "--", binary)
+		if client == "codex" {
+			// Codex consumes textual MCP results; avoid transmitting the
+			// same JSON again as structuredContent by default. The server's
+			// full API still supports explicit --result-format both.
+			args = append(args, "--result-format", "text")
+		}
 		if autoInstall {
 			args = append(args, "--auto-install-lsp")
 		}

@@ -2,10 +2,11 @@
 
 When the `simple-lsp` MCP server is connected, **you MUST use at least one of its actual LSP tools before editing source code**. First identify the file or symbol with regular file search if necessary, then call a focused LSP tool that contributes to the task:
 
-- For multiple **known** functions, pass a `targets` array (up to 8) to `inspect_symbol(view="edit")`; avoid separate reads of code already returned.
-- To discover structure, use `get_document_symbols`. To read an actual function or class implementation, use `inspect_symbol(view="source")` on its `symbol_id` or `symbol_path`; use `view="signature"` or `view="location"` when full code is not needed.
+- For a **known file and function**, use `inspect_symbol(path=..., symbol_path=..., view="edit")` **directly**. Do not first call `get_document_symbols` and do not reread that function with `sed` or `cat`. The edit view includes the existing code, decorators and selected direct imports.
+- For multiple known functions, pass `targets` (up to 8) to one `inspect_symbol(view="edit")` call; avoid one MCP call per function.
+- Use `get_document_symbols` only when you do not yet know the declaration name or need a structural overview. Choose `view="signature"` or `view="location"` when the body is unnecessary.
 - For changing declarations or public interfaces, use `find_references(relation_view="lines")` to see semantically exact usages with their source lines (and `find_implementations` if relevant).
-- For renaming a function, method, or type across files: prefer `rename_symbol` to generate a semantic preview and apply the LSP edit when valid.
+- For renaming across files, call **read-only** `preview_rename` (when exposed) to inspect the LSP's semantic WorkspaceEdit; invoke `rename_symbol(apply=true)` only if authorized. Never call the write-capable `rename_symbol` merely to preview—it may trigger destructive-tool approval even for `apply=false`.
 - For uncertainty about a call or type: use the particular definition, call-hierarchy, hover, or type-hierarchy primitive needed.
 
 Do not read an entire file again if `inspect_symbol` already returned all source needed for the edit. **Do not call unrelated tools just to increase tool counts**. Simple LSP exposes individual LSP primitives, not aggregate impact analysis or verification. After editing, run appropriate application tests with normal tools; LSP diagnostics do not replace tests.

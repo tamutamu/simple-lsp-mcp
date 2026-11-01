@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
@@ -83,15 +84,24 @@ func (e *Engine) targetWarmName(in map[string]any) string {
 	return ""
 }
 
-// warmNameForPosition asks the LSP for the exact identifier at a position.
-// A path/line/column caller has no symbol name in its arguments, but project
-// servers may omit unopened files unless candidate files are synchronized.
-// prepareRename is a read-only LSP request and is not used to perform an edit.
+// warmNameForPosition identifies the source spelling used to select project
+// candidates. It does NOT determine symbol identity: only the subsequent LSP
+// references/rename call does that. Taking the spelling from the already synced
+// document avoids a separate prepareRename round trip on normal identifiers
+// and works on servers where prepareRename is not advertised.
 func (e *Engine) warmNameForPosition(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position, in map[string]any) string {
 	if name := e.targetWarmName(in); name != "" {
 		return name
 	}
-	if !projectWarmSupported(p) || !s.Capabilities().PrepareRename {
+	if !projectWarmSupported(p) {
+		return ""
+	}
+	if name := warmIdentifierAtPosition(d.Text, pos, s.Capabilities().PositionEncoding); name != "" {
+		return name
+	}
+	// Fallback for language-specific spellings that a lexical identifier
+	// detector cannot recognize. An LSP may not advertise prepareRename.
+	if !s.Capabilities().PrepareRename {
 		return ""
 	}
 	callCtx, cancel := e.callContext(ctx)
@@ -109,6 +119,44 @@ func (e *Engine) warmNameForPosition(ctx context.Context, p language.Profile, s 
 		return ""
 	}
 	return e.renameWarmName(in, d.Text, preparation)
+}
+
+// warmIdentifierAtPosition extracts only a potential token spelling using the
+// LSP's negotiated UTF-8/16/32 position encoding. This is a *candidate filter*,
+// never a substitute for the language server's semantic resolution.
+func warmIdentifierAtPosition(text []byte, position protocol.Position, encoding string) string {
+	point, err := document.FromLSP(text, position, encoding)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(text), "\n")
+	if point.Line < 1 || point.Line > len(lines) {
+		return ""
+	}
+	line := []rune(strings.TrimSuffix(lines[point.Line-1], "\r"))
+	offset := point.Column - 1
+	if offset == len(line) && offset > 0 {
+		offset--
+	}
+	if offset >= 0 && offset < len(line) && !warmIdentRune(line[offset]) &&
+		offset > 0 && warmIdentRune(line[offset-1]) {
+		offset--
+	}
+	if offset < 0 || offset >= len(line) || !warmIdentRune(line[offset]) {
+		return ""
+	}
+	start, end := offset, offset+1
+	for start > 0 && warmIdentRune(line[start-1]) {
+		start--
+	}
+	for end < len(line) && warmIdentRune(line[end]) {
+		end++
+	}
+	return string(line[start:end])
+}
+
+func warmIdentRune(r rune) bool {
+	return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // warmProjectSymbolCandidates opens only same-profile source files containing

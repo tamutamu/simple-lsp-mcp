@@ -146,24 +146,42 @@ func (e *Engine) target(ctx context.Context, in map[string]any) (language.Profil
 	return p, s, d, pos, err
 }
 
-// symbolFromWorkspace registers an LSP workspace-symbol response for later use.
-func (e *Engine) symbolFromWorkspace(p language.Profile, v protocol.WorkspaceSymbol, s *session.Session) (core.SymbolSummary, error) {
-	l, err := e.location(protocol.Location{URI: v.Location.URI, Range: v.Location.Range}, s.Capabilities().PositionEncoding)
+// symbolFromWorkspaceIn registers an LSP result using a *request-local*
+// file cache. Without this, each matching symbol rereads the source once for
+// its range and a second time for its content hash. Dense files with many
+// matching symbols can otherwise cause O(symbols) repeated disk reads.
+func (e *Engine) symbolFromWorkspaceIn(cache *fileCache, p language.Profile, v protocol.WorkspaceSymbol, s *session.Session) (core.SymbolSummary, error) {
+	l, err := e.locationIn(cache, protocol.Location{URI: v.Location.URI, Range: v.Location.Range}, s.Capabilities().PositionEncoding)
 	if err != nil {
 		return core.SymbolSummary{}, err
 	}
-	r := symbol.Record{SessionKey: p.SessionKey, Name: v.Name, Kind: normalize.Kind(v.Kind), ContainerName: v.ContainerName, Path: l.Path, URI: v.Location.URI, Range: l.Range, SelectionRange: l.Range, FileHash: e.fileHash(l.Path)}
+	r := symbol.Record{SessionKey: p.SessionKey, Name: v.Name, Kind: normalize.Kind(v.Kind), ContainerName: v.ContainerName, Path: l.Path, URI: v.Location.URI, Range: l.Range, SelectionRange: l.Range, FileHash: cache.hashOf(e.WS, l.Path)}
 	id := e.Symbols.Register(r)
 	return core.SymbolSummary{SymbolID: id, Name: v.Name, Kind: r.Kind, ContainerName: v.ContainerName, Language: p.Name, Path: l.Path, Range: l.Range, SelectionRange: l.Range}, nil
 }
 
-// symbolFromInfo registers a flat document-symbol response for later use.
+// symbolFromInfo reuses the already-synchronized document's bytes and hash
+// for ordinary flat documentSymbol results, avoiding two redundant disk reads
+// per declaration. External file locations retain their original behavior.
 func (e *Engine) symbolFromInfo(p language.Profile, s *session.Session, d document.Document, v protocol.SymbolInformation) (core.SymbolSummary, error) {
-	l, err := e.location(v.Location, s.Capabilities().PositionEncoding)
+	var l core.Location
+	var err error
+	fileHash := ""
+	if v.Location.URI == d.URI {
+		var r core.Range
+		r, err = rangeFromText(d.Text, v.Location.Range, s.Capabilities().PositionEncoding)
+		l = core.Location{Path: relativeMust(e, d.Path), Range: r}
+		fileHash = d.Hash
+	} else {
+		l, err = e.location(v.Location, s.Capabilities().PositionEncoding)
+		if err == nil {
+			fileHash = e.fileHash(l.Path)
+		}
+	}
 	if err != nil {
 		return core.SymbolSummary{}, err
 	}
-	r := symbol.Record{SessionKey: p.SessionKey, Name: v.Name, Kind: normalize.Kind(v.Kind), ContainerName: v.ContainerName, Path: l.Path, URI: v.Location.URI, Range: l.Range, SelectionRange: l.Range, FileHash: e.fileHash(l.Path)}
+	r := symbol.Record{SessionKey: p.SessionKey, Name: v.Name, Kind: normalize.Kind(v.Kind), ContainerName: v.ContainerName, Path: l.Path, URI: v.Location.URI, Range: l.Range, SelectionRange: l.Range, FileHash: fileHash}
 	id := e.Symbols.Register(r)
 	return core.SymbolSummary{SymbolID: id, Name: v.Name, Kind: r.Kind, ContainerName: v.ContainerName, Language: p.Name, Path: l.Path, Range: l.Range, SelectionRange: l.Range}, nil
 }

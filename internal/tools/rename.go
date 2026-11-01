@@ -10,6 +10,19 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
 
+// PreviewRename is deliberately a separate read-only entry point. Some
+// noninteractive MCP clients refuse tools annotated as destructive even when
+// the caller passes apply=false. Keep the existing RenameSymbol API for
+// compatibility, but never allow a preview invocation to write.
+func (e *Engine) PreviewRename(ctx context.Context, in map[string]any) (map[string]any, error) {
+	preview := make(map[string]any, len(in)+1)
+	for key, value := range in {
+		preview[key] = value
+	}
+	preview["apply"] = false
+	return e.RenameSymbol(ctx, preview)
+}
+
 // RenameSymbol asks the selected language server to compute a semantic rename.
 // It is preview-only unless apply=true. The server never computes replacements
 // itself; it only validates and optionally applies the returned WorkspaceEdit.

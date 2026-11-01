@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
 
@@ -53,6 +54,30 @@ func warmScan(t *testing.T, e *Engine, p language.Profile, root, name string) ([
 		t.Fatal(err)
 	}
 	return found, stats
+}
+
+func TestWarmIdentifierAtPositionAvoidsRedundantLSPPrepareRename(t *testing.T) {
+	// UTF-16 positions are zero-based; emoji consumes two UTF-16 units.
+	cases := []struct {
+		name, source, expected, encoding string
+		line, column int
+	}{
+		{"python-references", "value = account.owner\\n", "owner", "utf-16", 0, 16},
+		{"typescript-dollar", "const $cache = 1;\\n", "$cache", "utf-16", 0, 7},
+		{"unicode-utf16", "😀 = 1; account.naïve()\\n", "naïve", "utf-16", 0, 19},
+		{"unicode-utf8", "account.naïve()\\n", "naïve", "utf-8", 0, 8},
+		{"whitespace", "account.  owner\\n", "", "utf-16", 0, 9},
+		{"no-token", "abc\\n", "", "utf-16", 5, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			found := warmIdentifierAtPosition([]byte(tc.source),
+				protocol.Position{Line: tc.line, Character: tc.column}, tc.encoding)
+			if found != tc.expected {
+				t.Fatalf("name=%q, want %q", found, tc.expected)
+			}
+		})
+	}
 }
 
 func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T) {
