@@ -82,7 +82,13 @@ func warmDecodeLinePosition(line []rune, offset int) ([]rune, int) {
 	mapped := offset
 	for i := 0; i < len(line); {
 		if line[i] == '\\' {
-			if r, n, ok := warmReadJSEscape([]byte(string(line[i:]))); ok {
+			// Escape sequences are at most 12 ASCII bytes (surrogate pair).
+			// Never convert the entire remaining line for every backslash.
+			end := i + 12
+			if end > len(line) {
+				end = len(line)
+			}
+			if r, n, ok := warmReadJSEscape([]byte(string(line[i:end]))); ok {
 				if offset >= i && offset < i+n {
 					mapped = len(out)
 				}
