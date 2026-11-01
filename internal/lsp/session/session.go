@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -371,7 +372,22 @@ func (s *Session) Shutdown(ctx context.Context) error {
 func (s *Session) serverRequest(_ context.Context, m transport.Message) (any, *transport.ResponseError) {
 	switch m.Method {
 	case "workspace/configuration":
-		return []map[string]any{{}}, nil
+		// A language server may request multiple independently scoped settings.
+		// Returning a single empty object silently discards configured analysis
+		// options and violates the one-response-per-item LSP contract.
+		var params struct {
+			Items []struct {
+				Section string `json:"section"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(m.Params, &params); err != nil || params.Items == nil {
+			return nil, &transport.ResponseError{Code: -32602, Message: "invalid workspace/configuration items"}
+		}
+		values := make([]any, len(params.Items))
+		for i, item := range params.Items {
+			values[i] = configurationSection(s.cfg.Settings, item.Section)
+		}
+		return values, nil
 	case "workspace/workspaceFolders":
 		return []map[string]string{{"uri": fileURI(s.root), "name": "workspace"}}, nil
 	case "workspace/applyEdit":
@@ -382,6 +398,34 @@ func (s *Session) serverRequest(_ context.Context, m transport.Message) (any, *t
 		return nil, &transport.ResponseError{Code: -32601, Message: "method not supported"}
 	}
 }
+// configurationSection resolves the dotted section names used by LSP
+// workspace/configuration. Missing settings are JSON null, not a fabricated
+// empty object. A literal dotted key takes precedence over nested traversal.
+func configurationSection(settings map[string]any, section string) any {
+	if section == "" {
+		if settings == nil {
+			return map[string]any{}
+		}
+		return settings
+	}
+	if value, ok := settings[section]; ok {
+		return value
+	}
+	var current any = settings
+	for _, part := range strings.Split(section, ".") {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		value, found := object[part]
+		if !found {
+			return nil
+		}
+		current = value
+	}
+	return current
+}
+
 func (s *Session) notification(m transport.Message) {
 	if m.Method != "textDocument/publishDiagnostics" {
 		return
