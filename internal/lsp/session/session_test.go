@@ -266,3 +266,70 @@ func TestForAllIncludesEveryMonorepoServer(t *testing.T) {
 		t.Fatalf("ForPath(b) = %v, %v", b, err)
 	}
 }
+
+func TestVersionedPushDiagnosticsRejectStaleAfterEdit(t *testing.T) {
+	s := New("python", t.TempDir(), config.Server{})
+	uri := "file:///tmp/edited.py"
+	publish := func(version string, message string) {
+		t.Helper()
+		s.notification(transport.Message{
+			Method: "textDocument/publishDiagnostics",
+			Params: json.RawMessage(fmt.Sprintf(
+				`{"uri":%q,"version":%s,"diagnostics":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},"message":%q}]}`,
+				uri, version, message)),
+		})
+	}
+	s.noteDocumentVersion(uri, 1)
+	publish("1", "old error")
+	got, ready, err := s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || !ready || len(got) != 1 || got[0].Message != "old error" {
+		t.Fatalf("initial report: ready=%v got=%v err=%v", ready, got, err)
+	}
+
+	// didChange invalidates the previous result. A delayed version-1
+	// notification must not revive it or claim the edited file is clean.
+	s.noteDocumentVersion(uri, 2)
+	publish("1", "stale error")
+	_, ready, err = s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || ready {
+		t.Fatalf("stale version accepted: ready=%v err=%v", ready, err)
+	}
+	publish("2", "current error")
+	got, ready, err = s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || !ready || len(got) != 1 || got[0].Message != "current error" {
+		t.Fatalf("current version missing: ready=%v got=%v err=%v", ready, got, err)
+	}
+	// An out-of-order stale result must also not overwrite a current one.
+	publish("1", "late stale error")
+	got, ready, err = s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || !ready || len(got) != 1 || got[0].Message != "current error" {
+		t.Fatalf("current report overwritten: ready=%v got=%v err=%v", ready, got, err)
+	}
+}
+
+func TestVersionlessPushDiagnosticsRemainsSupported(t *testing.T) {
+	s := New("python", t.TempDir(), config.Server{})
+	uri := "file:///tmp/legacy.py"
+	s.noteDocumentVersion(uri, 4)
+	s.notification(transport.Message{
+		Method: "textDocument/publishDiagnostics",
+		Params: json.RawMessage(`{"uri":"file:///tmp/legacy.py","diagnostics":[]}`),
+	})
+	got, ready, err := s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || !ready || len(got) != 0 {
+		t.Fatalf("versionless push report lost: ready=%v got=%v err=%v", ready, got, err)
+	}
+}
+
+func TestVersionedPushDiagnosticsForUntrackedDocument(t *testing.T) {
+	s := New("python", t.TempDir(), config.Server{})
+	uri := "file:///tmp/not-yet-open.py"
+	s.notification(transport.Message{
+		Method: "textDocument/publishDiagnostics",
+		Params: json.RawMessage(`{"uri":"file:///tmp/not-yet-open.py","version":7,"diagnostics":[]}`),
+	})
+	_, ready, err := s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || !ready {
+		t.Fatalf("untracked file report rejected: ready=%v err=%v", ready, err)
+	}
+}
