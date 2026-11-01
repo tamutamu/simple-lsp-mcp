@@ -74,6 +74,21 @@ func TestWaitDiagnosticsTimeoutIsExplicitlyIncomplete(t *testing.T) {
 	}
 }
 
+func TestPullDiagnosticsRejectionIsSessionLocal(t *testing.T) {
+	a := New("python", t.TempDir(), config.Server{})
+	b := New("python", t.TempDir(), config.Server{})
+	if a.PullDiagnosticsKnownUnsupported() || b.PullDiagnosticsKnownUnsupported() {
+		t.Fatal("a new LSP session must not assume the pull diagnostic method is missing")
+	}
+	a.MarkPullDiagnosticsUnsupported()
+	if !a.PullDiagnosticsKnownUnsupported() {
+		t.Fatal("unsupported pull diagnostics method was not remembered")
+	}
+	if b.PullDiagnosticsKnownUnsupported() {
+		t.Fatal("a different language server inherited another session's cache")
+	}
+}
+
 func TestDecodeCapsDetectsHoverProvider(t *testing.T) {
 	if !decodeCaps(map[string]json.RawMessage{"hoverProvider": json.RawMessage("true")}, "utf-16").Hover {
 		t.Fatal("Hover = false, want true")
