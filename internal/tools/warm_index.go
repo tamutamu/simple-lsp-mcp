@@ -22,11 +22,13 @@ import (
 const (
 	warmBloomBytes       = 256
 	warmIndexMaxProjects = 4
+	warmIndexMaxCachedBytes = 8 << 20
 )
 
 type warmFileIndex struct {
-	info  fs.FileInfo
-	bloom [warmBloomBytes]byte
+	info    fs.FileInfo
+	bloom   [warmBloomBytes]byte
+	content []byte // Only observed candidate files; bounded per project.
 }
 
 type warmSourceIndex struct {
@@ -145,6 +147,7 @@ func (e *Engine) scanProjectWarmCandidates(
 	key := root + "\x00" + p.SessionKey
 	previous := e.warmIndex.snapshot(key)
 	next := make(map[string]warmFileIndex, len(previous))
+	cachedBytes := 0
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return core.WithCause(core.IncompleteSearch, "project warm-up could not inspect source files", walkErr)
@@ -185,30 +188,49 @@ func (e *Engine) scanProjectWarmCandidates(
 
 		old, found := previous[path]
 		unchanged := found && warmSameFile(old.info, info)
-		if unchanged && !warmBloomMayContain(&old.bloom, needle) {
-			next[path] = old
-			stats.SkippedRead++
-			return nil
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
-		}
-		stats.FilesRead++
-		stats.BytesRead += int64(len(content))
 		current := old
+		var content []byte
+		if unchanged {
+			cachedBytes += len(old.content)
+			if !warmBloomMayContain(&old.bloom, needle) {
+				next[path] = old
+				stats.SkippedRead++
+				return nil
+			}
+			// Candidate files that were previously opened for the LSP can
+			// reuse their bytes as long as their filesystem identity and
+			// metadata remain unchanged. This avoids rereading positive
+			// matches on each relationship or rename operation.
+			content = old.content
+		}
+		if content == nil {
+			var err error
+			content, err = os.ReadFile(path)
+			if err != nil {
+				return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
+			}
+			stats.FilesRead++
+			stats.BytesRead += int64(len(content))
+		} else {
+			stats.SkippedRead++
+		}
 		if !unchanged {
 			current = warmFileIndex{info: info}
 			warmBloomAdd(&current.bloom, content)
 		}
-		next[path] = current
 		if !bytes.Contains(content, needle) {
+			next[path] = current
 			return nil
 		}
 		stats.Matches++
 		if stats.Matches > projectWarmMaxMatches {
 			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
 		}
+		if current.content == nil && len(content) <= warmIndexMaxCachedBytes-cachedBytes {
+			current.content = content
+			cachedBytes += len(content)
+		}
+		next[path] = current
 		if err := onMatch(path, rel, candidateProfile, content); err != nil {
 			return err
 		}
