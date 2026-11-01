@@ -1,12 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -131,62 +127,15 @@ func (e *Engine) warmProjectSymbolCandidates(ctx context.Context, p language.Pro
 	if _, err := e.WS.Relative(root); err != nil {
 		return core.WithCause(core.InvalidPath, "project warm-up language-server root escapes the workspace", err)
 	}
-	needle := []byte(name)
-	filesScanned, bytesScanned, matches := 0, int64(0), 0
-	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not inspect source files", walkErr)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if path != root && workspaceListExcludedDirs[entry.Name()] {
-				return filepath.SkipDir
+	_, err = e.scanProjectWarmCandidates(ctx, p, root, []byte(name),
+		func(path, rel string, candidateProfile language.Profile, content []byte) error {
+			syncCtx, cancel := e.callContext(ctx)
+			_, err := e.Docs.SyncBytes(syncCtx, s, path, candidateProfile.LanguageID, content)
+			cancel()
+			if err != nil {
+				return core.WithCause(core.IncompleteSearch, "project warm-up could not open "+rel+" in the language server", err)
 			}
 			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(e.WS.Root(), path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		candidateProfile, err := language.FromPath(rel)
-		if err != nil || candidateProfile.SessionKey != p.SessionKey {
-			return nil
-		}
-		filesScanned++
-		if filesScanned > projectWarmMaxFiles {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d source files; narrow the workspace/profile", projectWarmMaxFiles))
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not stat "+rel, err)
-		}
-		bytesScanned += info.Size()
-		if bytesScanned > projectWarmMaxBytes {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d MiB of source; narrow the workspace/profile", projectWarmMaxBytes>>20))
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
-		}
-		if !bytes.Contains(content, needle) {
-			return nil
-		}
-		matches++
-		if matches > projectWarmMaxMatches {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
-		}
-		syncCtx, cancel := e.callContext(ctx)
-		_, err = e.Docs.SyncBytes(syncCtx, s, path, candidateProfile.LanguageID, content)
-		cancel()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not open "+rel+" in the language server", err)
-		}
-		return nil
-	})
+		})
+	return err
 }
