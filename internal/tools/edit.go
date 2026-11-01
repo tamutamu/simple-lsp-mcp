@@ -141,15 +141,7 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 			}
 		}
 
-		updated := append([]byte(nil), original...)
-		for i := len(computed) - 1; i >= 0; i-- {
-			edit := computed[i]
-			next := make([]byte, 0, len(updated)-(edit.end-edit.start)+len(edit.preview.NewText))
-			next = append(next, updated[:edit.start]...)
-			next = append(next, edit.preview.NewText...)
-			next = append(next, updated[edit.end:]...)
-			updated = next
-		}
+		updated := assembleWorkspaceEdits(original, computed)
 		edits := make([]editPreview, len(computed))
 		for i, edit := range computed {
 			edits[i] = edit.preview
@@ -159,6 +151,24 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 		editCount += len(edits)
 	}
 	return plan, preview, editCount, nil
+}
+
+// assembleWorkspaceEdits applies validated, non-overlapping edits in source
+// order. Rebuilding the entire file once per edit was O(file bytes * edits)
+// in both allocations and copied bytes, especially costly for large renames.
+func assembleWorkspaceEdits(original []byte, edits []computedEdit) []byte {
+	size := len(original)
+	for _, edit := range edits {
+		size += len(edit.preview.NewText) - (edit.end - edit.start)
+	}
+	updated := make([]byte, 0, size)
+	cursor := 0
+	for _, edit := range edits {
+		updated = append(updated, original[cursor:edit.start]...)
+		updated = append(updated, edit.preview.NewText...)
+		cursor = edit.end
+	}
+	return append(updated, original[cursor:]...)
 }
 
 // applyWorkspaceEditPlan writes only after the complete edit was validated.

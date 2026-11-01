@@ -221,6 +221,12 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 // locationsAt runs one location-based LSP method against an already-resolved
 // target without re-resolving or re-syncing the document.
 func (e *Engine) locationsAt(ctx context.Context, c *fileCache, s *session.Session, uri string, pos protocol.Position, method string, extra map[string]any) ([]core.Location, error) {
+	// A references query often returns hundreds of locations in one file.
+	// Reuse source bytes for range conversion rather than rereading that file
+	// for every result. Keep this cache request-local to avoid stale results.
+	if c == nil {
+		c = newFileCache()
+	}
 	params := map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: uri}, "position": pos}
 	for k, v := range extra {
 		params[k] = v
