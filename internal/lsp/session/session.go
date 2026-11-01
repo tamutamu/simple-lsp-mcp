@@ -33,6 +33,7 @@ type Session struct {
 	crashed     error
 	diagnostics map[string][]protocol.Diagnostic
 	diagnosticEvent chan struct{} // broadcast when push diagnostics arrive or become stale
+	pullDiagnosticsUnsupported bool // -32601 is stable until session restart
 }
 
 func New(key, root string, cfg config.Server) *Session {
@@ -87,6 +88,7 @@ func (s *Session) start(ctx context.Context) error {
 	// Never return cached diagnostics from a crashed server incarnation.
 	s.mu.Lock()
 	s.diagnostics = make(map[string][]protocol.Diagnostic)
+	s.pullDiagnosticsUnsupported = false
 	s.signalDiagnosticsLocked()
 	s.mu.Unlock()
 	cmd, transport, err := s.launch(ctx)
@@ -273,6 +275,19 @@ func (s *Session) invalidateDiagnostics(uri string) {
 	s.mu.Lock()
 	delete(s.diagnostics, uri)
 	s.signalDiagnosticsLocked()
+	s.mu.Unlock()
+}
+
+// PullDiagnosticsKnownUnsupported avoids repeatedly probing a pull method
+// rejected by this exact server incarnation. Reset on server restart.
+func (s *Session) PullDiagnosticsKnownUnsupported() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pullDiagnosticsUnsupported
+}
+func (s *Session) MarkPullDiagnosticsUnsupported() {
+	s.mu.Lock()
+	s.pullDiagnosticsUnsupported = true
 	s.mu.Unlock()
 }
 
