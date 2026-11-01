@@ -6,7 +6,7 @@ When the `simple-lsp` MCP server is connected, **you MUST use at least one of it
 - For multiple known functions, pass `targets` (up to 8) to one `inspect_symbol(view="edit")` call; avoid one MCP call per function.
 - Use `get_document_symbols` only when you do not yet know the declaration name or need a structural overview. Choose `view="signature"` or `view="location"` when the body is unnecessary.
 - For changing declarations or public interfaces, use `find_references(relation_view="lines")` to see semantically exact usages with their source lines (and `find_implementations` if relevant).
-- For renaming a function, method, or type across files: prefer `rename_symbol` to generate a semantic preview and apply the LSP edit when valid.
+- For renaming across files, call **read-only** `preview_rename` (when exposed) to inspect the LSP's semantic WorkspaceEdit; invoke `rename_symbol(apply=true)` only if authorized. Never call the write-capable `rename_symbol` merely to preview—it may trigger destructive-tool approval even for `apply=false`.
 - For uncertainty about a call or type: use the particular definition, call-hierarchy, hover, or type-hierarchy primitive needed.
 
 Do not read an entire file again if `inspect_symbol` already returned all source needed for the edit. **Do not call unrelated tools just to increase tool counts**. Simple LSP exposes individual LSP primitives, not aggregate impact analysis or verification. After editing, run appropriate application tests with normal tools; LSP diagnostics do not replace tests.
