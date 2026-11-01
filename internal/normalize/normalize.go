@@ -1,12 +1,14 @@
 package normalize
 
 import (
+	"net/url"
+	"path/filepath"
+	"runtime"
+	"strings"
+
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
-	"net/url"
-	"path/filepath"
-	"strings"
 )
 
 func Position(p protocol.Position) core.Position {
@@ -15,12 +17,45 @@ func Position(p protocol.Position) core.Position {
 func Range(r protocol.Range) core.Range {
 	return core.Range{Start: Position(r.Start), End: Position(r.End)}
 }
+// FileURI encodes native absolute paths as canonical file URLs. In particular,
+// Windows drive letters must be in the URL path (file:///C:/...), never in
+// the authority (file://C:/...). Spaces, # and non-ASCII names are escaped.
+func FileURI(path string) string {
+	slash := filepath.ToSlash(path)
+	if len(slash) >= 2 && isDriveLetter(slash[0]) && slash[1] == ':' {
+		slash = "/" + slash
+	}
+	if strings.HasPrefix(slash, "//") {
+		host, tail, ok := strings.Cut(strings.TrimPrefix(slash, "//"), "/")
+		if ok && host != "" {
+			return (&url.URL{Scheme: "file", Host: host, Path: "/" + tail}).String()
+		}
+	}
+	return (&url.URL{Scheme: "file", Path: slash}).String()
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+// URIPath decodes LSP file URLs without dropping a UNC host or treating a
+// Windows drive as a URL authority. Remote file hosts on POSIX are rejected:
+// ignoring their host would silently resolve a different local file.
 func URIPath(ws *workspace.Workspace, uri string) (string, error) {
 	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" {
+	if err != nil || u.Scheme != "file" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return "", core.NewError(core.InvalidPath, "language server returned an invalid URI")
 	}
-	return ws.Relative(filepath.FromSlash(u.Path))
+	path := u.Path
+	if u.Host != "" && u.Host != "localhost" {
+		if runtime.GOOS != "windows" {
+			return "", core.NewError(core.InvalidPath, "remote file URI host is not supported on this platform")
+		}
+		path = "//" + u.Host + path
+	} else if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && isDriveLetter(path[1]) && path[2] == ':' {
+		path = path[1:]
+	}
+	return ws.Relative(filepath.FromSlash(path))
 }
 func Location(ws *workspace.Workspace, l protocol.Location) (core.Location, error) {
 	p, err := URIPath(ws, l.URI)

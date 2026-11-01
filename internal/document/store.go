@@ -4,15 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
+	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 )
 
 // Notifier sends document lifecycle messages to an LSP server.
@@ -114,5 +113,5 @@ func (s *Store) SyncBytes(_ context.Context, n Notifier, path, languageID string
 }
 
 func fileURI(path string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	return normalize.FileURI(path)
 }
