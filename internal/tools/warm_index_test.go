@@ -75,7 +75,7 @@ func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T
 	}
 	warmWrite(t, root, "c.ts", "export const omega = 2;\n")
 	found, stats = warmScan(t, e, p, root, "omega")
-	if !reflect.DeepEqual(found, []string{"b.ts", "c.ts"}) || stats.FilesRead != 2 {
+	if !reflect.DeepEqual(found, []string{"b.ts", "c.ts"}) || stats.FilesRead != 1 {
 		t.Fatalf("added source found=%v stats=%+v", found, stats)
 	}
 	if err := os.Remove(filepath.Join(root, "b.ts")); err != nil {
@@ -84,6 +84,24 @@ func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T
 	found, stats = warmScan(t, e, p, root, "omega")
 	if !reflect.DeepEqual(found, []string{"c.ts"}) || stats.SourceFiles != 2 {
 		t.Fatalf("removed source found=%v stats=%+v", found, stats)
+	}
+}
+
+func TestWarmIndexReusesPositiveMatchesAndInvalidatesChangedBytes(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	warmWrite(t, root, "a.ts", "const alpha = 123;\n")
+	first, stats := warmScan(t, e, p, root, "alpha")
+	if !reflect.DeepEqual(first, []string{"a.ts"}) || stats.FilesRead != 1 {
+		t.Fatalf("first match: %v %+v", first, stats)
+	}
+	second, stats := warmScan(t, e, p, root, "alpha")
+	if !reflect.DeepEqual(second, first) || stats.FilesRead != 0 {
+		t.Fatalf("positive candidate was reread: %v %+v", second, stats)
+	}
+	warmWrite(t, root, "a.ts", "const gamma = 12345;\n")
+	third, stats := warmScan(t, e, p, root, "alpha")
+	if len(third) != 0 || stats.FilesRead != 1 {
+		t.Fatalf("stale cached candidate after source change: %v %+v", third, stats)
 	}
 }
 
@@ -208,6 +226,9 @@ func BenchmarkProjectWarmLegacyFullScanMiss(b *testing.B) {
 			if !entry.Type().IsRegular() || filepath.Ext(path) != ".ts" {
 				return nil
 			}
+			if _, err := entry.Info(); err != nil {
+				return err
+			}
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return err
@@ -220,6 +241,62 @@ func BenchmarkProjectWarmLegacyFullScanMiss(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+	b.ReportMetric(100, "reads/op")
+}
+
+func BenchmarkProjectWarmIndexHit(b *testing.B) {
+	root := b.TempDir()
+	ws, err := workspace.Open(root)
+	if err != nil { b.Fatal(err) }
+	p, err := language.FromPath("sample.ts")
+	if err != nil { b.Fatal(err) }
+	e := &Engine{WS: ws}
+	for i := 0; i < 100; i++ {
+		path := filepath.Join(root, strings.Repeat("a", i%7), "source"+string(rune('A'+i%26))+string(rune('a'+i/26))+".ts")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil { b.Fatal(err) }
+		src := bytes.Repeat([]byte("const nothing = 42;\n"), 100)
+		if i == 0 { src = append(src, []byte("const uniqueNeedleXYZ = 1;\n")...) }
+		if err := os.WriteFile(path, src, 0o600); err != nil { b.Fatal(err) }
+	}
+	scan := func() warmScanStats {
+		stats, err := e.scanProjectWarmCandidates(context.Background(), p, root, []byte("uniqueNeedleXYZ"),
+			func(_ string, _ string, _ language.Profile, _ []byte) error { return nil })
+		if err != nil { b.Fatal(err) }
+		if stats.Matches != 1 { b.Fatalf("expected one match, found %d", stats.Matches) }
+		return stats
+	}
+	scan()
+	b.ResetTimer()
+	var reads int
+	for i := 0; i < b.N; i++ { reads += scan().FilesRead }
+	b.ReportMetric(float64(reads)/float64(b.N), "reads/op")
+}
+
+func BenchmarkProjectWarmLegacyFullScanHit(b *testing.B) {
+	root := b.TempDir()
+	for i := 0; i < 100; i++ {
+		path := filepath.Join(root, strings.Repeat("a", i%7), "source"+string(rune('A'+i%26))+string(rune('a'+i/26))+".ts")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil { b.Fatal(err) }
+		src := bytes.Repeat([]byte("const nothing = 42;\n"), 100)
+		if i == 0 { src = append(src, []byte("const uniqueNeedleXYZ = 1;\n")...) }
+		if err := os.WriteFile(path, src, 0o600); err != nil { b.Fatal(err) }
+	}
+	needle := []byte("uniqueNeedleXYZ")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matches := 0
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil { return walkErr }
+			if !entry.Type().IsRegular() || filepath.Ext(path) != ".ts" { return nil }
+			if _, err := entry.Info(); err != nil { return err }
+			content, err := os.ReadFile(path)
+			if err != nil { return err }
+			if bytes.Contains(content, needle) { matches++ }
+			return nil
+		})
+		if err != nil { b.Fatal(err) }
+		if matches != 1 { b.Fatalf("expected one match, got %d", matches) }
 	}
 	b.ReportMetric(100, "reads/op")
 }
