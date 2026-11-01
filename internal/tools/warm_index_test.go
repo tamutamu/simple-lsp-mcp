@@ -147,6 +147,42 @@ func TestWarmIndexUsesBloomForSourcesLargerThanCacheBudget(t *testing.T) {
 	}
 }
 
+// A newly inserted lexically-earlier file can change which snapshots fit
+// inside the 8 MiB budget. Previously all unchanged cached files were kept,
+// so a 7 MiB cache grew to 9 MiB without triggering the cap.
+func TestWarmIndexNeverExceedsByteBudgetAfterInsert(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	warmWrite(t, root, "a.ts", "const alpha = 1;\n"+strings.Repeat("x", 6<<20))
+	warmWrite(t, root, "b.ts", "const beta = 1;\n"+strings.Repeat("y", 1<<20))
+	_, _ = warmScan(t, e, p, root, "alpha")
+	cacheBytes := func() int {
+		t.Helper()
+		key := root + "\x00" + p.SessionKey
+		total := 0
+		for _, entry := range e.warmIndex.snapshot(key) {
+			total += len(entry.content)
+		}
+		return total
+	}
+	if got := cacheBytes(); got > warmIndexMaxCachedBytes {
+		t.Fatalf("initial cache exceeded limit: %d", got)
+	}
+	// This file is sorted first and fills the remainder of the cache before
+	// unchanged, previously cached sources are visited.
+	warmWrite(t, root, "0.ts", "const inserted = 1;\n"+strings.Repeat("z", 2<<20))
+	_, _ = warmScan(t, e, p, root, "unmatchedNeedle123")
+	if got := cacheBytes(); got > warmIndexMaxCachedBytes {
+		t.Fatalf("cache exceeded %d bytes after insertion: %d", warmIndexMaxCachedBytes, got)
+	}
+	found, _ := warmScan(t, e, p, root, "beta")
+	if !reflect.DeepEqual(found, []string{"b.ts"}) {
+		t.Fatalf("evicted source's match was lost: %v", found)
+	}
+	if got := cacheBytes(); got > warmIndexMaxCachedBytes {
+		t.Fatalf("cache exceeded limit on subsequent lookup: %d", got)
+	}
+}
+
 func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T) {
 	e, p, root := warmIndexFixture(t)
 	warmWrite(t, root, "a.ts", "export const alpha = 1;\n")
