@@ -186,3 +186,40 @@ func BenchmarkProjectWarmIndexMiss(b *testing.B) {
 	}
 	b.ReportMetric(float64(reads)/float64(b.N), "reads/op")
 }
+
+func BenchmarkProjectWarmLegacyFullScanMiss(b *testing.B) {
+	root := b.TempDir()
+	for i := 0; i < 100; i++ {
+		path := filepath.Join(root, strings.Repeat("a", i%7), "source"+string(rune('A'+i%26))+string(rune('a'+i/26))+".ts")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(path, bytes.Repeat([]byte("const nothing = 42;\n"), 100), 0o600); err != nil {
+			b.Fatal(err)
+		}
+	}
+	needle := []byte("absentUniqueIdentifierXYZ")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if !entry.Type().IsRegular() || filepath.Ext(path) != ".ts" {
+				return nil
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if bytes.Contains(content, needle) {
+				b.Fatal("unexpected match in negative-control benchmark")
+			}
+			return nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportMetric(100, "reads/op")
+}
