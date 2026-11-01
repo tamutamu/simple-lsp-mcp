@@ -18,6 +18,7 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
 	"github.com/tamutamu/simple-lsp-mcp/internal/managedlsp"
+	"github.com/tamutamu/simple-lsp-mcp/internal/normalize"
 )
 
 type Session struct {
@@ -378,7 +379,7 @@ func (s *Session) notification(m transport.Message) {
 		s.mu.Unlock()
 	}
 }
-func fileURI(path string) string { return "file://" + path }
+func fileURI(path string) string { return normalize.FileURI(path) }
 func clientCapabilities() map[string]any {
 	return map[string]any{
 		"workspace": map[string]any{
