@@ -57,7 +57,9 @@ def read_paired(path, study, treatment="mcp"):
             raise ValueError(f"Incomplete trial: {key}, {arm}; do not score as success")
         if not parse_bool(row.get("graded", "true")):
             raise ValueError(f"Ungraded trial: {key}, {arm}")
-        for metric in ("seconds", "input_tokens"):
+        targets = {"seconds": 1 - min_time_reduction,
+               "input_tokens": 1 - min_token_reduction}
+    for metric in ("seconds", "input_tokens"):
             try:
                 n = float(row[metric])
             except (KeyError, ValueError, TypeError) as exc:
@@ -66,6 +68,12 @@ def read_paired(path, study, treatment="mcp"):
                 raise ValueError(f"Invalid {metric}={n} in {key}")
             row[metric] = n
         row["accepted"] = parse_bool(row.get("accepted", "false"))
+        # Legacy pilot CSVs omit these evidence flags. Keep them analyzable,
+        # but never let unverifiable trials qualify as product-grade evidence.
+        row["evidence_verified"] = (
+            "completed" in row and "graded" in row
+            and parse_bool(row["completed"]) and parse_bool(row["graded"])
+        )
         row["mcp_calls"] = int(row.get("mcp_calls") or 0)
         pairs[key][arm] = row
     if not pairs:
@@ -77,7 +85,14 @@ def read_paired(path, study, treatment="mcp"):
 
 
 def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
-             bootstrap=8000, seed=20261101, min_adoption=0.8):
+             bootstrap=8000, seed=20261101, min_adoption=0.8,
+             selection_policy="required", min_time_reduction=0.25,
+             min_token_reduction=0.30):
+    if selection_policy not in ("required", "natural"):
+        raise ValueError("selection_policy must be required or natural")
+    for threshold in (min_time_reduction, min_token_reduction):
+        if not 0 < threshold < 1:
+            raise ValueError("minimum reductions must be within (0, 1)")
     by_task = defaultdict(list)
     for (task, rep), arms in pairs.items():
         by_task[task].append(arms)
@@ -97,6 +112,12 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
         "enough_repeats_each_task": all(rep >= min_repeats for rep in reps.values()),
         "quality_lower_bound_both_at_least_95_percent": all(
             v["wilson_lower_95"] >= 0.95 for v in acceptance.values()),
+        "treatment_quality_at_least_baseline": (
+            acceptance[treatment]["accepted"] >= acceptance["baseline"]["accepted"]),
+        "trials_have_explicit_completion_and_grading": all(
+            a["evidence_verified"] for a in (treatments + baselines)),
+        # Being ordered to invoke LSP is not voluntary tool adoption.
+        "spontaneous_selection_observed": selection_policy == "natural",
         "treatment_used_mcp_in_at_least_80_percent": adoption >= min_adoption,
     }
     metrics = {}
@@ -122,8 +143,13 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             "change_percent": round((math.exp(mean_log_ratio) - 1) * 100, 2),
             "ci_familywise_95_ratio": [round(math.exp(lo), 6), round(math.exp(hi), 6)],
             "upper_below_1": hi < 0,
+            "required_ratio": targets[metric],
+            # The complete CI must clear the declared 25% / 30% target,
+            # not merely show any nonzero improvement.
+            "upper_below_required_ratio": math.exp(hi) <= targets[metric],
         }
-    qualified = all(readiness.values()) and all(v["upper_below_1"] for v in metrics.values())
+    qualified = all(readiness.values()) and all(
+        v["upper_below_required_ratio"] for v in metrics.values())
     return {
         "qualified_product_efficiency": qualified,
         "study_design": {
@@ -134,6 +160,9 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             "bootstrap_samples": bootstrap,
             "seed": seed,
             "two_co_primary_metrics_bonferroni": True,
+            "selection_policy": selection_policy,
+            "minimum_time_reduction": min_time_reduction,
+            "minimum_total_input_reduction": min_token_reduction,
         },
         "readiness": readiness,
         "acceptance": acceptance,
@@ -156,13 +185,17 @@ def main():
     p.add_argument("--min-tasks", type=int, default=20)
     p.add_argument("--min-repeats", type=int, default=3)
     p.add_argument("--seed", type=int, default=20261101)
+    p.add_argument("--selection-policy", choices=("natural", "required"),
+                   default="required",
+                   help="Natural tool choice is mandatory for product qualification")
     p.add_argument("--require-qualified", action="store_true")
     args = p.parse_args()
     if args.bootstrap < 1000 or args.min_tasks < 2 or args.min_repeats < 1:
         p.error("Invalid power/design parameters")
     pairs = read_paired(args.csv, args.study, args.treatment)
     report = evaluate(pairs, treatment=args.treatment, min_tasks=args.min_tasks,
-                      min_repeats=args.min_repeats, bootstrap=args.bootstrap, seed=args.seed)
+                      min_repeats=args.min_repeats, bootstrap=args.bootstrap,
+                      seed=args.seed, selection_policy=args.selection_policy)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if args.require_qualified and not report["qualified_product_efficiency"]:
         raise SystemExit(1)
