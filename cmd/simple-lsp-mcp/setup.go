@@ -16,6 +16,16 @@ func setupCommand(client, binary string) (string, []string, error) {
 }
 
 func setupCommandOptions(client, binary string, autoInstall bool) (string, []string, error) {
+	return setupCommandWithProfile(client, binary, autoInstall, "auto")
+}
+
+// "auto" uses the 11-tool, read-only coding surface for Codex.
+// Claude retains its existing full surface for backward compatibility.
+// Explicit full/coding overrides remain available for advanced workflows.
+func setupCommandWithProfile(client, binary string, autoInstall bool, profile string) (string, []string, error) {
+	if profile != "auto" && profile != "coding" && profile != "full" {
+		return "", nil, fmt.Errorf("unsupported tool profile %q: use auto, coding or full", profile)
+	}
 	switch client {
 	case "claude", "codex":
 		args := []string{"mcp", "add"}
@@ -30,6 +40,12 @@ func setupCommandOptions(client, binary string, autoInstall bool) (string, []str
 			// same JSON again as structuredContent by default. The server's
 			// full API still supports explicit --result-format both.
 			args = append(args, "--result-format", "text")
+			if profile == "auto" {
+				profile = "coding"
+			}
+		}
+		if profile != "auto" {
+			args = append(args, "--tool-profile", profile)
 		}
 		if autoInstall {
 			args = append(args, "--auto-install-lsp")
@@ -42,12 +58,13 @@ func setupCommandOptions(client, binary string, autoInstall bool) (string, []str
 
 func runSetup(args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: simple-lsp-mcp setup claude|codex [--apply] [--auto-install-lsp]")
+		return fmt.Errorf("usage: simple-lsp-mcp setup claude|codex [--apply] [--auto-install-lsp] [--tool-profile auto|coding|full]")
 	}
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	apply := flags.Bool("apply", false, "explicitly register the MCP server with the client")
 	autoInstall := flags.Bool("auto-install-lsp", false, "allow pinned language server packages to be downloaded when first needed")
+	toolProfile := flags.String("tool-profile", "auto", "MCP surface: auto (lean Codex), coding, or full")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -63,7 +80,7 @@ func runSetup(args []string, out io.Writer) error {
 		if err != nil {
 			return "", nil, err
 		}
-		name, argv, err := setupCommandOptions(args[0], bin, *autoInstall)
+		name, argv, err := setupCommandWithProfile(args[0], bin, *autoInstall, *toolProfile)
 		return name, argv, err
 	}()
 	if err != nil {
