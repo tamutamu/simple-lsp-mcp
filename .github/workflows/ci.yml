@@ -61,6 +61,14 @@ jobs:
         env:
           SIMPLE_LSP_REAL_LSP: '1'
         run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|WorkspaceEnumeration|ReactFastAPIMonorepoExample|LSPEditing|TypeScriptRangeFormatting|SemanticRenameAcrossLanguages|AutoDetectedLanguageServers)$' -count=1 -v -timeout=6m
+  windows-uri:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26.x'}
+      - name: Verify native Windows LSP file URI round-trips
+        run: go test ./internal/normalize ./internal/document ./internal/lsp/session
   windows-plugin-script:
     runs-on: windows-latest
     steps:
