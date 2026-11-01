@@ -109,19 +109,15 @@ func (e *Engine) workspaceEditPlan(edit protocol.WorkspaceEdit, encoding string)
 			return nil, nil, 0, core.NewError(core.InvalidArgument, "edit target is not valid UTF-8: "+path)
 		}
 
+		// A rename can contain hundreds of edits in one source. Resolve
+		// line starts once, rather than splitting/scanning the entire file
+		// for every edit and then rescanning it for both byte offsets.
+		positions := newEditPositionIndex(original)
 		computed := make([]computedEdit, 0, len(byPath[path]))
 		for _, textEdit := range byPath[path] {
-			r, err := rangeFromText(original, textEdit.Range, encoding)
+			r, start, end, err := positions.rangeAt(textEdit.Range, encoding)
 			if err != nil {
 				return nil, nil, 0, core.WithCause(core.InvalidArgument, "LSP edit has an invalid range in "+path, err)
-			}
-			start, err := byteOffsetAtCorePosition(original, r.Start)
-			if err != nil {
-				return nil, nil, 0, err
-			}
-			end, err := byteOffsetAtCorePosition(original, r.End)
-			if err != nil {
-				return nil, nil, 0, err
 			}
 			if end < start {
 				return nil, nil, 0, core.NewError(core.InvalidArgument, "LSP edit range is reversed in "+path)
