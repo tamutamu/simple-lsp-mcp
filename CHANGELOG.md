@@ -1,5 +1,13 @@
 # Changelog
 
+## Core correctness and I/O fixes (2026-11-01)
+
+- Correct document synchronization to track **each language-server session**, not only the file path. Two servers can now independently open the same file; after a crash and successful restart, an unchanged file is sent with `didOpen` to the new server generation.
+- Do not advance the local document version when `didChange` notification fails. Add regression tests for independent sessions, restart, notification failure and retry.
+- Avoid reading matching source files twice during TypeScript/Python project-reference warm-up: a bounded project scan now passes its already-read bytes directly into the document store via `SyncBytes`.
+- The remaining **entire-workspace scan before references/rename/hierarchy** is a known potential bottleneck. Reuse across *independent* tool requests requires a sound change-detection and invalidation strategy; it has not yet been implemented or benchmarked.
+- Existing semantic API and default MCP format remain unchanged. These fixes passed Go tests, race tests and real LSP integration in CI; a statistically significant Codex efficiency improvement is **not** yet established.
+
 ## Unreleased — response efficiency and evidence gates (2026-11-01)
 
 - Add **opt-in** `--result-format text` to avoid serializing the same LSP response in both `content` and `structuredContent`. Default `both` remains backward compatible; text-mode tools omit the output schema that requires a structured response.

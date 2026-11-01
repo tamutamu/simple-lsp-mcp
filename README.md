@@ -286,6 +286,8 @@ The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code t
 
 **Design reference:** [39 coding-agent actions mapped to required information and appropriate providers](docs/agent-coding-information-needs.md). The [action-first MCP tool and small Codex A/B report](docs/benchmarks/fastapi-codex-action-first-2026-10-25.md) includes direct wire-size checks and an independently graded two-task sample (4/4 passes); this preliminary sample is **not** evidence of universal productivity improvement. This is the source of truth for selecting LSP-derived information; file reading, Git, tests and judgment remain outside the MCP.
 
+Core performance and correctness fixes, including language-server restart resynchronization and removal of redundant warm-up file reads, are tracked in the [2026-11-01 implementation audit](docs/benchmarks/core-performance-audit-2026-11-01.md). The global source-file scan before some semantic reference operations remains a known bottleneck; this is not yet a product-level performance proof.
+
 ## MCP tool profiles
 
 ### Experiment: remove duplicated MCP result payload
