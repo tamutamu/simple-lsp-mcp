@@ -287,15 +287,26 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 		var raw struct {
 			Items []protocol.Diagnostic `json:"items"`
 		}
-		callCtx, cancel := e.callContext(ctx)
-		pullErr := s.Request(callCtx, "textDocument/diagnostic", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "previousResultId": nil}, &raw)
-		cancel()
+		// Some LSP servers support push diagnostics only. Probe the pull
+		// method once, then avoid an identical failing LSP request on every
+		// coding-agent diagnostic call. The cache is session-scoped and
+		// invalidated on language-server restart.
+		unsupported := s.PullDiagnosticsKnownUnsupported()
+		var pullErr error
+		if !unsupported {
+			callCtx, cancel := e.callContext(ctx)
+			pullErr = s.Request(callCtx, "textDocument/diagnostic", map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "previousResultId": nil}, &raw)
+			cancel()
+			var protocolErr *transport.ProtocolError
+			if errors.As(pullErr, &protocolErr) && protocolErr.Code == -32601 {
+				s.MarkPullDiagnosticsUnsupported()
+				unsupported = true
+			}
+		}
 		diagnosticPath := relativeMust(e, d.Path)
-		if pullErr == nil {
+		if pullErr == nil && !unsupported {
 			ds = e.diagnostics(diagnosticPath, raw.Items, s.Capabilities().PositionEncoding)
 		} else {
-			var protocolErr *transport.ProtocolError
-			unsupported := errors.As(pullErr, &protocolErr) && protocolErr.Code == -32601
 			// Some servers (including gopls versions in the real-LSP suite)
 			// implement pull diagnostics without advertising diagnosticProvider.
 			// Probe first; when an unadvertised server rejects the method, fall
