@@ -135,126 +135,12 @@ func warmBloomMayContain(bits *[warmBloomBytes]byte, needle []byte) bool {
 	return true
 }
 
-// warmContainsIdentifier uses the target's spelling only as a conservative
-// candidate filter, never as a substitute for LSP symbol identity. A plain
-// substring match makes short names such as "id" match every "grid" and
-// "valid" occurrence, needlessly opening hundreds of unrelated files and
-// sometimes exceeding projectWarmMaxMatches before the semantic query runs.
-//
-// TS/JS identifiers may contain '
-// their contents only for newly modified files or possible substring matches.
-// A failed or interrupted scan is never published as a complete index.
-// The callback performs the actual LSP synchronization, not this index.
-func (e *Engine) scanProjectWarmCandidates(
-	ctx context.Context, p language.Profile, root string, needle []byte,
-	onMatch func(path, rel string, profile language.Profile, content []byte) error,
-) (warmScanStats, error) {
-	var stats warmScanStats
-	key := root + "\x00" + p.SessionKey
-	previous := e.warmIndex.snapshot(key)
-	next := make(map[string]warmFileIndex, len(previous))
-	cachedBytes := 0
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not inspect source files", walkErr)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if path != root && workspaceListExcludedDirs[entry.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(e.WS.Root(), path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		candidateProfile, err := language.FromPath(rel)
-		if err != nil || candidateProfile.SessionKey != p.SessionKey {
-			return nil
-		}
-		stats.SourceFiles++
-		if stats.SourceFiles > projectWarmMaxFiles {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d source files; narrow the workspace/profile", projectWarmMaxFiles))
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not stat "+rel, err)
-		}
-		stats.SourceBytes += info.Size()
-		if stats.SourceBytes > projectWarmMaxBytes {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d MiB of source; narrow the workspace/profile", projectWarmMaxBytes>>20))
-		}
-
-		old, found := previous[path]
-		unchanged := found && warmSameFile(old.info, info)
-		current := old
-		var content []byte
-		if unchanged {
-			if old.content != nil {
-				// The small-source fast path avoids constructing a Bloom
-				// filter on the first scan, and avoids both disk reads and
-				// false-positive Bloom checks on subsequent scans.
-				cachedBytes += len(old.content)
-				content = old.content
-				stats.SkippedRead++
-			} else if !warmBloomMayContain(&old.bloom, needle) {
-				next[path] = old
-				stats.SkippedRead++
-				return nil
-			}
-		}
-		if content == nil {
-			var err error
-			content, err = os.ReadFile(path)
-			if err != nil {
-				return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
-			}
-			stats.FilesRead++
-			stats.BytesRead += int64(len(content))
-		}
-		if !unchanged {
-			current = warmFileIndex{info: info}
-		}
-		if current.content == nil && len(content) <= warmIndexMaxCachedBytes-cachedBytes {
-			// Prefer the actual source bytes (up to a strict 8 MiB bound)
-			// over calculating thousands of substring hashes during cold
-			// startup. Only over-budget files need a Bloom filter.
-			current.content = content
-			cachedBytes += len(content)
-		}
-		if !unchanged && current.content == nil {
-			warmBloomAdd(&current.bloom, content)
-		}
-		next[path] = current
-		if !warmContainsIdentifier(content, needle) {
-			return nil
-		}
-		stats.Matches++
-		if stats.Matches > projectWarmMaxMatches {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
-		}
-		if err := onMatch(path, rel, candidateProfile, content); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return stats, err
-	}
-	e.warmIndex.publish(key, next)
-	return stats, nil
-}
-
-; non-ASCII bytes are conservatively
-// treated as identifier bytes so UTF-8 names are not split in the middle.
-// Quotes, punctuation and property separators remain valid boundaries.
+// warmContainsIdentifier is a candidate filter, not symbol resolution.
+// A substring scan would treat "grid" or "valid" as hits for the symbol "id",
+// opening unrelated documents and even exceeding the 512-candidate limit.
+// TS/JS '$' is an identifier character. Non-ASCII adjacent bytes are treated
+// as possible boundaries to avoid excluding real references after Unicode
+// whitespace or punctuation; extra candidates are safe.
 func warmContainsIdentifier(content, name []byte) bool {
 	if len(name) == 0 {
 		return false
@@ -277,118 +163,10 @@ func warmContainsIdentifier(content, name []byte) bool {
 }
 
 func warmIdentifierByte(b byte) bool {
-	return isIdentifierByte(b) || b == '
-// their contents only for newly modified files or possible substring matches.
-// A failed or interrupted scan is never published as a complete index.
-// The callback performs the actual LSP synchronization, not this index.
-func (e *Engine) scanProjectWarmCandidates(
-	ctx context.Context, p language.Profile, root string, needle []byte,
-	onMatch func(path, rel string, profile language.Profile, content []byte) error,
-) (warmScanStats, error) {
-	var stats warmScanStats
-	key := root + "\x00" + p.SessionKey
-	previous := e.warmIndex.snapshot(key)
-	next := make(map[string]warmFileIndex, len(previous))
-	cachedBytes := 0
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not inspect source files", walkErr)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if path != root && workspaceListExcludedDirs[entry.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(e.WS.Root(), path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		candidateProfile, err := language.FromPath(rel)
-		if err != nil || candidateProfile.SessionKey != p.SessionKey {
-			return nil
-		}
-		stats.SourceFiles++
-		if stats.SourceFiles > projectWarmMaxFiles {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d source files; narrow the workspace/profile", projectWarmMaxFiles))
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return core.WithCause(core.IncompleteSearch, "project warm-up could not stat "+rel, err)
-		}
-		stats.SourceBytes += info.Size()
-		if stats.SourceBytes > projectWarmMaxBytes {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up exceeded %d MiB of source; narrow the workspace/profile", projectWarmMaxBytes>>20))
-		}
-
-		old, found := previous[path]
-		unchanged := found && warmSameFile(old.info, info)
-		current := old
-		var content []byte
-		if unchanged {
-			if old.content != nil {
-				// The small-source fast path avoids constructing a Bloom
-				// filter on the first scan, and avoids both disk reads and
-				// false-positive Bloom checks on subsequent scans.
-				cachedBytes += len(old.content)
-				content = old.content
-				stats.SkippedRead++
-			} else if !warmBloomMayContain(&old.bloom, needle) {
-				next[path] = old
-				stats.SkippedRead++
-				return nil
-			}
-		}
-		if content == nil {
-			var err error
-			content, err = os.ReadFile(path)
-			if err != nil {
-				return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
-			}
-			stats.FilesRead++
-			stats.BytesRead += int64(len(content))
-		}
-		if !unchanged {
-			current = warmFileIndex{info: info}
-		}
-		if current.content == nil && len(content) <= warmIndexMaxCachedBytes-cachedBytes {
-			// Prefer the actual source bytes (up to a strict 8 MiB bound)
-			// over calculating thousands of substring hashes during cold
-			// startup. Only over-budget files need a Bloom filter.
-			current.content = content
-			cachedBytes += len(content)
-		}
-		if !unchanged && current.content == nil {
-			warmBloomAdd(&current.bloom, content)
-		}
-		next[path] = current
-		if !bytes.Contains(content, needle) {
-			return nil
-		}
-		stats.Matches++
-		if stats.Matches > projectWarmMaxMatches {
-			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
-		}
-		if err := onMatch(path, rel, candidateProfile, content); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return stats, err
-	}
-	e.warmIndex.publish(key, next)
-	return stats, nil
-}
-
-
+	return b == '_' || b == '$' ||
+		b >= 'A' && b <= 'Z' ||
+		b >= 'a' && b <= 'z' ||
+		b >= '0' && b <= '9'
 }
 
 // scanProjectWarmCandidates discovers sources anew on every call, but reads
@@ -483,7 +261,7 @@ func (e *Engine) scanProjectWarmCandidates(
 			warmBloomAdd(&current.bloom, content)
 		}
 		next[path] = current
-		if !bytes.Contains(content, needle) {
+		if !warmContainsIdentifier(content, needle) {
 			return nil
 		}
 		stats.Matches++
