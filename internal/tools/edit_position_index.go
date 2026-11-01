@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"unicode/utf8"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -10,32 +11,71 @@ import (
 // editPositionIndex converts many LSP positions in one source without
 // splitting and rescanning the entire file for every location or edit.
 // It is immutable and scoped to the exact source bytes of one tool request.
+const (
+	// Keep dense indexing for ordinary sources. A generated file with tens
+	// of millions of short lines must not allocate hundreds of MiB of offsets.
+	maxDenseLineStarts = 1 << 18
+	sparseLineStride   = 32
+)
+
 type editPositionIndex struct {
 	text       []byte
 	lineStarts []int
+	lineCount  int
+	sparse     bool
 }
 
 func newEditPositionIndex(text []byte) *editPositionIndex {
-	starts := []int{0}
+	idx := &editPositionIndex{text: text, lineStarts: []int{0}, lineCount: 1}
 	for i, b := range text {
-		if b == '\n' {
-			starts = append(starts, i+1)
+		if b != '\n' {
+			continue
+		}
+		idx.lineCount++
+		if !idx.sparse {
+			idx.lineStarts = append(idx.lineStarts, i+1)
+			if len(idx.lineStarts) > maxDenseLineStarts {
+				compact := make([]int, 0, len(idx.lineStarts)/sparseLineStride+1)
+				for j := 0; j < len(idx.lineStarts); j += sparseLineStride {
+					compact = append(compact, idx.lineStarts[j])
+				}
+				idx.lineStarts = compact
+				idx.sparse = true
+			}
+		} else if (idx.lineCount-1)%sparseLineStride == 0 {
+			idx.lineStarts = append(idx.lineStarts, i+1)
 		}
 	}
-	return &editPositionIndex{text: text, lineStarts: starts}
+	return idx
+}
+
+func (idx *editPositionIndex) lineBounds(line int) (int, int) {
+	if !idx.sparse {
+		start := idx.lineStarts[line]
+		if line+1 < idx.lineCount {
+			return start, idx.lineStarts[line+1] - 1
+		}
+		return start, len(idx.text)
+	}
+	block := line / sparseLineStride
+	start := idx.lineStarts[block]
+	for cursor := block * sparseLineStride; cursor < line; cursor++ {
+		start += bytes.IndexByte(idx.text[start:], '\n') + 1
+	}
+	end := len(idx.text)
+	if next := bytes.IndexByte(idx.text[start:], '\n'); next >= 0 {
+		end = start + next
+	}
+	return start, end
 }
 
 // point returns both the public one-based code-point position and its byte
 // offset. CRLF, UTF-8/16/32 and split-code-point errors match document.FromLSP.
 func (idx *editPositionIndex) point(p protocol.Position, encoding string) (core.Position, int, error) {
-	if p.Line < 0 || p.Line >= len(idx.lineStarts) || p.Character < 0 {
+	if p.Line < 0 || p.Line >= idx.lineCount || p.Character < 0 {
 		return core.Position{}, 0, core.NewError(core.InvalidArgument, "position out of range")
 	}
-	start := idx.lineStarts[p.Line]
-	end := len(idx.text)
-	if p.Line+1 < len(idx.lineStarts) {
-		end = idx.lineStarts[p.Line+1] - 1
-	}
+	start, end := idx.lineBounds(p.Line)
 	if end > start && idx.text[end-1] == '\r' {
 		end--
 	}
