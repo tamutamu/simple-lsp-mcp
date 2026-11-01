@@ -16,6 +16,64 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/transport"
 )
 
+func TestWaitDiagnosticsReturnsCachedEmptyReportWithoutFullDelay(t *testing.T) {
+	s := New("python", t.TempDir(), config.Server{})
+	uri := "file:///tmp/example.py"
+	s.notification(transport.Message{
+		Method: "textDocument/publishDiagnostics",
+		Params: json.RawMessage(`{"uri":"file:///tmp/example.py","diagnostics":[]}`),
+	})
+	start := time.Now()
+	got, received, err := s.WaitDiagnostics(context.Background(), uri, 2*time.Second)
+	if err != nil || !received || len(got) != 0 {
+		t.Fatalf("empty published result: ready=%v got=%v err=%v", received, got, err)
+	}
+	if time.Since(start) > 250*time.Millisecond {
+		t.Fatal("already-published diagnostics unnecessarily waited for fallback timer")
+	}
+	s.invalidateDiagnostics(uri)
+	_, received, err = s.WaitDiagnostics(context.Background(), uri, 0)
+	if err != nil || received {
+		t.Fatalf("stale diagnostics returned after a source change: ready=%v err=%v", received, err)
+	}
+}
+
+func TestWaitDiagnosticsWakesWhenServerPublishes(t *testing.T) {
+	s := New("python", t.TempDir(), config.Server{})
+	uri := "file:///tmp/example.py"
+	done := make(chan error, 1)
+	go func() {
+		_, ready, err := s.WaitDiagnostics(context.Background(), uri, 3*time.Second)
+		if err != nil {
+			done <- err
+		} else if !ready {
+			done <- fmt.Errorf("did not detect a published diagnostic")
+		} else {
+			done <- nil
+		}
+	}()
+	s.notification(transport.Message{
+		Method: "textDocument/publishDiagnostics",
+		Params: json.RawMessage(`{"uri":"file:///tmp/example.py","diagnostics":[]}`),
+	})
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(750 * time.Millisecond):
+		t.Fatal("push notification did not interrupt the three-second fallback")
+	}
+}
+
+func TestWaitDiagnosticsTimeoutIsExplicitlyIncomplete(t *testing.T) {
+	s := New("go", t.TempDir(), config.Server{})
+	_, ready, err := s.WaitDiagnostics(context.Background(), "file:///missing.go", 0)
+	if ready || err != nil {
+		t.Fatalf("missing publish incorrectly completed: ready=%v err=%v", ready, err)
+	}
+}
+
 func TestDecodeCapsDetectsHoverProvider(t *testing.T) {
 	if !decodeCaps(map[string]json.RawMessage{"hoverProvider": json.RawMessage("true")}, "utf-16").Hover {
 		t.Fatal("Hover = false, want true")

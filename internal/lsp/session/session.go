@@ -32,10 +32,11 @@ type Session struct {
 	caps        protocol.Capabilities
 	crashed     error
 	diagnostics map[string][]protocol.Diagnostic
+	diagnosticEvent chan struct{} // broadcast when push diagnostics arrive or become stale
 }
 
 func New(key, root string, cfg config.Server) *Session {
-	return &Session{key: key, root: root, cfg: cfg, diagnostics: map[string][]protocol.Diagnostic{}}
+	return &Session{key: key, root: root, cfg: cfg, diagnostics: map[string][]protocol.Diagnostic{}, diagnosticEvent: make(chan struct{})}
 }
 
 // Generation identifies the currently initialized server incarnation.
@@ -82,6 +83,12 @@ func (s *Session) Ensure(ctx context.Context) error {
 	return err
 }
 func (s *Session) start(ctx context.Context) error {
+	// A restarted language server has not published any diagnostics yet.
+	// Never return cached diagnostics from a crashed server incarnation.
+	s.mu.Lock()
+	s.diagnostics = make(map[string][]protocol.Diagnostic)
+	s.signalDiagnosticsLocked()
+	s.mu.Unlock()
 	cmd, transport, err := s.launch(ctx)
 	if err != nil {
 		return err
@@ -241,7 +248,61 @@ func (s *Session) Notify(method string, params any) error {
 	if t == nil {
 		return core.NewError(core.LanguageServerStartFailed, "language server is not ready")
 	}
+	if method == "textDocument/didOpen" || method == "textDocument/didChange" {
+		// A previous diagnostic report is not proof about edited source.
+		// Invalidate before sending so a rapid server notification cannot
+		// be accidentally erased after it arrives.
+		if body, ok := params.(map[string]any); ok {
+			switch document := body["textDocument"].(type) {
+			case protocol.TextDocumentItem:
+				s.invalidateDiagnostics(document.URI)
+			case protocol.VersionedTextDocumentIdentifier:
+				s.invalidateDiagnostics(document.URI)
+			}
+		}
+	}
 	return t.Notify(method, params)
+}
+func (s *Session) signalDiagnosticsLocked() {
+	if s.diagnosticEvent != nil {
+		close(s.diagnosticEvent)
+	}
+	s.diagnosticEvent = make(chan struct{})
+}
+func (s *Session) invalidateDiagnostics(uri string) {
+	s.mu.Lock()
+	delete(s.diagnostics, uri)
+	s.signalDiagnosticsLocked()
+	s.mu.Unlock()
+}
+
+// WaitDiagnostics returns as soon as a report (including an empty report) is
+// published. Earlier code always slept the whole fallback interval, even if
+// the server had already delivered results. Timeout is an incomplete report,
+// not an authoritative clean bill of health.
+func (s *Session) WaitDiagnostics(ctx context.Context, uri string, wait time.Duration) ([]protocol.Diagnostic, bool, error) {
+	if wait < 0 {
+		wait = 0
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		s.mu.RLock()
+		items, ready := s.diagnostics[uri]
+		event := s.diagnosticEvent
+		copyOfItems := append([]protocol.Diagnostic(nil), items...)
+		s.mu.RUnlock()
+		if ready {
+			return copyOfItems, true, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-timer.C:
+			return nil, false, nil
+		case <-event:
+		}
+	}
 }
 func (s *Session) Capabilities() protocol.Capabilities {
 	s.mu.RLock()
@@ -298,6 +359,7 @@ func (s *Session) notification(m transport.Message) {
 	if json.Unmarshal(m.Params, &p) == nil {
 		s.mu.Lock()
 		s.diagnostics[p.URI] = p.Diagnostics
+		s.signalDiagnosticsLocked()
 		s.mu.Unlock()
 	}
 }
