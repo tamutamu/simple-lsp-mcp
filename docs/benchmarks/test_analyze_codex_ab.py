@@ -41,12 +41,66 @@ class EvaluationTest(unittest.TestCase):
     def test_larger_consistent_effect_passes_gates(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "large.csv"
-            self.write_trials(p, 30, 4, 0.8)
-            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.write_trials(p, 30, 4, 0.6)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000,
+                                 selection_policy="natural")
             self.assertTrue(result["qualified_product_efficiency"], result)
             for metric in result["metrics"].values():
                 self.assertTrue(metric["upper_below_1"])
-                self.assertAlmostEqual(metric["ratio"], 0.8, places=4)
+                self.assertAlmostEqual(metric["ratio"], 0.6, places=4)
+                self.assertTrue(metric["upper_below_required_ratio"])
+
+
+    def test_minor_improvement_does_not_qualify_as_25_30_percent_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "minor.csv"
+            self.write_trials(p, 30, 4, 0.8)
+            result = ab.evaluate(ab.read_paired(p, "controlled"),
+                                 bootstrap=1000, selection_policy="natural")
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertTrue(all(v["upper_below_1"] for v in result["metrics"].values()))
+            self.assertFalse(all(v["upper_below_required_ratio"]
+                                 for v in result["metrics"].values()))
+
+    def test_instruction_forced_mcp_calls_cannot_claim_spontaneous_adoption(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "forced.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertEqual(result["treatment_adoption_rate"], 1.0)
+            self.assertFalse(result["readiness"]["spontaneous_selection_observed"])
+            self.assertFalse(result["qualified_product_efficiency"])
+
+    def test_unverified_legacy_outcomes_are_never_qualification_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "legacy.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            text = p.read_text()
+            text = text.replace(",completed,graded", "")
+            text = text.replace(",True,True,True", ",True")
+            p.write_text(text)
+            result = ab.evaluate(ab.read_paired(p, "controlled"),
+                                 bootstrap=1000, selection_policy="natural")
+            self.assertFalse(result["readiness"]["trials_have_explicit_completion_and_grading"])
+            self.assertFalse(result["qualified_product_efficiency"])
+
+    def test_quality_must_not_degrade_even_if_wilson_threshold_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "quality.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                if row["arm"] == "mcp" and row["task"] == "task0" and row["repeat"] == "1":
+                    row["accepted"] = "False"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"),
+                                 bootstrap=1000, selection_policy="natural")
+            self.assertTrue(result["readiness"]["quality_lower_bound_both_at_least_95_percent"])
+            self.assertFalse(result["readiness"]["treatment_quality_at_least_baseline"])
+            self.assertFalse(result["qualified_product_efficiency"])
 
     def test_duplicate_trial_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:

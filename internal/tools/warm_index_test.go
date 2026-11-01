@@ -205,6 +205,43 @@ func BenchmarkProjectWarmIndexMiss(b *testing.B) {
 	b.ReportMetric(float64(reads)/float64(b.N), "reads/op")
 }
 
+// Cold lookup cost is deliberately measured separately from the warmed
+// lookup benchmarks: building the trigram filter reads every source once.
+func BenchmarkProjectWarmIndexColdMiss(b *testing.B) {
+	root := b.TempDir()
+	ws, err := workspace.Open(root)
+	if err != nil {
+		b.Fatal(err)
+	}
+	p, err := language.FromPath("source.ts")
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		path := filepath.Join(root, strings.Repeat("a", i%7), "source"+string(rune('A'+i%26))+string(rune('a'+i/26))+".ts")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(path, bytes.Repeat([]byte("const nothing = 42;\n"), 100), 0o600); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	var reads int
+	for i := 0; i < b.N; i++ {
+		// Model a new engine/session for each lookup, so no warm index survives.
+		e := &Engine{WS: ws}
+		stats, err := e.scanProjectWarmCandidates(context.Background(), p, root,
+			[]byte("absentUniqueIdentifierXYZ"),
+			func(_ string, _ string, _ language.Profile, _ []byte) error { return nil })
+		if err != nil {
+			b.Fatal(err)
+		}
+		reads += stats.FilesRead
+	}
+	b.ReportMetric(float64(reads)/float64(b.N), "reads/op")
+}
+
 func BenchmarkProjectWarmLegacyFullScanMiss(b *testing.B) {
 	root := b.TempDir()
 	for i := 0; i < 100; i++ {
