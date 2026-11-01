@@ -309,6 +309,11 @@ func (e *Engine) rangeIn(c *fileCache, path string, r protocol.Range, encoding s
 	if err != nil {
 		return core.Range{}, err
 	}
+	// Single-location callers without a request cache should not build an
+	// index that cannot be reused. Batched LSP results use a shared cache.
+	if c == nil {
+		return rangeFromText(b, r, encoding)
+	}
 	converted, _, _, err := c.positionIndex(path, b).rangeAt(r, encoding)
 	return converted, err
 }
