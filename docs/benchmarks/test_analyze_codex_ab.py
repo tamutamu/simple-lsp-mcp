@@ -62,13 +62,31 @@ class EvaluationTest(unittest.TestCase):
             self.assertFalse(all(v["upper_below_required_ratio"]
                                  for v in result["metrics"].values()))
 
-    def test_instruction_forced_mcp_calls_cannot_claim_spontaneous_adoption(self):
+    def test_required_lsp_usage_is_valid_evidence_when_quality_and_cost_pass(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "forced.csv"
             self.write_trials(p, 30, 4, 0.6)
-            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000,
+                                 selection_policy="required")
             self.assertEqual(result["treatment_adoption_rate"], 1.0)
-            self.assertFalse(result["readiness"]["spontaneous_selection_observed"])
+            self.assertTrue(result["readiness"]["treatment_mcp_usage_matches_policy"])
+            self.assertTrue(result["qualified_product_efficiency"], result)
+
+    def test_required_lsp_gate_rejects_even_one_trial_without_mcp(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "forced.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                if row["arm"] == "mcp" and row["task"] == "task0" and row["repeat"] == "1":
+                    row["mcp_calls"] = "0"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000,
+                                 selection_policy="required")
+            self.assertFalse(result["readiness"]["treatment_mcp_usage_matches_policy"])
             self.assertFalse(result["qualified_product_efficiency"])
 
     def test_unverified_legacy_outcomes_are_never_qualification_evidence(self):
