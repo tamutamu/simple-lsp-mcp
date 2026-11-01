@@ -80,6 +80,29 @@ func TestWarmIdentifierAtPositionAvoidsRedundantLSPPrepareRename(t *testing.T) {
 	}
 }
 
+func TestWarmIndexCachesSmallSourcesWithoutColdBloomBuild(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	warmWrite(t, root, "small.ts", "export const alpha = 1;\n")
+	first, stats := warmScan(t, e, p, root, "alpha")
+	if len(first) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("first scan: %v %+v", first, stats)
+	}
+	key := root + "\x00" + p.SessionKey
+	index := e.warmIndex.snapshot(key)[filepath.Join(root, "small.ts")]
+	if index.content == nil {
+		t.Fatal("small source should be cached on the first read")
+	}
+	for _, bit := range index.bloom {
+		if bit != 0 {
+			t.Fatal("first cold scan did unnecessary Bloom indexing")
+		}
+	}
+	second, warmStats := warmScan(t, e, p, root, "absentNeedle")
+	if len(second) != 0 || warmStats.FilesRead != 0 {
+		t.Fatalf("cached negative lookup: %v %+v", second, warmStats)
+	}
+}
+
 func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T) {
 	e, p, root := warmIndexFixture(t)
 	warmWrite(t, root, "a.ts", "export const alpha = 1;\n")
