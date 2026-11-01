@@ -74,6 +74,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	}
 	seen := map[string]bool{}
 	all := make([]core.SymbolSummary, 0)
+	sourceCache := newFileCache()
 	for _, server := range servers {
 		callCtx, cancel := e.callContext(ctx)
 		var raw []protocol.WorkspaceSymbol
@@ -91,7 +92,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 			if _, err := normalize.URIPath(e.WS, candidate.Location.URI); err != nil {
 				continue
 			}
-			summary, err := e.symbolFromWorkspace(p, candidate, server)
+			summary, err := e.symbolFromWorkspaceIn(sourceCache, p, candidate, server)
 			if err != nil {
 				return nil, core.WithCause(core.IncompleteSearch, "could not decode workspace symbol", err)
 			}
