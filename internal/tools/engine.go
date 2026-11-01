@@ -304,16 +304,17 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 			if s.Capabilities().Diagnostics && !unsupported {
 				return nil, pullErr
 			}
-			if e.DiagnosticsWait > 0 {
-				timer := time.NewTimer(e.DiagnosticsWait)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return nil, ctx.Err()
-				case <-timer.C:
-				}
+			published, ready, err := s.WaitDiagnostics(ctx, d.URI, e.DiagnosticsWait)
+			if err != nil {
+				return nil, err
 			}
-			ds = e.diagnostics(diagnosticPath, s.Diagnostics(d.URI), s.Capabilities().PositionEncoding)
+			// A timeout without a publishDiagnostics event does not mean
+			// the source is diagnostic-free. Signal that uncertainty to
+			// the coding agent instead of presenting a false complete result.
+			if !ready {
+				complete = false
+			}
+			ds = e.diagnostics(diagnosticPath, published, s.Capabilities().PositionEncoding)
 		}
 	} else {
 		complete = false
