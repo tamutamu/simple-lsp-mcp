@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -74,7 +75,7 @@ func (e *Engine) targetWarmName(in map[string]any) string {
 		if slash := strings.LastIndex(symbolPath, "/"); slash >= 0 {
 			symbolPath = symbolPath[slash+1:]
 		}
-		return unescapeSegment(symbolPath)
+		return warmSymbolPathSpelling(unescapeSegment(symbolPath))
 	}
 	if id := stringVal(in, "symbol_id"); id != "" {
 		if record, err := e.Symbols.Get(id); err == nil {
@@ -82,6 +83,34 @@ func (e *Engine) targetWarmName(in map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// warmSymbolPathSpelling converts a display path leaf back to a source token.
+// DocumentSymbol sibling disambiguation adds "#2", "#3", etc. to repeated
+// names, while flat LSP symbols can be receiver-qualified (e.g.
+// "(*Engine).FindSymbol"). Neither synthetic spelling occurs in source
+// references. The warm scan is only a candidate filter; the LSP remains the
+// authority for identity and actual edit locations.
+func warmSymbolPathSpelling(leaf string) string {
+	if hash := strings.LastIndexByte(leaf, '#'); hash >= 0 && hash+1 < len(leaf) {
+		if ordinal, err := strconv.Atoi(leaf[hash+1:]); err == nil && ordinal >= 2 {
+			leaf = leaf[:hash]
+		}
+	}
+	if dot := strings.LastIndexByte(leaf, '.'); dot >= 0 && dot+1 < len(leaf) {
+		candidate := leaf[dot+1:]
+		valid := true
+		for _, r := range candidate {
+			if !warmIdentRune(r) {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return candidate
+		}
+	}
+	return leaf
 }
 
 // warmNameForPosition identifies the source spelling used to select project
