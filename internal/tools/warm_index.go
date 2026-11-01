@@ -135,6 +135,40 @@ func warmBloomMayContain(bits *[warmBloomBytes]byte, needle []byte) bool {
 	return true
 }
 
+// warmContainsIdentifier is a candidate filter, not symbol resolution.
+// A substring scan would treat "grid" or "valid" as hits for the symbol "id",
+// opening unrelated documents and even exceeding the 512-candidate limit.
+// TS/JS '$' is an identifier character. Non-ASCII adjacent bytes are treated
+// as possible boundaries to avoid excluding real references after Unicode
+// whitespace or punctuation; extra candidates are safe.
+func warmContainsIdentifier(content, name []byte) bool {
+	if len(name) == 0 {
+		return false
+	}
+	for offset := 0; offset <= len(content)-len(name); {
+		relative := bytes.Index(content[offset:], name)
+		if relative < 0 {
+			return false
+		}
+		start := offset + relative
+		end := start + len(name)
+		before := start == 0 || !warmIdentifierByte(content[start-1])
+		after := end == len(content) || !warmIdentifierByte(content[end])
+		if before && after {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
+}
+
+func warmIdentifierByte(b byte) bool {
+	return b == '_' || b == '$' ||
+		b >= 'A' && b <= 'Z' ||
+		b >= 'a' && b <= 'z' ||
+		b >= '0' && b <= '9'
+}
+
 // scanProjectWarmCandidates discovers sources anew on every call, but reads
 // their contents only for newly modified files or possible substring matches.
 // A failed or interrupted scan is never published as a complete index.
@@ -227,7 +261,7 @@ func (e *Engine) scanProjectWarmCandidates(
 			warmBloomAdd(&current.bloom, content)
 		}
 		next[path] = current
-		if !bytes.Contains(content, needle) {
+		if !warmContainsIdentifier(content, needle) {
 			return nil
 		}
 		stats.Matches++

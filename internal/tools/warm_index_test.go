@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -73,6 +74,59 @@ func TestRenameWarmCandidateNameWithoutPrepareRename(t *testing.T) {
 	}, []byte(src), nil, protocol.Position{Line: 99, Character: 0}, "utf-16")
 	if name != "updateUser" {
 		t.Fatalf("symbol path fallback=%q", name)
+	}
+}
+
+func TestWarmContainsIdentifierCandidateBoundaries(t *testing.T) {
+	cases := []struct {
+		source string
+		want   bool
+	}{
+		{"const id = 1", true},
+		{"obj.id", true},
+		{"obj['id']", true},
+		{"const grid = 1", false},
+		{"const valid = 1", false},
+		{"const id2 = 1", false},
+		{"const _id = 1", false},
+		{"const $id = 1", false},
+		{"const id$ = 1", false},
+		{"const id_ = 1", false},
+		{"const 日本id = 1", true}, // Conservative Unicode false positive.
+		{"const id\u00a0= 1", true}, // Unicode whitespace is a real boundary.
+	}
+	for _, tc := range cases {
+		got := warmContainsIdentifier([]byte(tc.source), []byte("id"))
+		if got != tc.want {
+			t.Errorf("source=%q got=%v want=%v", tc.source, got, tc.want)
+		}
+	}
+	if !warmContainsIdentifier([]byte("const $cache = 1"), []byte("$cache")) {
+		t.Fatal("valid TypeScript $ identifier must remain a candidate")
+	}
+	if warmContainsIdentifier([]byte(""), []byte("")) {
+		t.Fatal("empty symbol name must not match")
+	}
+}
+
+func TestWarmIndexShortNameAvoidsFalseCandidateLimit(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	// Before the fix, substring matching found "id" in "grid" and exceeded
+	// projectWarmMaxMatches, so references/rename failed without an LSP query.
+	const falseCandidates = projectWarmMaxMatches + 16
+	for i := 0; i < falseCandidates; i++ {
+		warmWrite(t, root, fmt.Sprintf("unrelated-%04d.ts", i), "export const grid = 1;\n")
+	}
+	warmWrite(t, root, "real.ts", "export const id = 1;\n")
+	found, stats := warmScan(t, e, p, root, "id")
+	if !reflect.DeepEqual(found, []string{"real.ts"}) || stats.Matches != 1 ||
+		stats.SourceFiles != falseCandidates+1 {
+		t.Fatalf("unrelated substring candidates caused an incomplete scan: found=%v stats=%+v", found, stats)
+	}
+	again, warmStats := warmScan(t, e, p, root, "id")
+	if !reflect.DeepEqual(again, found) || warmStats.FilesRead != 0 ||
+		warmStats.Matches != 1 {
+		t.Fatalf("cached identifier scan: found=%v stats=%+v", again, warmStats)
 	}
 }
 
