@@ -63,6 +63,9 @@ func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any)
 		seen[string(key)] = true
 	}
 	results := make([]map[string]any, 0, len(targets))
+	// Reuse one current LSP documentSymbol tree per file in this batch.
+	// The same snapshot is used for every target in that file.
+	cache := make(map[string]inspectDocument)
 	for index, value := range targets {
 		target := value.(map[string]any)
 		perItem := map[string]any{
@@ -72,7 +75,7 @@ func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any)
 		for key, value := range target {
 			perItem[key] = value
 		}
-		result, err := e.inspectSingle(ctx, perItem)
+		result, err := e.inspectSingleWithCache(ctx, perItem, cache)
 		if err != nil {
 			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d]: %v", index, err))
 		}
@@ -92,7 +95,18 @@ func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any)
 // inspectSingle returns exactly the requested information for one LSP-verified
 // declaration. It never reads outside the workspace, changes files, or silently
 // claims that truncated source contains the whole declaration.
+// inspectDocument is a per-MCP-call snapshot of an LSP document symbol tree.
+// A batch uses one snapshot for several declarations of the same file.
+type inspectDocument struct {
+	doc   document.Document
+	nodes []symbolNode
+}
+
 func (e *Engine) inspectSingle(ctx context.Context, in map[string]any) (map[string]any, error) {
+	return e.inspectSingleWithCache(ctx, in, nil)
+}
+
+func (e *Engine) inspectSingleWithCache(ctx context.Context, in map[string]any, cache map[string]inspectDocument) (map[string]any, error) {
 	view := stringVal(in, "view")
 	if view == "" {
 		view = "source"
@@ -109,6 +123,13 @@ func (e *Engine) inspectSingle(ctx context.Context, in map[string]any) (map[stri
 	}
 	if err := targetOf(in).Validate(); err != nil {
 		return nil, err
+	}
+	// When the agent already knows the file and declaration name, ask LSP
+	// for that file's documentSymbol tree directly. e.target(symbol_path)
+	// would first resolve this tree and then inspectSingle would fetch it
+	// again; the direct path removes those redundant round trips.
+	if stringVal(in, "symbol_id") == "" && stringVal(in, "path") != "" && stringVal(in, "symbol_path") != "" {
+		return e.inspectPathSymbol(ctx, in, view, maxLines, cache)
 	}
 
 	p, s, d, pos, err := e.target(ctx, in)
@@ -146,6 +167,55 @@ func (e *Engine) inspectSingle(ctx context.Context, in map[string]any) (map[stri
 		}
 	}
 
+	return e.renderInspected(d, selected, view, maxLines)
+}
+
+// inspectPathSymbol resolves a known declaration with one path-scoped
+// documentSymbol query rather than a workspace-wide discovery. This retains
+// LSP semantic symbol identity, nested path matching and ambiguity errors.
+func (e *Engine) inspectPathSymbol(ctx context.Context, in map[string]any, view string, maxLines int, cache map[string]inspectDocument) (map[string]any, error) {
+	p, err := e.profileForInput(in)
+	if err != nil {
+		return nil, err
+	}
+	path := stringVal(in, "path")
+	key := p.SessionKey + "\x00" + p.LanguageID + "\x00" + path
+	snapshot, found := cache[key]
+	if !found {
+		_, d, nodes, err := e.documentNodes(ctx, p, path)
+		if err != nil {
+			return nil, err
+		}
+		snapshot = inspectDocument{doc: d, nodes: nodes}
+		if cache != nil {
+			cache[key] = snapshot
+		}
+	}
+	segments, anchored, err := parseSymbolPath(stringVal(in, "symbol_path"))
+	if err != nil {
+		return nil, err
+	}
+	matches := matchNodes(snapshot.nodes, segments, anchored)
+	switch len(matches) {
+	case 0:
+		return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+stringVal(in, "symbol_path"))
+	case 1:
+		return e.renderInspected(snapshot.doc, matches[0], view, maxLines)
+	default:
+		// Never pick one of several declarations with the same name.
+		list := make([]string, 0, 5)
+		for i, node := range matches {
+			if i == 5 {
+				break
+			}
+			list = append(list, node.SymbolPath)
+		}
+		return nil, core.NewError(core.AmbiguousSymbol, fmt.Sprintf("%q matches %d symbols in %s: %s", stringVal(in, "symbol_path"), len(matches), path, strings.Join(list, ", ")))
+	}
+}
+
+func (e *Engine) renderInspected(d document.Document, selected symbolNode, view string, maxLines int) (map[string]any, error) {
+	path := relativeMust(e, d.Path)
 	result := map[string]any{
 		"view": view, "path": path, "name": selected.Name,
 		"kind": selected.Kind, "range": selected.Range,
