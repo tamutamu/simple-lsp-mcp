@@ -75,7 +75,14 @@ func warmReadJSEscape(data []byte) (rune, int, bool) {
 // escaped identifier character must still resolve to that decoded character.
 // Both the original and decoded offsets are rune indices, not UTF-16 units.
 func warmDecodeLinePosition(line []rune, offset int) ([]rune, int) {
-	if !bytes.Contains([]byte(string(line)), []byte(`\u`)) {
+	hasEscape := false
+	for i := 0; i+1 < len(line); i++ {
+		if line[i] == '\\' && line[i+1] == 'u' {
+			hasEscape = true
+			break
+		}
+	}
+	if !hasEscape {
 		return line, offset
 	}
 	out := make([]rune, 0, len(line))
