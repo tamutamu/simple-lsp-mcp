@@ -182,7 +182,7 @@ func (e *Engine) warmProjectSymbolCandidates(ctx context.Context, p language.Pro
 			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
 		}
 		syncCtx, cancel := e.callContext(ctx)
-		_, err = e.Docs.Sync(syncCtx, s, path, candidateProfile.LanguageID)
+		_, err = e.Docs.SyncBytes(syncCtx, s, path, candidateProfile.LanguageID, content)
 		cancel()
 		if err != nil {
 			return core.WithCause(core.IncompleteSearch, "project warm-up could not open "+rel+" in the language server", err)

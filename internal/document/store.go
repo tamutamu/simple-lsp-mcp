@@ -49,11 +49,19 @@ func NewStore() *Store {
 // Sync opens a document once per LSP connection and sends changes only when
 // source bytes change. A restarted server has a new generation and must
 // receive didOpen again even if the file's content is identical.
-func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Document, error) {
+func (s *Store) Sync(ctx context.Context, n Notifier, path, languageID string) (Document, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return Document{}, err
 	}
+	return s.SyncBytes(ctx, n, path, languageID, b)
+}
+
+// SyncBytes sends the caller's already-read source snapshot to the LSP.
+// Project discovery has just read each candidate to search for its symbol;
+// rereading it here doubles disk IO without adding semantic information.
+// The caller transfers ownership of b and must not mutate it after this call.
+func (s *Store) SyncBytes(_ context.Context, n Notifier, path, languageID string, b []byte) (Document, error) {
 	if !utf8.Valid(b) {
 		return Document{}, core.NewError(core.InvalidArgument, "file is not valid UTF-8")
 	}

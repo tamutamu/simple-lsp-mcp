@@ -87,3 +87,27 @@ func TestSyncRetriesFailedDidOpen(t *testing.T) {
 		t.Fatalf("didOpen was not retried: %v %v", err, n.calls)
 	}
 }
+
+func TestSyncBytesUsesAlreadyReadSourceSnapshot(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "example.ts")
+	if err := os.WriteFile(path, []byte("const value = 1;\n"), 0600); err != nil { t.Fatal(err) }
+	// A discovery scan has read the file. The sync layer must not silently
+	// reopen it and substitute newer bytes from a second filesystem read.
+	alreadyRead := []byte("const value = 1;\n")
+	if err := os.WriteFile(path, []byte("const value = 2;\n"), 0600); err != nil { t.Fatal(err) }
+	client := &fakeNotifier{generation: 1}
+	store := NewStore()
+	d, err := store.SyncBytes(context.Background(), client, path, "typescript", alreadyRead)
+	if err != nil || string(d.Text) != string(alreadyRead) {
+		t.Fatalf("SyncBytes read file a second time: %#v, %v", d, err)
+	}
+	if len(client.items) != 1 { t.Fatalf("notifications: %#v", client.calls) }
+	item := client.items[0].(map[string]any)["textDocument"].(protocol.TextDocumentItem)
+	if item.Text != string(alreadyRead) { t.Fatalf("unexpected synchronized document %q", item.Text) }
+	// The normal Sync path still observes subsequent disk edits.
+	d, err = store.Sync(context.Background(), client, path, "typescript")
+	if err != nil || d.Version != 2 || string(d.Text) != "const value = 2;\n" {
+		t.Fatalf("normal Sync did not detect disk edit: %#v, %v", d, err)
+	}
+}
