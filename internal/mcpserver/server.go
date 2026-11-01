@@ -21,21 +21,29 @@ func New(engine *tools.Engine, version string) *mcp.Server {
 // profile avoids sending irrelevant refactor/format/type-hierarchy schemas
 // on everyday search/read/edit jobs. The omitted tools remain in "full".
 func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
+	return NewWithOptions(engine, version, profile, "both")
+}
+
+// NewWithOptions allows an opt-in text-only result. Keeping the dual format
+// as the default preserves structured MCP results for existing clients.
+// A text-only tool must not advertise an output schema requiring
+// structuredContent, per the MCP specification.
+func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
 	for _, d := range definitionsForProfile(profile) {
 		def := d
-		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: objectSchema(), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: outputSchemaForFormat(resultFormat), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var in map[string]any
 			if len(req.Params.Arguments) > 0 {
 				if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
-					return result(map[string]any{"error": map[string]any{"code": core.InvalidArgument, "message": "invalid tool arguments"}}, true), nil
+					return resultWithFormat(map[string]any{"error": map[string]any{"code": core.InvalidArgument, "message": "invalid tool arguments"}}, true, resultFormat), nil
 				}
 			}
 			out, err := def.call(ctx, engine, in)
 			if err != nil {
-				return result(map[string]any{"error": errorObject(err)}, true), nil
+				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
 			}
-			return result(out, false), nil
+			return resultWithFormat(out, false, resultFormat), nil
 		})
 	}
 	return s
@@ -234,8 +242,27 @@ func positiveIntegerSchema() map[string]any {
 func targetSchema() map[string]any { return objSchema(targetProps()) }
 
 func result(v map[string]any, isError bool) *mcp.CallToolResult {
+	return resultWithFormat(v, isError, "both")
+}
+
+// Omit structuredContent only for the explicitly selected text format.
+// Clients still receive the full, machine-readable JSON in content[0].
+// This avoids duplicating tool results over the MCP wire for compatible
+// clients, without altering the default protocol surface.
+func resultWithFormat(v map[string]any, isError bool, format string) *mcp.CallToolResult {
 	b, _ := json.Marshal(v)
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, StructuredContent: v, IsError: isError}
+	out := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, IsError: isError}
+	if format != "text" {
+		out.StructuredContent = v
+	}
+	return out
+}
+
+func outputSchemaForFormat(format string) any {
+	if format == "text" {
+		return nil
+	}
+	return objectSchema()
 }
 
 func errorObject(err error) map[string]any {

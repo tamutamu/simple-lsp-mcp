@@ -7,7 +7,7 @@
 
 **A lightweight bridge between coding agents and real language servers.**
 
-`simple-lsp-mcp` exposes **18 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
+`simple-lsp-mcp` exposes **19 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
 
 ```text
 find a symbol   → search_symbols / get_document_symbols / list_workspace_symbols
@@ -287,6 +287,13 @@ The plugin includes the `/simple-lsp-mcp-setup` skill. Run it from Claude Code t
 **Design reference:** [39 coding-agent actions mapped to required information and appropriate providers](docs/agent-coding-information-needs.md). The [action-first MCP tool and small Codex A/B report](docs/benchmarks/fastapi-codex-action-first-2026-10-25.md) includes direct wire-size checks and an independently graded two-task sample (4/4 passes); this preliminary sample is **not** evidence of universal productivity improvement. This is the source of truth for selecting LSP-derived information; file reading, Git, tests and judgment remain outside the MCP.
 
 ## MCP tool profiles
+
+### Experiment: remove duplicated MCP result payload
+
+By default each response includes the same JSON as both `content` text and `structuredContent`, for backward compatibility. This doubles the representation on the protocol wire. To test whether your **MCP client** benefits, use `--result-format text` (alongside `--tool-profile coding` if desired). This returns the same JSON in one text block, omits the duplicate `structuredContent`, and does not advertise a structured output schema. `--result-format both` is the unchanged default.
+
+**This is an opt-in, client-compatibility experiment.** A smaller MCP response is not proof of fewer model input tokens; the client may expose only one representation to the model already. Validate your client's support before adopting it. The [predeclared significance gates](docs/benchmarks/significance-gates-2026-11-01.md) require repeated *graded agent tasks*, not just smaller protocol output.
+
 
 Default `--tool-profile full` exposes all **19** LSP operations. Opt-in `--tool-profile coding` exposes **11** everyday read-only search/navigation/inspection tools, including workspace-symbol enumeration, and omits rename, format, code actions, and advanced type hierarchy. Restart to change profiles. The full profile stays the default.
 

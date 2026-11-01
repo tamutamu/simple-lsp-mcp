@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — response efficiency and evidence gates (2026-11-01)
+
+- Add **opt-in** `--result-format text` to avoid serializing the same LSP response in both `content` and `structuredContent`. Default `both` remains backward compatible; text-mode tools omit the output schema that requires a structured response.
+- Add [predeclared paired-task statistical gates](docs/benchmarks/significance-gates-2026-11-01.md), a self-contained analyzer and regression tests so repeated trials of only three tasks cannot falsely qualify as significant product evidence.
+- The actual Codex impact of text-only MCP responses is **not yet measured**. Wire-size reduction and Go tests are not accepted as evidence of productivity gains.
+
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

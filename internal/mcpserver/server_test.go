@@ -187,3 +187,36 @@ func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 		t.Fatalf("coding catalog still too large: %d bytes", len(data))
 	}
 }
+
+func TestTextOnlyResultAvoidsDuplicateStructuredPayload(t *testing.T) {
+	payload := map[string]any{"symbols": []string{"one", "two"}, "truncated": false}
+	both := resultWithFormat(payload, false, "both")
+	textOnly := resultWithFormat(payload, false, "text")
+	if both.StructuredContent == nil || textOnly.StructuredContent != nil {
+		t.Fatal("response format did not control redundant structuredContent")
+	}
+	if len(textOnly.Content) != 1 {
+		t.Fatalf("unexpected text-only content: %#v", textOnly.Content)
+	}
+	if _, ok := textOnly.Content[0].(*mcp.TextContent); !ok {
+		t.Fatalf("expected JSON text block, got %T", textOnly.Content[0])
+	}
+	wireBoth, err := json.Marshal(both)
+	if err != nil { t.Fatal(err) }
+	wireText, err := json.Marshal(textOnly)
+	if err != nil { t.Fatal(err) }
+	if len(wireText) >= len(wireBoth) {
+		t.Fatalf("text-only did not shrink wire payload: both=%d text=%d", len(wireBoth), len(wireText))
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(textOnly.Content[0].(*mcp.TextContent).Text), &decoded); err != nil { t.Fatal(err) }
+	if len(decoded["symbols"].([]any)) != 2 {
+		t.Fatalf("text content changed: %#v", decoded)
+	}
+	if outputSchemaForFormat("text") != nil || outputSchemaForFormat("both") == nil {
+		t.Fatal("text-only must not advertise a structured output schema")
+	}
+	if !resultWithFormat(map[string]any{"error":"bad"}, true, "text").IsError {
+		t.Fatal("text-only must retain tool error status")
+	}
+}
