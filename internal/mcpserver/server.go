@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "When editing a known function, prefer inspect_symbol(view=edit) to a full-file read: it returns exact source, decorators and referenced imports. Use targets[] for several known functions in one call. Use rg for unknown files or literal search; get_document_symbols for file structure; find_references(relation_view=lines) for semantic uses. Do not invoke every tool or reread returned code. rename_symbol/format_document preview before apply; run real tests."
+const serverInstructions = "For known functions, call inspect_symbol(view=edit, path, symbol_path) directly; do not fetch an outline first or reread the same code. Use targets[] for 2-8 functions. Use rg for unknown files/literals; use references for exact semantic identity. For renames, use read-only preview_rename first, then rename_symbol(apply=true) only if authorized. Do not invoke every tool or reread returned code. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -95,8 +95,11 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		// Exact LSP operations. The agent chooses which relation to inspect.
-		{"rename_symbol", "Preview an LSP semantic rename; apply=true writes the validated cross-file WorkspaceEdit.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
+		}},
+		{"preview_rename", "READ ONLY: preview exact cross-file LSP rename edits without writing or requesting write approval.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Preview LSP document/range formatting; apply=true writes the validated edits.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.FormatDocument(c, i)
