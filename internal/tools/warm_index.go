@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -206,6 +207,48 @@ func warmIndexedMayContain(idx *warmFileIndex, needle []byte) bool {
 	}
 }
 
+// readStableWarmSource verifies that the bytes we index and send to an LSP
+// belong to the same file version observed during the directory walk. A
+// replacement, truncation, or in-place edit between stat and read must fail
+// closed instead of publishing an index for bytes paired with stale metadata.
+// Open the file once so a symlink swap cannot make us silently read a different
+// inode; bound growth during concurrent writes.
+func readStableWarmSource(path string, expected fs.FileInfo) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	before, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !warmSameFile(expected, before) {
+		return nil, fmt.Errorf("source changed before reading: %s", path)
+	}
+	if before.Size() < 0 || before.Size() > projectWarmMaxBytes {
+		return nil, fmt.Errorf("source size exceeded warm-up limit: %s", path)
+	}
+	// Allocate once using the verified file size instead of growing an
+	// io.ReadAll buffer, which can double memory use for large sources.
+	content := make([]byte, int(before.Size()))
+	if _, err := io.ReadFull(f, content); err != nil {
+		return nil, fmt.Errorf("source changed while reading %s: %w", path, err)
+	}
+	var extra [1]byte
+	if n, err := f.Read(extra[:]); n != 0 || err != io.EOF {
+		return nil, fmt.Errorf("source grew while reading %s: %v", path, err)
+	}
+	after, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !warmSameFile(before, after) {
+		return nil, fmt.Errorf("source changed while reading: %s", path)
+	}
+	return content, nil
+}
+
 // scanProjectWarmCandidates discovers sources anew on every call, but reads
 // their contents only for newly modified files or possible substring matches.
 // A failed or interrupted scan is never published as a complete index.
@@ -286,7 +329,7 @@ func (e *Engine) scanProjectWarmCandidates(
 		}
 		if content == nil {
 			var err error
-			content, err = os.ReadFile(path)
+			content, err = readStableWarmSource(path, info)
 			if err != nil {
 				return core.WithCause(core.IncompleteSearch, "project warm-up could not read "+rel, err)
 			}
