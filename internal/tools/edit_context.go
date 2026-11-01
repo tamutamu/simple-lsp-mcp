@@ -60,22 +60,52 @@ func selectEditContext(source []byte, symbolRange core.Range, code string, maxCo
 
 	used := out.Prefix + code
 	budget := maxEditContextBytes
-	// Resolve directly referenced module bindings *before* imports so the
-	// imports used by those bindings are also selected. Example: @router.get
-	// depends on router = APIRouter(...), which itself depends on APIRouter.
-	for i := 0; i < from && budget > 0; i++ {
+	// Collect top-level assignments before resolving dependencies. A route may
+	// reference a router which references a prefix which references a settings
+	// object declared *earlier* in the file. A single forward scan misses those
+	// dependencies and makes the agent reread the whole source file.
+	type binding struct {
+		name, source string
+	}
+	var candidates []binding
+	for i := 0; i < from; i++ {
 		raw := lines[i]
 		if strings.TrimLeft(raw, " \t") != raw {
 			continue
 		}
-		if match := moduleAssignment.FindStringSubmatch(strings.TrimSpace(raw)); len(match) == 2 && containsIdentifier(used, match[1]) {
-			if len(raw) > budget {
-				out.Truncated = true
-			} else {
-				out.Bindings += raw
-				used += raw
-				budget -= len(raw)
+		if match := moduleAssignment.FindStringSubmatch(strings.TrimSpace(raw)); len(match) == 2 {
+			candidates = append(candidates, binding{name: match[1], source: raw})
+		}
+	}
+	selected := make([]bool, len(candidates))
+	// Walk backwards so ordinary declaration-before-use chains resolve in
+	// one pass. Repeat until no new dependency is found (forward references
+	// and mixed ordering also work). Each pass must select at least one
+	// previously unseen binding, so this always terminates.
+	for {
+		changed := false
+		for i := len(candidates) - 1; i >= 0; i-- {
+			candidate := candidates[i]
+			if selected[i] || !containsIdentifier(used, candidate.name) {
+				continue
 			}
+			if len(candidate.source) > budget {
+				out.Truncated = true
+				continue
+			}
+			selected[i] = true
+			used += candidate.source
+			budget -= len(candidate.source)
+			changed = true
+		}
+		if !changed {
+			break
+		}
+	}
+	// Return snippets in source order, not discovery order.
+	for i, candidate := range candidates {
+		if selected[i] {
+			out.Bindings += candidate.source
 		}
 	}
 	// Header imports for declaration and its directly relevant bindings.
