@@ -70,16 +70,40 @@ func (idx *warmSourceIndex) publish(key string, files map[string]warmFileIndex) 
 	}
 }
 
-// Check the platform's file identity and full stat metadata in addition to
-// size and mtime. In particular, this invalidates replacements which preserve
-// both size and mtime, and catches change-time updates where the OS exposes them.
-// On filesystems that conceal metadata changes, a concurrent mutation can still
-// escape any stat-based cache; no stat-only scheme can guarantee otherwise.
+// Check file identity, size, mode, mtime and (when exposed) change time.
+// Do not compare full os.FileInfo.Sys(): atime changes when we merely read a
+// source, which would invalidate the index on every subsequent lookup.
+// On filesystems that conceal change time, a same-size write that spoofs
+// mtime may remain invisible; no stat-only cache can detect such writes.
 func warmSameFile(a, b fs.FileInfo) bool {
 	return a != nil && b != nil &&
 		a.Size() == b.Size() && a.Mode() == b.Mode() &&
 		a.ModTime().Equal(b.ModTime()) && os.SameFile(a, b) &&
-		reflect.DeepEqual(a.Sys(), b.Sys())
+		reflect.DeepEqual(warmChangeTime(a), warmChangeTime(b))
+}
+
+func warmChangeTime(info fs.FileInfo) any {
+	value := reflect.ValueOf(info.Sys())
+	if !value.IsValid() {
+		return nil
+	}
+	if value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return nil
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return nil
+	}
+	// Unix variants expose Ctim/Ctimespec; some platforms use Ctime.
+	for _, name := range []string{"Ctim", "Ctimespec", "Ctime", "ChangeTime"} {
+		field := value.FieldByName(name)
+		if field.IsValid() && field.CanInterface() {
+			return field.Interface()
+		}
+	}
+	return nil
 }
 
 func warmTrigram(v []byte) (int, int) {
