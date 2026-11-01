@@ -37,6 +37,24 @@ For the one-name miss workload above, three sequential lookups in the same engin
 
 **Revised judgment:** Warm-index optimization is not unconditionally faster. Keep the cold-vs-warm distinction in all performance claims and prioritize measurement of real agent task patterns.
 
+## Follow-up: avoid cold Bloom construction for small sources
+
+The initial per-file Bloom approach cost approximately **83% more** than the legacy full scan on cold-start (run 165, same-run comparison). On 2026-11-01 it was replaced with a bounded, small-source fast path: cache source bytes immediately up to 8 MiB per project snapshot; construct Bloom filters only for sources beyond that budget. This keeps original metadata invalidation and candidate verification semantics.
+
+[Follow-up CI microbenchmark run 195](https://github.com/tamutamu/simple-lsp-mcp/actions/runs/41301304808), 100 ~1.9 KiB TypeScript files, three measurements, 100 operations each:
+
+| Workload | Mean elapsed ms/op | Disk file reads/op | Versus legacy in same run |
+| --- | ---: | ---: | --- |
+| Legacy scan, no match | 0.680 | 100 | baseline |
+| New **cold** scan, no match | 0.858 | 100 | **26% slower** |
+| New warmed scan, no match | 0.388 | 0 | **43% faster** |
+| Legacy scan, one match | 0.673 | 100 | baseline |
+| New warmed scan, one match | 0.372 | 0 | **45% faster** |
+
+This is an important cold-path improvement over the previous algorithm, but **cold lookup still loses** and no claim about coding-agent speed or token usage follows. Runner/cache conditions differ across historical workflow runs, so compare baselines inside each run rather than comparing absolute milliseconds across runs. Under this specific miss-only workload, the first two lookups (0.858 + 0.388 ms) are faster in aggregate than two legacy scans (2 × 0.680 ms), but real task patterns, other LSP calls, and workspace changes are not represented.
+
+The fast path has regression tests for first-scan source reuse and over-budget Bloom fallback.
+
 ## Correctness gates
 
 The tests cover:
