@@ -12,6 +12,8 @@ jobs:
       - run: go vet ./...
       - name: Measure duplicate candidate-file reads in project warm-up
         run: go test ./internal/document -run NoUnitTests -bench BenchmarkWarmCandidateSync -benchmem -benchtime=100x -count=3
+      - name: Compare project warm-up negative lookups with full-source scan
+        run: go test ./internal/tools -run '^$' -bench '^BenchmarkProjectWarm(LegacyFullScan(Miss|Hit)|Index(Miss|Hit))$' -benchmem -benchtime=100x -count=3
       - name: Check predeclared Codex evaluation gates
         run: |
           python3 -m unittest discover -s docs/benchmarks -p 'test_analyze_codex_ab.py' -v
