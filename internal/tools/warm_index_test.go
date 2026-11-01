@@ -103,6 +103,30 @@ func TestWarmIndexCachesSmallSourcesWithoutColdBloomBuild(t *testing.T) {
 	}
 }
 
+func TestWarmIndexUsesBloomForSourcesLargerThanCacheBudget(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	large := strings.Repeat("const repeatedValue = 1;\n",
+		warmIndexMaxCachedBytes/len("const repeatedValue = 1;\n")+1)
+	large += "const uniqueLongTokenXYZ = 1;\n"
+	warmWrite(t, root, "large.ts", large)
+	found, stats := warmScan(t, e, p, root, "uniqueLongTokenXYZ")
+	if len(found) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("cold large source: %v %+v", found, stats)
+	}
+	key := root + "\x00" + p.SessionKey
+	entry := e.warmIndex.snapshot(key)[filepath.Join(root, "large.ts")]
+	if entry.content != nil {
+		t.Fatal("source larger than 8 MiB was cached without a bound")
+	}
+	if !warmBloomMayContain(&entry.bloom, []byte("uniqueLongTokenXYZ")) {
+		t.Fatal("Bloom filter rejected an actual substring")
+	}
+	found, stats = warmScan(t, e, p, root, "uniqueLongTokenXYZ")
+	if len(found) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("large positive source should be read and validated: %v %+v", found, stats)
+	}
+}
+
 func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T) {
 	e, p, root := warmIndexFixture(t)
 	warmWrite(t, root, "a.ts", "export const alpha = 1;\n")
