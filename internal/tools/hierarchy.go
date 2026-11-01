@@ -56,7 +56,7 @@ func (e *Engine) callHierarchy(ctx context.Context, name string, p language.Prof
 	if tr {
 		out = out[:limit]
 	}
-	return map[string]any{"calls": out, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
+	return map[string]any{"calls": out, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
 }
 func (e *Engine) callItem(p language.Profile, s *session.Session, x protocol.CallHierarchyItem, from []protocol.Range) map[string]any {
 	return e.callItemIn(nil, p, s, x, from)
@@ -108,7 +108,7 @@ func (e *Engine) typeHierarchy(ctx context.Context, name string, p language.Prof
 	if tr {
 		out = out[:limit]
 	}
-	return map[string]any{"types": out, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
+	return map[string]any{"types": out, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
 }
 func (e *Engine) typeItem(p language.Profile, s *session.Session, x protocol.TypeHierarchyItem) map[string]any {
 	path, err := normalize.URIPath(e.WS, x.URI)

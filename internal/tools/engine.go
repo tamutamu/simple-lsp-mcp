@@ -115,7 +115,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 	if truncated {
 		all = all[:limit]
 	}
-	return map[string]any{"symbols": projectSymbols(all, detail), "meta": core.Meta{Complete: true, Truncated: truncated, Servers: []string{p.SessionKey}}}, nil
+	return map[string]any{"symbols": projectSymbols(all, detail), "meta": core.Meta{Complete: !truncated, Truncated: truncated, Servers: []string{p.SessionKey}}}, nil
 }
 
 // DocumentSymbols returns hierarchical symbols when supported by the server.
@@ -213,7 +213,7 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 			return nil, err
 		}
 	}
-	return map[string]any{"locations": locs, "meta": core.Meta{Complete: true, Truncated: tr}}, nil
+	return map[string]any{"locations": locs, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
 }
 
 // locationsAt runs one location-based LSP method against an already-resolved
@@ -321,5 +321,5 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 	if tr {
 		ds = ds[:limit]
 	}
-	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete, Truncated: tr}}, nil
+	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete && !tr, Truncated: tr}}, nil
 }
