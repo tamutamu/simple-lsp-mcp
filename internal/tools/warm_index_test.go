@@ -80,6 +80,53 @@ func TestWarmIdentifierAtPositionAvoidsRedundantLSPPrepareRename(t *testing.T) {
 	}
 }
 
+func TestWarmIndexCachesSmallSourcesWithoutColdBloomBuild(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	warmWrite(t, root, "small.ts", "export const alpha = 1;\n")
+	first, stats := warmScan(t, e, p, root, "alpha")
+	if len(first) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("first scan: %v %+v", first, stats)
+	}
+	key := root + "\x00" + p.SessionKey
+	index := e.warmIndex.snapshot(key)[filepath.Join(root, "small.ts")]
+	if index.content == nil {
+		t.Fatal("small source should be cached on the first read")
+	}
+	for _, bit := range index.bloom {
+		if bit != 0 {
+			t.Fatal("first cold scan did unnecessary Bloom indexing")
+		}
+	}
+	second, warmStats := warmScan(t, e, p, root, "absentNeedle")
+	if len(second) != 0 || warmStats.FilesRead != 0 {
+		t.Fatalf("cached negative lookup: %v %+v", second, warmStats)
+	}
+}
+
+func TestWarmIndexUsesBloomForSourcesLargerThanCacheBudget(t *testing.T) {
+	e, p, root := warmIndexFixture(t)
+	large := strings.Repeat("const repeatedValue = 1;\n",
+		warmIndexMaxCachedBytes/len("const repeatedValue = 1;\n")+1)
+	large += "const uniqueLongTokenXYZ = 1;\n"
+	warmWrite(t, root, "large.ts", large)
+	found, stats := warmScan(t, e, p, root, "uniqueLongTokenXYZ")
+	if len(found) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("cold large source: %v %+v", found, stats)
+	}
+	key := root + "\x00" + p.SessionKey
+	entry := e.warmIndex.snapshot(key)[filepath.Join(root, "large.ts")]
+	if entry.content != nil {
+		t.Fatal("source larger than 8 MiB was cached without a bound")
+	}
+	if !warmBloomMayContain(&entry.bloom, []byte("uniqueLongTokenXYZ")) {
+		t.Fatal("Bloom filter rejected an actual substring")
+	}
+	found, stats = warmScan(t, e, p, root, "uniqueLongTokenXYZ")
+	if len(found) != 1 || stats.FilesRead != 1 {
+		t.Fatalf("large positive source should be read and validated: %v %+v", found, stats)
+	}
+}
+
 func TestWarmIndexTracksEditsAdditionsRemovalsAndIgnoredDirectories(t *testing.T) {
 	e, p, root := warmIndexFixture(t)
 	warmWrite(t, root, "a.ts", "export const alpha = 1;\n")

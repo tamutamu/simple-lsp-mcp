@@ -14,8 +14,8 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 )
 
-// A compact, per-source substring filter avoids reading the same unchanged
-// source files for every semantic relation query. False positives are allowed,
+// Cache small sources directly; use a compact per-source substring filter
+// only when the bounded byte budget is exceeded. False positives are allowed,
 // but false negatives are not: every possible hit is verified with bytes.Contains.
 // The filesystem is still walked and stat'ed for each query so that additions,
 // removals, edits, and replacements invalidate stale filters.
@@ -28,7 +28,7 @@ const (
 type warmFileIndex struct {
 	info    fs.FileInfo
 	bloom   [warmBloomBytes]byte
-	content []byte // Only observed candidate files; bounded per project.
+	content []byte // Source bytes cached opportunistically, bounded per project.
 }
 
 type warmSourceIndex struct {
@@ -191,17 +191,18 @@ func (e *Engine) scanProjectWarmCandidates(
 		current := old
 		var content []byte
 		if unchanged {
-			cachedBytes += len(old.content)
-			if !warmBloomMayContain(&old.bloom, needle) {
+			if old.content != nil {
+				// The small-source fast path avoids constructing a Bloom
+				// filter on the first scan, and avoids both disk reads and
+				// false-positive Bloom checks on subsequent scans.
+				cachedBytes += len(old.content)
+				content = old.content
+				stats.SkippedRead++
+			} else if !warmBloomMayContain(&old.bloom, needle) {
 				next[path] = old
 				stats.SkippedRead++
 				return nil
 			}
-			// Candidate files that were previously opened for the LSP can
-			// reuse their bytes as long as their filesystem identity and
-			// metadata remain unchanged. This avoids rereading positive
-			// matches on each relationship or rename operation.
-			content = old.content
 		}
 		if content == nil {
 			var err error
@@ -211,26 +212,28 @@ func (e *Engine) scanProjectWarmCandidates(
 			}
 			stats.FilesRead++
 			stats.BytesRead += int64(len(content))
-		} else {
-			stats.SkippedRead++
 		}
 		if !unchanged {
 			current = warmFileIndex{info: info}
+		}
+		if current.content == nil && len(content) <= warmIndexMaxCachedBytes-cachedBytes {
+			// Prefer the actual source bytes (up to a strict 8 MiB bound)
+			// over calculating thousands of substring hashes during cold
+			// startup. Only over-budget files need a Bloom filter.
+			current.content = content
+			cachedBytes += len(content)
+		}
+		if !unchanged && current.content == nil {
 			warmBloomAdd(&current.bloom, content)
 		}
+		next[path] = current
 		if !bytes.Contains(content, needle) {
-			next[path] = current
 			return nil
 		}
 		stats.Matches++
 		if stats.Matches > projectWarmMaxMatches {
 			return core.NewError(core.IncompleteSearch, fmt.Sprintf("project warm-up found more than %d candidate files; narrow the workspace/profile", projectWarmMaxMatches))
 		}
-		if current.content == nil && len(content) <= warmIndexMaxCachedBytes-cachedBytes {
-			current.content = content
-			cachedBytes += len(content)
-		}
-		next[path] = current
 		if err := onMatch(path, rel, candidateProfile, content); err != nil {
 			return err
 		}
