@@ -26,6 +26,7 @@ type Session struct {
 	mu          sync.RWMutex
 	ready       chan struct{}
 	starting    bool
+	generation  uint64 // increases on each successful language-server initialization
 	cmd         *exec.Cmd
 	t           *transport.Transport
 	caps        protocol.Capabilities
@@ -35,6 +36,15 @@ type Session struct {
 
 func New(key, root string, cfg config.Server) *Session {
 	return &Session{key: key, root: root, cfg: cfg, diagnostics: map[string][]protocol.Diagnostic{}}
+}
+
+// Generation identifies the currently initialized server incarnation.
+// The document store uses it to reopen previously synced files after crash
+// recovery; a newly started language server has no open documents.
+func (s *Session) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
 }
 
 // Root returns the filesystem root served by this language-server instance.
@@ -87,6 +97,7 @@ func (s *Session) start(ctx context.Context) error {
 	s.cmd = cmd
 	s.t = transport
 	s.caps = caps
+	s.generation++
 	s.crashed = nil
 	s.mu.Unlock()
 	return nil

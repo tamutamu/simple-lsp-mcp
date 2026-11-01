@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"unicode/utf8"
 
@@ -28,17 +29,26 @@ type Document struct {
 }
 
 // Store tracks files that have been opened in an LSP session.
+type documentState struct {
+	value      Document
+	generation uint64
+}
+
 type Store struct {
 	mu   sync.Mutex
-	docs map[string]*Document
+	// Document-open state belongs to an individual LSP connection, not
+	// globally to a path. Two sessions may legitimately open the same file.
+	docs map[Notifier]map[string]*documentState
 }
 
 // NewStore creates an empty document store.
 func NewStore() *Store {
-	return &Store{docs: map[string]*Document{}}
+	return &Store{docs: map[Notifier]map[string]*documentState{}}
 }
 
-// Sync opens a new document or sends its latest content to the language server.
+// Sync opens a document once per LSP connection and sends changes only when
+// source bytes change. A restarted server has a new generation and must
+// receive didOpen again even if the file's content is identical.
 func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Document, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -47,30 +57,54 @@ func (s *Store) Sync(_ context.Context, n Notifier, path, languageID string) (Do
 	if !utf8.Valid(b) {
 		return Document{}, core.NewError(core.InvalidArgument, "file is not valid UTF-8")
 	}
-
+	if n == nil || !reflect.TypeOf(n).Comparable() {
+		return Document{}, core.NewError(core.InvalidArgument, "document notifier must have a comparable identity")
+	}
 	hash := fmt.Sprintf("%x", sha256.Sum256(b))
 	uri := fileURI(path)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d := s.docs[path]
-	if d == nil {
-		d = &Document{Path: path, URI: uri, LanguageID: languageID, Version: 1, Text: b, Hash: hash}
-		if err := n.Notify("textDocument/didOpen", map[string]any{"textDocument": protocol.TextDocumentItem{URI: uri, LanguageID: languageID, Version: 1, Text: string(b)}}); err != nil {
-			return Document{}, err
-		}
-		d.Opened = true
-		s.docs[path] = d
-	} else if d.Hash != hash {
-		d.Version++
-		if err := n.Notify("textDocument/didChange", map[string]any{"textDocument": protocol.VersionedTextDocumentIdentifier{URI: d.URI, Version: d.Version}, "contentChanges": []map[string]string{{"text": string(b)}}}); err != nil {
-			return Document{}, err
-		}
-		d.Text = b
-		d.Hash = hash
+	generation := uint64(0)
+	if versioned, ok := n.(interface{ Generation() uint64 }); ok {
+		generation = versioned.Generation()
 	}
 
-	return *d, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sessionDocs := s.docs[n]
+	if sessionDocs == nil {
+		sessionDocs = make(map[string]*documentState)
+		s.docs[n] = sessionDocs
+	}
+	state := sessionDocs[path]
+	if state == nil || state.generation != generation {
+		// A didOpen must be delivered to the new server, regardless of
+		// content hash. Never commit local state after a failed notify.
+		item := protocol.TextDocumentItem{URI: uri, LanguageID: languageID, Version: 1, Text: string(b)}
+		if err := n.Notify("textDocument/didOpen", map[string]any{"textDocument": item}); err != nil {
+			return Document{}, err
+		}
+		d := Document{Path: path, URI: uri, LanguageID: languageID, Version: 1, Text: b, Hash: hash, Opened: true}
+		sessionDocs[path] = &documentState{value: d, generation: generation}
+		return d, nil
+	}
+	if state.value.LanguageID != languageID {
+		return Document{}, core.NewError(core.InvalidArgument, "document language changed within a language-server session")
+	}
+	if state.value.Hash != hash {
+		version := state.value.Version + 1
+		// Do not mutate Version before the transport accepts the message.
+		if err := n.Notify("textDocument/didChange", map[string]any{
+			"textDocument": protocol.VersionedTextDocumentIdentifier{URI: uri, Version: version},
+			"contentChanges": []map[string]string{{"text": string(b)}},
+		}); err != nil {
+			return Document{}, err
+		}
+		state.value.Version = version
+		state.value.Text = b
+		state.value.Hash = hash
+	}
+	return state.value, nil
 }
+
 func fileURI(path string) string {
 	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
 }
