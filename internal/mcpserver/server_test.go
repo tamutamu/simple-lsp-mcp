@@ -9,7 +9,7 @@ import (
 )
 
 var expectedTools = []string{
-	"rename_symbol", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
+	"rename_symbol", "preview_rename", "format_document", "get_code_actions", "apply_code_action", "get_diagnostics",
 	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
 	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
@@ -50,7 +50,7 @@ func TestToolCatalogStaysSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(encoded) > 20*1024 {
+	if len(encoded) > 22*1024 {
 		t.Fatalf("MCP tool catalog uses %d bytes", len(encoded))
 	}
 }
@@ -76,7 +76,7 @@ func TestWorkspaceListingRemainsIndependentOfSearch(t *testing.T) {
 }
 
 func TestDirectTargetToolsRetainSymbolHandlesAndPaths(t *testing.T) {
-	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover", "inspect_symbol", "rename_symbol"} {
+	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover", "inspect_symbol", "rename_symbol", "preview_rename"} {
 		found := false
 		for _, d := range definitions() {
 			if d.name != name {
@@ -110,7 +110,7 @@ func TestSimpleServerInstructions(t *testing.T) {
 			t.Fatalf("mandatory/composite instruction remains: %s", deleted)
 		}
 	}
-	for _, wanted := range []string{"Do not invoke every tool", "rename_symbol", "tests"} {
+	for _, wanted := range []string{"Do not invoke every tool", "preview_rename", "inspect_symbol", "tests"} {
 		if !strings.Contains(serverInstructions, wanted) {
 			t.Fatalf("instructions missing %q", wanted)
 		}
@@ -131,6 +131,34 @@ func TestWritesAreExplicitAndReadsStayReadOnly(t *testing.T) {
 		} else if !a.ReadOnlyHint {
 			t.Fatalf("read tool unmarked: %s", d.name)
 		}
+	}
+}
+
+func TestRenamePreviewIsReadOnlyAndRetainsExplicitWriteOperation(t *testing.T) {
+	tools := definitions()
+	var preview, rename *definition
+	for i := range tools {
+		if tools[i].name == "preview_rename" {
+			preview = &tools[i]
+		}
+		if tools[i].name == "rename_symbol" {
+			rename = &tools[i]
+		}
+	}
+	if preview == nil || rename == nil {
+		t.Fatal("missing separate rename preview and apply-capable tool")
+	}
+	if !toolAnnotations("preview_rename").ReadOnlyHint {
+		t.Fatal("preview should not require destructive-tool approval")
+	}
+	if !*toolAnnotations("rename_symbol").DestructiveHint {
+		t.Fatal("real rename must be marked destructive")
+	}
+	if _, ok := preview.schema["properties"].(map[string]any)["apply"]; ok {
+		t.Fatal("read-only preview must never accept apply")
+	}
+	if _, ok := rename.schema["properties"].(map[string]any)["apply"]; !ok {
+		t.Fatal("existing apply-capable rename contract lost")
 	}
 }
 
@@ -166,7 +194,7 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 19 || len(coding) != 11 {
+	if len(full) != 20 || len(coding) != 11 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
 	for _, d := range coding {
