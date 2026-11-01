@@ -7,7 +7,7 @@
 
 **A lightweight bridge between coding agents and real language servers.**
 
-`simple-lsp-mcp` exposes **20 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
+`simple-lsp-mcp` exposes **21 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
 
 ```text
 find a symbol   → search_symbols / get_document_symbols / list_workspace_symbols
