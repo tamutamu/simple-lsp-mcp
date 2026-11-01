@@ -57,9 +57,7 @@ def read_paired(path, study, treatment="mcp"):
             raise ValueError(f"Incomplete trial: {key}, {arm}; do not score as success")
         if not parse_bool(row.get("graded", "true")):
             raise ValueError(f"Ungraded trial: {key}, {arm}")
-        targets = {"seconds": 1 - min_time_reduction,
-               "input_tokens": 1 - min_token_reduction}
-    for metric in ("seconds", "input_tokens"):
+        for metric in ("seconds", "input_tokens"):
             try:
                 n = float(row[metric])
             except (KeyError, ValueError, TypeError) as exc:
@@ -123,6 +121,8 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
     metrics = {}
     rng = random.Random(seed)
     keys = sorted(by_task)
+    targets = {"seconds": 1 - min_time_reduction,
+               "input_tokens": 1 - min_token_reduction}
     for metric in ("seconds", "input_tokens"):
         # Each independent task has equal weight, irrespective of its raw size
         # or the number of repeated stochastic Codex executions.
