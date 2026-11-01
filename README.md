@@ -54,7 +54,7 @@ We compared **Claude Code with and without the previous 26-tool simple-lsp-mcp v
 
 ### Design boundaries
 
-- **Reads stay read-only; writes are explicit.** `preview_rename` is strictly read-only; the backward-compatible `rename_symbol` previews by default but is marked write-capable because `apply=true` mutates files. `format_document` previews by default. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
+- **Reads stay read-only; writes are explicit.** `preview_rename` is strictly read-only; the backward-compatible `rename_symbol` previews by default but is marked write-capable because `apply=true` mutates files. `preview_format` is strictly read-only; `format_document` also previews by default but remains marked write-capable because `apply=true` mutates files. `apply_code_action` applies only the selected WorkspaceEdit-backed action.
 - **No hidden index or embeddings.** Results come live from configured local language servers.
 - **Bounded project warm-up where needed.** TypeScript/Pyright project-wide relations open only candidate source files containing the target spelling, under hard file/byte/match limits; semantic answers still come from the LSP.
 - **No external indexing service.** Workspace code stays local to the MCP/LSP processes.
