@@ -49,6 +49,17 @@ def prepare(source, dst):
         p=call(cmd,cwd=dst)
         if p.returncode:raise RuntimeError(p.stderr)
 
+def _has_nested_error(value):
+    """Fail closed on MCP application errors wrapped in structured results."""
+    if isinstance(value, dict):
+        if "error" in value or value.get("isError") or value.get("is_error"):
+            return True
+        return any(_has_nested_error(part) for part in value.values())
+    if isinstance(value, list):
+        return any(_has_nested_error(part) for part in value)
+    return False
+
+
 def successful_mcp_call(item):
     """Count a call only if its trace contains a non-error MCP response.
 
@@ -62,11 +73,9 @@ def successful_mcp_call(item):
     if isinstance(result,str):
         try: result=json.loads(result)
         except ValueError: return False
-    if not isinstance(result,dict) or result.get("isError") or result.get("is_error"):
+    if not isinstance(result,dict) or _has_nested_error(result):
         return False
     structured=result.get("structured_content",result.get("structuredContent"))
-    if isinstance(structured,dict) and structured.get("error"):
-        return False
     content=result.get("content")
     if not isinstance(content,list):
         return isinstance(structured,dict) and bool(structured)
@@ -82,10 +91,13 @@ def successful_mcp_call(item):
             except ValueError:
                 # Non-JSON text is legitimate for other MCP tools, but a
                 # plain error string is not successful semantic evidence.
-                if text.lstrip().lower().startswith(("error:", "mcp error")):
+                if text.lstrip().lower().startswith(("error:", "error ", "mcp error", "lsp error")):
                     return False
             else:
-                if isinstance(payload,dict) and payload.get("error"):
+                if _has_nested_error(payload):
+                    return False
+                if isinstance(payload, str) and payload.lstrip().lower().startswith(
+                        ("error:", "error ", "mcp error", "lsp error")):
                     return False
             useful=True
         elif part.get("type") in ("image","resource","resource_link","audio"):
@@ -125,6 +137,51 @@ def trace_mcp_calls(events):
             else:
                 successful.pop(key, None)
     return list(attempts.values()), list(successful.values())
+
+
+def trace_tool_attempts(events):
+    """Count attempted commands and identical calls, including failed attempts.
+
+    Lifecycle events share an item ID. Exact repeats are a diagnostic proxy,
+    not proof that a repeated call was unnecessary.
+    """
+    attempts = {}
+    for index, event in enumerate(events):
+        if event.get("type") not in (
+                "item.started", "item.updated", "item.completed", "item.failed"):
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") not in (
+                "command_execution", "mcp_tool_call"):
+            continue
+        identifier = item.get("id")
+        key = identifier if isinstance(identifier, str) and identifier else ("unknown", index)
+        merged = attempts.setdefault(key, {})
+        merged.update({k: v for k, v in item.items() if v is not None})
+    seen = set()
+    repeats = 0
+    for item in attempts.values():
+        if item["type"] == "command_execution":
+            command = item.get("command")
+            if not isinstance(command, str) or not command.strip():
+                continue
+            signature = ("command_execution", command)
+        else:
+            tool, arguments = item.get("tool"), item.get("arguments")
+            if not isinstance(tool, str) or not tool or arguments is None:
+                continue
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except ValueError:
+                    pass
+            signature = ("mcp_tool_call", tool, json.dumps(
+                arguments, sort_keys=True, ensure_ascii=False))
+        if signature in seen:
+            repeats += 1
+        seen.add(signature)
+    return (sum(item.get("type") == "command_execution"
+                for item in attempts.values()), repeats)
 
 
 def evaluate(o,case,mode,rep):
@@ -177,13 +234,19 @@ def evaluate(o,case,mode,rep):
         except ValueError:pass
     finished=[e for e in events if e.get("type")=="turn.completed"]
     bad=any(e.get("type")=="turn.failed" for e in events)
-    items=[e["item"] for e in events if e.get("type")=="item.completed" and isinstance(e.get("item"),dict)]
     mcp,mcpok=trace_mcp_calls(events)
+    command_calls,repeated_tool_calls=trace_tool_attempts(events)
     use=finished[-1].get("usage",{}) if finished else {}
+    total_input=use.get("input_tokens")
+    cached_input=use.get("cached_input_tokens")
+    uncached_input=(total_input-cached_input
+                    if type(total_input) is int and type(cached_input) is int
+                    and 0 <= cached_input <= total_input else None)
     row=dict(study="coding-required",case=case,mode=mode,repeat=rep,
              retry_count=retry_count,seconds=elapsed,exitcode=exitcode,
              completed=exitcode==0 and bool(finished) and not bad,
-             input_tokens=use.get("input_tokens"),cached_tokens=use.get("cached_input_tokens"),
+             input_tokens=total_input,cached_tokens=cached_input,
+             uncached_input_tokens=uncached_input,
              output_tokens=use.get("output_tokens"),reasoning_tokens=use.get("reasoning_output_tokens"),
              mcp_calls=len(mcp),valid_mcp_calls=len(mcpok),
              model=o.model,effort=o.effort,agent_version=o.agent_version,
@@ -192,7 +255,7 @@ def evaluate(o,case,mode,rep):
              tasks_sha=hashlib.sha256((BASE/"docs/benchmarks/fastapi-template-tasks.json").read_bytes()).hexdigest(),
              grader_sha=hashlib.sha256(GRADER.read_bytes()).hexdigest(),
              mcp_tools=[x.get("tool") for x in mcp],
-             command_calls=sum(i.get("type")=="command_execution" for i in items),
+             command_calls=command_calls,repeated_tool_calls=repeated_tool_calls,
              graded=False,accepted=False,grader=None,
              changed_files=call(["git","diff","--name-only"],cwd=work).stdout.splitlines(),
              workdir=str(work))
@@ -235,8 +298,8 @@ def grade(o,records):
 
 def report(o,rows):
     fields=("study","case","mode","repeat","retry_count","seconds","exitcode","completed","graded","accepted",
-            "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
-            "mcp_calls","valid_mcp_calls","command_calls","grader_exitcode",
+            "input_tokens","cached_tokens","uncached_input_tokens","output_tokens","reasoning_tokens",
+            "mcp_calls","valid_mcp_calls","command_calls","repeated_tool_calls","grader_exitcode",
             "model","effort","agent_version","mcp_binary_sha","source_commit","policy_sha","tasks_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()

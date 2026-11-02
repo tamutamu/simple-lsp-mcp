@@ -198,5 +198,99 @@ class RequiredABProvenanceTest(unittest.TestCase):
             self.assertEqual(row["grader_exitcode"], 0)
 
 
+    def test_nested_mcp_errors_do_not_count_as_semantic_use(self):
+        def item(result):
+            return {"status": "completed", "result": result}
+
+        bad_texts = [
+            '[{"result": {"error": "symbol not found"}}]',
+            '{"items": [{"isError": true}]}',
+            '"Error: LSP request failed"',
+            "LSP error: server unavailable",
+        ]
+        for value in bad_texts:
+            with self.subTest(value=value):
+                self.assertFalse(runner.successful_mcp_call(item({
+                    "content": [{"type": "text", "text": value}],
+                })))
+        self.assertFalse(runner.successful_mcp_call(item({
+            "structured_content": {"result": [{"error": "not found"}]},
+            "content": [{"type": "text", "text": "source code"}],
+        })))
+        self.assertFalse(runner.successful_mcp_call(item({
+            "content": [
+                {"type": "text", "text": "def ok(): pass"},
+                {"type": "text", "text": '{"error": "partial failure"}'},
+            ],
+        })))
+        self.assertTrue(runner.successful_mcp_call(item({
+            "content": [{"type": "text", "text": '[{"name": "read_items"}]'}],
+        })))
+
+    def test_repeated_calls_count_attempts_not_lifecycle_events(self):
+        def event(kind, ident, typ, **kwargs):
+            return {"type": kind, "item": {"id": ident, "type": typ, **kwargs}}
+
+        events = [
+            event("item.started", "c1", "command_execution", command="rg item"),
+            event("item.completed", "c1", "command_execution", command="rg item"),
+            event("item.started", "c2", "command_execution", command="rg item"),
+            event("item.failed", "c2", "command_execution", command="rg item"),
+            event("item.started", "m1", "mcp_tool_call", server="simple-lsp",
+                  tool="inspect_symbol", arguments='{"path":"a.py","view":"edit"}'),
+            event("item.completed", "m1", "mcp_tool_call", server="simple-lsp",
+                  tool="inspect_symbol", arguments='{"view":"edit","path":"a.py"}'),
+            event("item.started", "m2", "mcp_tool_call", server="simple-lsp",
+                  tool="inspect_symbol", arguments={"view": "edit", "path": "a.py"}),
+        ]
+        commands, repeats = runner.trace_tool_attempts(events)
+        self.assertEqual(commands, 2)
+        self.assertEqual(repeats, 2)
+
+    def test_csv_exports_uncached_input_and_repeated_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            row = self.trial("mcp")
+            row.update(uncached_input_tokens=900, repeated_tool_calls=3)
+            runner.report(SimpleNamespace(output=out, model="fixed-model",
+                                          effort="low", cases=["search"]), [row])
+            with (out / "results.csv").open(newline="") as stream:
+                saved = next(csv.DictReader(stream))
+            self.assertEqual(saved["uncached_input_tokens"], "900")
+            self.assertEqual(saved["repeated_tool_calls"], "3")
+
+    def test_evaluate_records_uncached_tokens_and_attempted_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            o = SimpleNamespace(
+                output=output, resume=False, retry_incomplete=False,
+                source=output, node=Path("/usr/bin/node"),
+                codex=Path("/tmp/codex.js"), model="fixed-model", effort="low",
+                mcp=Path("/tmp/simple-lsp-mcp"), lsp_bin=Path("/tmp"),
+                tsserver="", timeout=10, agent_version="codex 0.147.0",
+                mcp_binary_sha="fixed-binary",
+            )
+            trace = [
+                {"type": "item.started", "item": {
+                    "id": "cmd", "type": "command_execution", "command": "rg item"}},
+                {"type": "turn.completed", "usage": {
+                    "input_tokens": 1000, "cached_input_tokens": 800,
+                    "output_tokens": 50}},
+            ]
+
+            def fake_call(cmd, **kwargs):
+                stdout = ""
+                if cmd[0] != "git":
+                    stdout = "".join(json.dumps(event) + "\n" for event in trace)
+                return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+            with patch.object(runner, "prepare", side_effect=lambda _, dst: dst.mkdir()), \
+                 patch.object(runner, "call", side_effect=fake_call):
+                row = runner.evaluate(o, "search", "baseline", 1)
+            self.assertEqual(row["uncached_input_tokens"], 200)
+            self.assertEqual(row["command_calls"], 1)
+            self.assertEqual(row["repeated_tool_calls"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
