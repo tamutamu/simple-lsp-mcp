@@ -16,6 +16,8 @@ jobs:
         run: go test ./internal/document -run '^$' -bench '^BenchmarkLargeSourcePositionConversion$' -benchmem -benchtime=5x -count=1
       - name: Compare old/new semantic warm cursor allocations on 100k-line source
         run: go test ./internal/tools -run '^$' -bench '^BenchmarkWarmIdentifierAtPositionLargeSource$' -benchmem -benchtime=5x -count=1
+      - name: Compare old/new inspect_symbol extraction on 100k-line source
+        run: go test ./internal/tools -run '^$' -bench '^BenchmarkInspectSourceLargeFile$' -benchmem -benchtime=10x -count=1
       - name: Measure duplicate candidate-file reads in project warm-up
         run: go test ./internal/document -run NoUnitTests -bench BenchmarkWarmCandidateSync -benchmem -benchtime=100x -count=3
       - name: Compare project warm-up negative lookups with full-source scan
