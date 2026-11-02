@@ -147,16 +147,29 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 	if err := json.Unmarshal(raw, &flat); err != nil {
 		return nil, err
 	}
-	out := make([]core.SymbolSummary, 0, len(flat))
-	for _, v := range flat {
-		if x, err := e.symbolFromInfo(p, s, d, v); err == nil {
-			out = append(out, x)
-		}
+	out, err := e.flatDocumentSymbols(p, s, d, flat)
+	if err != nil {
+		return nil, err
 	}
 	if detail == "full" {
 		return map[string]any{"symbols": out}, nil
 	}
 	return map[string]any{"path": path, "symbols": outlineFlatSymbols(out)}, nil
+}
+
+// flatDocumentSymbols must not silently omit unresolvable LSP entries. An
+// incomplete outline can mislead a coding agent about the declarations in a
+// file, particularly when it is planning a multi-symbol refactor.
+func (e *Engine) flatDocumentSymbols(p language.Profile, s *session.Session, d document.Document, flat []protocol.SymbolInformation) ([]core.SymbolSummary, error) {
+	out := make([]core.SymbolSummary, 0, len(flat))
+	for _, v := range flat {
+		summary, err := e.symbolFromInfo(p, s, d, v)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "flat document symbol could not be resolved", err)
+		}
+		out = append(out, summary)
+	}
+	return out, nil
 }
 
 // requestDocumentSymbolTree fetches the raw textDocument/documentSymbol
