@@ -56,7 +56,8 @@ func (e *Engine) documentNodes(ctx context.Context, p language.Profile, path str
 		return s, d, nodes, nil
 	}
 	nodes := make([]symbolNode, 0, len(flat))
-	for _, v := range flat {
+	segments := flatSymbolSegments(flat)
+	for i, v := range flat {
 		// SymbolInformation belongs to this document. A different URI must
 		// not be interpreted using this document's bytes and line offsets.
 		if v.Location.URI != d.URI {
@@ -68,14 +69,25 @@ func (e *Engine) documentNodes(ctx context.Context, p language.Profile, path str
 			return nil, document.Document{}, nil, core.WithCause(core.IncompleteSearch,
 				"flat documentSymbol has an invalid source range", err)
 		}
-		segments := []string{v.Name}
+		pathSegments := []string{segments[i]}
 		nodes = append(nodes, symbolNode{
 			Name: v.Name, Kind: normalize.Kind(v.Kind),
-			Segments: segments, SymbolPath: joinSymbolPath(segments),
+			Segments: pathSegments, SymbolPath: joinSymbolPath(pathSegments),
 			ContainerName: v.ContainerName, Range: rr, SelectionRange: rr,
 		})
 	}
 	return s, d, nodes, nil
+}
+
+// Flat LSP document symbols have no hierarchy, but still need distinct
+// symbol_path handles when multiple declarations share a name or a literal
+// name already contains a generated #N suffix.
+func flatSymbolSegments(flat []protocol.SymbolInformation) []string {
+	siblings := make([]protocol.DocumentSymbol, len(flat))
+	for i, v := range flat {
+		siblings[i].Name = v.Name
+	}
+	return siblingSegments(siblings)
 }
 
 // candidateFiles asks the language server's workspace symbol index which
