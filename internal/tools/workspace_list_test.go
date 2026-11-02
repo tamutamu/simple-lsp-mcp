@@ -172,9 +172,12 @@ func TestWorkspaceListScanStopsOnCancellation(t *testing.T) {
 }
 
 func TestWorkspaceListCanFlattenDocumentSymbolShapes(t *testing.T) {
-	nodes := walkDocument([]byte("type A struct{}\n"), "utf-16", []protocol.DocumentSymbol{
+	nodes, err := walkDocument([]byte("type A struct{}\n"), "utf-16", []protocol.DocumentSymbol{
 		{Name: "A", Kind: 23, Children: []protocol.DocumentSymbol{{Name: "M", Kind: 6}}},
 	}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if flat := flattenWorkspaceNodes(nodes, nil); len(flat) != 2 || flat[1].SymbolPath != "A/M" {
 		t.Fatalf("flattened nested symbols=%#v", flat)
 	}
