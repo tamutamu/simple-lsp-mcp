@@ -20,6 +20,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from claude_trace import token_usage, trace_tool_counts
+
 REPO = Path(__file__).resolve().parents[2]
 TASKS = json.loads((REPO / "docs/benchmarks/fastapi-template-tasks.json").read_text())
 GRADER = REPO / "docs/benchmarks/fastapi-template-grader.py"
@@ -39,8 +41,9 @@ def call(argv, cwd=None, **kwargs):
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, **kwargs)
 
 def validate_lean_catalog(executable, source):
-    """Reject the old 26-tool MCP: treatment must expose exactly 18 tools."""
-    proc = subprocess.Popen([str(executable), "--workspace", str(source)],
+    """Reject stale binaries: coding profile must expose exactly 11 tools."""
+    proc = subprocess.Popen([str(executable), "--workspace", str(source),
+                             "--tool-profile", "coding", "--result-format", "text"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL)
     try:
@@ -65,9 +68,9 @@ def validate_lean_catalog(executable, source):
                 proc.stdin.flush()
             else:
                 names = {tool["name"] for tool in obj["result"]["tools"]}
-                if len(names) != 18 or "list_workspace_symbols" not in names or "rename_symbol" not in names:
-                    raise RuntimeError("Expected the lean 18-tool MCP binary, got: " + ", ".join(sorted(names)))
-        print("Lean MCP verified: 18 tools", flush=True)
+                if len(names) != 11 or "inspect_symbol" not in names:
+                    raise RuntimeError("Expected the coding 11-tool MCP binary, got: " + ", ".join(sorted(names)))
+        print("Coding MCP verified: 11 tools", flush=True)
     finally:
         proc.terminate()
         try: proc.wait(timeout=3)
@@ -126,7 +129,8 @@ def execute_trial(args, case, mode, rep):
     if mode == "mcp":
         mcp_cfg.write_text(json.dumps({"mcpServers": {"simple-lsp": {
             "command": str(args.mcp),
-            "args": ["--workspace", str(work)],
+            "args": ["--workspace", str(work), "--tool-profile", "coding",
+                     "--result-format", "text"],
             "env": {"PATH": os.pathsep.join([str(args.node_bin), str(args.lsp_bin),
                                              "/usr/local/bin:/usr/bin:/bin"]),
                     "SIMPLE_LSP_TSSERVER_PATH": args.tsserver},
@@ -160,28 +164,36 @@ def execute_trial(args, case, mode, rep):
         try: events.append(json.loads(line))
         except (ValueError, TypeError): pass
     final = next((e for e in reversed(events) if e.get("type") == "result"), {})
-    tools = [part.get("name") for e in events if e.get("type") == "assistant"
-             for part in e.get("message", {}).get("content", [])
-             if isinstance(part, dict) and part.get("type") == "tool_use"]
+    counts = trace_tool_counts(events)
+    usage = token_usage(final) or {}
+    observed_models = {e.get("message", {}).get("model") for e in events
+                       if e.get("type") == "assistant" and isinstance(e.get("message"), dict)
+                       and e["message"].get("model")}
+    actual_model = next(iter(observed_models)) if len(observed_models) == 1 else ""
     row = {
         "case": case, "mode": mode, "repeat": rep, "seconds": elapsed,
         "exit_code": exitcode, "completed": bool(final) and exitcode == 0
-                     and not final.get("is_error"),
+                     and final.get("subtype") == "success" and not final.get("is_error"),
         "cost_usd": final.get("total_cost_usd"), "turns": final.get("num_turns"),
         "api_error_status": final.get("api_error_status"),
         "terminal_reason": final.get("terminal_reason"),
-        "tool_calls": len(tools),
-        "mcp_calls": sum(str(tool).startswith("mcp__simple-lsp__") for tool in tools),
-        "mcp_used_as_required": mode != "mcp" or any(
-            str(tool).startswith("mcp__simple-lsp__") for tool in tools),
-        "native_lsp_calls": tools.count("LSP"),
+        **counts, **usage,
+        "mcp_used_as_required": mode != "mcp" or counts["valid_mcp_calls"] > 0,
+        "model": actual_model, "requested_model": args.model, "effort": "medium",
+        "agent_version": args.agent_version, "mcp_binary_sha": args.mcp_binary_sha,
+        "source_commit": PINNED,
+        "policy_sha": hashlib.sha256(POLICY.encode()).hexdigest(),
+        "tasks_sha": hashlib.sha256((REPO / "docs/benchmarks/fastapi-template-tasks.json").read_bytes()).hexdigest(),
+        "grader_sha": hashlib.sha256(GRADER.read_bytes()).hexdigest(),
         "graded": False, "accepted": False, "grader": None,
         "changed_files": call(["git", "diff", "--name-only"], cwd=work).stdout.splitlines(),
         "worktree": str(work),
     }
     result_file.write_text(json.dumps(row, indent=2, ensure_ascii=False) + "\n")
     print("AGENT", case, mode, rep, "completed", row["completed"],
-          "seconds", elapsed, "mcp_calls", row["mcp_calls"], flush=True)
+          "seconds", elapsed, "mcp_calls", row["mcp_calls"],
+          "valid_mcp_calls", row["valid_mcp_calls"],
+          "input_tokens", row.get("input_tokens"), flush=True)
     return row
 
 def score(args, rows):
@@ -220,7 +232,11 @@ def score(args, rows):
 def report(args, rows):
     path = args.output / "results.csv"
     keys = ("case", "mode", "repeat", "seconds", "exit_code", "completed",
-            "cost_usd", "turns", "tool_calls", "mcp_calls", "native_lsp_calls",
+            "cost_usd", "turns", "tool_calls", "repeated_tool_calls", "command_calls", "mcp_calls",
+            "valid_mcp_calls", "native_lsp_calls", "input_tokens",
+            "uncached_input_tokens", "cached_tokens", "output_tokens",
+            "model", "requested_model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
+            "policy_sha", "tasks_sha", "grader_sha",
             "graded", "accepted", "mcp_used_as_required")
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, keys)
@@ -307,6 +323,11 @@ def main():
         ap.error("Summary requires --postgres-url for a disposable local PostgreSQL bench database")
     if not shutil.which(args.claude):
         ap.error("Claude CLI not installed")
+    version = call([args.claude, "--version"], timeout=15)
+    if version.returncode or not version.stdout.strip():
+        ap.error("Cannot verify Claude CLI version")
+    args.agent_version = version.stdout.strip()
+    args.mcp_binary_sha = hashlib.sha256(args.mcp.read_bytes()).hexdigest()
     validate_lean_catalog(args.mcp, args.source)
     if not args.skip_network_check:
         try: socket.getaddrinfo("api.anthropic.com", 443)

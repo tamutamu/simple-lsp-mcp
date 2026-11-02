@@ -55,7 +55,7 @@ def _has_successful_content(content):
     if isinstance(content, list):
         return bool(content) and all(_has_successful_content(part) for part in content)
     if isinstance(content, dict):
-        if content.get("isError") or content.get("is_error") or content.get("error"):
+        if content.get("isError") or content.get("is_error") or "error" in content:
             return False
         if content.get("type") == "text":
             return _has_successful_content(content.get("text"))
@@ -71,7 +71,7 @@ def _has_successful_content(content):
         decoded = json.loads(s)
     except (TypeError, ValueError):
         return True
-    if isinstance(decoded, dict) and (decoded.get("error") or decoded.get("isError")
+    if isinstance(decoded, dict) and ("error" in decoded or decoded.get("isError")
                                       or decoded.get("is_error")):
         return False
     return bool(decoded)
@@ -99,14 +99,24 @@ def trace_tool_counts(events):
                 continue
             if event["type"] == "assistant" and part.get("type") == "tool_use":
                 if part.get("id"):
-                    uses[part["id"]] = part.get("name", "")
+                    uses[part["id"]] = (part.get("name", ""), part.get("input"))
             elif event["type"] == "user" and part.get("type") == "tool_result":
                 if part.get("tool_use_id"):
                     results[part["tool_use_id"]] = part
-    mcp_ids = [ident for ident, name in uses.items()
+    mcp_ids = [ident for ident, (name, _) in uses.items()
                if isinstance(name, str) and name.startswith("mcp__simple-lsp__")]
+    seen_inputs = set()
+    repeats = 0
+    for name, arguments in uses.values():
+        if not isinstance(arguments, dict):
+            continue
+        signature = (name, json.dumps(arguments, sort_keys=True, ensure_ascii=False))
+        if signature in seen_inputs:
+            repeats += 1
+        seen_inputs.add(signature)
     return {"tool_calls": len(uses), "mcp_calls": len(mcp_ids),
+            "repeated_tool_calls": repeats,
             "valid_mcp_calls": sum(successful_tool_result(results.get(ident))
                                    for ident in mcp_ids),
-            "command_calls": sum(name == "Bash" for name in uses.values()),
-            "native_lsp_calls": sum(name == "LSP" for name in uses.values())}
+            "command_calls": sum(name == "Bash" for name, _ in uses.values()),
+            "native_lsp_calls": sum(name == "LSP" for name, _ in uses.values())}
