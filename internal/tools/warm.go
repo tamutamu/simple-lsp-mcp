@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
@@ -186,8 +185,12 @@ func warmIdentifierAtPosition(text []byte, position protocol.Position, encoding 
 	return string(line[start:end])
 }
 
+// Use the same identifier-continuation alphabet as the project candidate scan.
+// Otherwise a valid combining mark, connector punctuation, or ZWNJ/ZWJ
+// truncates the cursor token, while the scan correctly rejects that truncated
+// spelling inside the full identifier. Cross-file references can then be missed.
 func warmIdentRune(r rune) bool {
-	return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
+	return warmIdentifierRune(r)
 }
 
 // warmProjectSymbolCandidates opens only same-profile source files containing
