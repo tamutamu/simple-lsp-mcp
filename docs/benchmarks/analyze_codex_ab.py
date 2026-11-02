@@ -118,7 +118,7 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
     # All runs must use the same agent/model, instructions, pinned source and
     # independent grader. Without this evidence a CSV can claim a spurious
     # advantage by mixing models, graders, or task revisions across arms.
-    provenance_fields = ("model", "effort", "agent_version", "source_commit",
+    provenance_fields = ("model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
                          "policy_sha", "tasks_sha", "grader_sha")
     provenance = {
         field: {a.get(field, "") for a in treatments + baselines}
