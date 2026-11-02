@@ -23,15 +23,23 @@ func ToLSP(text []byte, p core.Position, encoding string) (protocol.Position, er
 	return protocol.Position{Line: p.Line - 1, Character: offset}, nil
 }
 func FromLSP(text []byte, p protocol.Position, encoding string) (core.Position, error) {
+	point, _, err := FromLSPWithLine(text, p, encoding)
+	return point, err
+}
+
+// FromLSPWithLine returns the validated code-point position and its source
+// line in one scan. Cursor-based semantic warm-up needs both; asking for them
+// separately would traverse the prefix twice or split the entire document.
+func FromLSPWithLine(text []byte, p protocol.Position, encoding string) (core.Position, string, error) {
 	line, ok := sourceLine(text, p.Line)
 	if !ok || p.Character < 0 {
-		return core.Position{}, core.NewError(core.InvalidArgument, "position out of range")
+		return core.Position{}, "", core.NewError(core.InvalidArgument, "position out of range")
 	}
 	cp, err := codePointAtUnits(line, p.Character, encoding)
 	if err != nil {
-		return core.Position{}, err
+		return core.Position{}, "", err
 	}
-	return core.Position{Line: p.Line + 1, Column: cp + 1}, nil
+	return core.Position{Line: p.Line + 1, Column: cp + 1}, line, nil
 }
 // sourceLine selects one zero-based source line without copying and splitting
 // the entire document. In large generated files, strings.Split allocated an
