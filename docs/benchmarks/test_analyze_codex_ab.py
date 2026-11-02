@@ -17,7 +17,7 @@ class EvaluationTest(unittest.TestCase):
             w = csv.DictWriter(f, fieldnames=[
                 "study", "task", "arm", "repeat", "seconds", "input_tokens",
                 "mcp_calls", "accepted", "completed", "graded",
-                "valid_mcp_calls", "model", "effort", "agent_version",
+                "valid_mcp_calls", "model", "effort", "agent_version", "mcp_binary_sha",
                 "source_commit", "policy_sha", "tasks_sha", "grader_sha"])
             w.writeheader()
             for t in range(n_tasks):
@@ -27,7 +27,7 @@ class EvaluationTest(unittest.TestCase):
                                     repeat=rep, seconds=base, input_tokens=base*1000,
                                     mcp_calls=0, accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=0, model="model-pinned", effort="low",
-                                    agent_version="codex-1", source_commit="source-commit",
+                                    agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
@@ -162,7 +162,7 @@ class EvaluationTest(unittest.TestCase):
             self.assertFalse(result["qualified_product_efficiency"])
 
     def test_mixed_model_or_grader_cannot_pass(self):
-        for field in ("model", "effort", "agent_version", "source_commit",
+        for field in ("model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
                       "policy_sha", "tasks_sha", "grader_sha"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as td:
                 p = Path(td) / "mismatched.csv"
@@ -191,6 +191,41 @@ class EvaluationTest(unittest.TestCase):
             result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
             self.assertFalse(result["readiness"]["trace_verified_mcp_call_counts"])
             self.assertFalse(result["qualified_product_efficiency"])
+
+
+    def test_text_only_mcp_errors_are_not_counted_as_success(self):
+        runner_path = MODULE_PATH.with_name("run_fastapi_codex_coding_required_ab.py")
+        spec = importlib.util.spec_from_file_location("abrunner", runner_path)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        def item(result, **kwargs):
+            return dict(status="completed", result=result, **kwargs)
+        good = {"content": [{"type": "text", "text": '{"path":"a.py","source":"def f(): pass"}'}]}
+        self.assertTrue(runner.successful_mcp_call(item(good)))
+        self.assertTrue(runner.successful_mcp_call(item({"structured_content": {"source": "ok"}})))
+        self.assertFalse(runner.successful_mcp_call(item(None)))
+        self.assertFalse(runner.successful_mcp_call(item({})))
+        self.assertFalse(runner.successful_mcp_call(item({"content": []})))
+        self.assertFalse(runner.successful_mcp_call(item({"content": [{"type": "text", "text": '{"error":{"code":"INCOMPLETE_SEARCH"}}'}]})))
+        self.assertFalse(runner.successful_mcp_call(item({"content": [{"type": "text", "text": "Error: LSP failed"}]})))
+        self.assertFalse(runner.successful_mcp_call(item({"structuredContent": {"error": {"code": "InvalidArgument"}}})))
+        self.assertFalse(runner.successful_mcp_call(item({"isError": True, **good})))
+        self.assertFalse(runner.successful_mcp_call(item(good, error="transport failed")))
+        self.assertFalse(runner.successful_mcp_call(dict(status="failed", result=good)))
+
+    def test_missing_or_mixed_mcp_binary_provenance_cannot_qualify(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "build.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            rows[1]["mcp_binary_sha"] = "other-build"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["same_pinned_agent_source_policy_and_grader"])
 
     def test_duplicate_trial_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
