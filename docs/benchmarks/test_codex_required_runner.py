@@ -77,5 +77,57 @@ class RequiredABProvenanceTest(unittest.TestCase):
                              ["retry_count"], 1)
 
 
+    def test_trace_counts_failed_and_interrupted_mcp_attempts(self):
+        def item(identifier, status, result=None):
+            return {"id": identifier, "type": "mcp_tool_call",
+                    "server": "simple-lsp", "status": status,
+                    "tool": "inspect_symbol", "result": result}
+
+        good = {"content": [{"type": "text", "text": "def example(): pass"}]}
+        events = [
+            {"type": "item.started", "item": item("ok", "in_progress")},
+            {"type": "item.updated", "item": item("ok", "in_progress")},
+            {"type": "item.completed", "item": item("ok", "completed", good)},
+            {"type": "item.started", "item": item("failed", "in_progress")},
+            {"type": "item.failed", "item": item("failed", "failed")},
+            {"type": "item.started", "item": item("interrupted", "in_progress")},
+        ]
+        attempted, successful = runner.trace_mcp_calls(events)
+        self.assertEqual(len(attempted), 3)
+        self.assertEqual(len(successful), 1)
+        self.assertEqual(successful[0]["id"], "ok")
+
+    def test_baseline_failed_mcp_attempt_cannot_disappear_from_audit(self):
+        events = [
+            {"type": "item.started", "item": {
+                "id": "baseline-leak", "type": "mcp_tool_call",
+                "server": "simple-lsp", "status": "in_progress"}},
+            {"type": "item.failed", "item": {
+                "id": "baseline-leak", "type": "mcp_tool_call",
+                "server": "simple-lsp", "status": "failed"}},
+        ]
+        attempted, successful = runner.trace_mcp_calls(events)
+        self.assertEqual(len(attempted), 1)
+        self.assertFalse(successful)
+
+    def test_grader_nonzero_exit_cannot_be_accepted_even_if_json_says_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "checkout"
+            work.mkdir()
+            row = self.trial("baseline")
+            row.update(workdir=str(work), case="search", graded=False, accepted=False)
+            o = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+
+            def fake_call(argv, **kwargs):
+                if "fastapi-template-grader.py" in " ".join(map(str, argv)):
+                    return SimpleNamespace(returncode=1, stdout='{"success": true}', stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.object(runner, "call", side_effect=fake_call):
+                runner.grade(o, [row])
+            self.assertTrue(row["graded"])
+            self.assertFalse(row["accepted"])
+
+
 if __name__ == "__main__":
     unittest.main()
