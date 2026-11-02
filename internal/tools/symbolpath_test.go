@@ -71,6 +71,50 @@ func TestWalkDocumentDisambiguatesDuplicateSiblings(t *testing.T) {
 	}
 }
 
+// An LSP can legitimately report a declaration literally named "Run#2".
+// A duplicate "Run" must not manufacture that same symbol_path. Otherwise
+// inspect_symbol(path, symbol_path) can select the wrong declaration.
+func TestWalkDocumentDisambiguatesSuffixLikeLiteralNames(t *testing.T) {
+	vs := []protocol.DocumentSymbol{
+		{Name: "Run", Kind: 6},
+		{Name: "Run", Kind: 6},
+		{Name: "Run#2", Kind: 6},
+		{Name: "Run", Kind: 6},
+		{Name: "Run#3", Kind: 6},
+	}
+	nodes := mustWalkDocument([]byte(""), "utf-16", vs, nil, "")
+	want := []string{"Run", "Run#4", "Run#2", "Run#5", "Run#3"}
+	seen := make(map[string]bool)
+	for i, w := range want {
+		got := nodes[i].SymbolPath
+		if got != w || seen[got] {
+			t.Fatalf("symbol %d: got %q, want %q, duplicate=%v", i, got, w, seen[got])
+		}
+		seen[got] = true
+		matches := matchNodes(nodes, []string{w}, true)
+		if len(matches) != 1 || matches[0].Name != vs[i].Name {
+			t.Fatalf("path %q did not identify its declaration: %#v", w, matches)
+		}
+	}
+}
+
+func TestWalkDocumentAnonymousNamesDoNotCollideWithLiteralNames(t *testing.T) {
+	vs := []protocol.DocumentSymbol{
+		{Name: ""}, {Name: "#0"}, {Name: "#0#2"}, {Name: ""},
+	}
+	nodes := mustWalkDocument([]byte(""), "utf-16", vs, nil, "")
+	want := []string{"#0#3", "#0", "#0#2", "#3"}
+	for i, w := range want {
+		if got := nodes[i].SymbolPath; got != w {
+			t.Fatalf("symbol %d: got %q, want %q", i, got, w)
+		}
+		matches := matchNodes(nodes, []string{w}, true)
+		if len(matches) != 1 {
+			t.Fatalf("path %q resolved to %d symbols, want one", w, len(matches))
+		}
+	}
+}
+
 func TestWalkDocumentNamesAnonymousSymbolsByIndex(t *testing.T) {
 	vs := []protocol.DocumentSymbol{{Name: "a"}, {Name: ""}, {Name: ""}}
 	nodes := mustWalkDocument([]byte(""), "utf-16", vs, nil, "")
