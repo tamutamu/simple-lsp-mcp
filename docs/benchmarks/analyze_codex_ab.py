@@ -72,7 +72,17 @@ def read_paired(path, study, treatment="mcp"):
             "completed" in row and "graded" in row
             and parse_bool(row["completed"]) and parse_bool(row["graded"])
         )
+        # An attempted MCP call is not evidence that the agent received useful
+        # semantic information. The trace-derived successful-call count is
+        # mandatory; older CSVs without it remain analyzable but cannot pass.
+        row["usage_verified"] = (
+            row.get("mcp_calls") not in (None, "")
+            and row.get("valid_mcp_calls") not in (None, "")
+        )
         row["mcp_calls"] = int(row.get("mcp_calls") or 0)
+        row["valid_mcp_calls"] = int(row.get("valid_mcp_calls") or 0)
+        if not 0 <= row["valid_mcp_calls"] <= row["mcp_calls"]:
+            raise ValueError(f"Invalid MCP call counts in {key}, {arm}")
         pairs[key][arm] = row
     if not pairs:
         raise ValueError("No trials selected")
@@ -104,7 +114,19 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
               "wilson_lower_95": wilson_lower(sum(a["accepted"] for a in data), n)}
         for arm, data in [("baseline", baselines), (treatment, treatments)]
     }
-    adoption = sum(a["mcp_calls"] > 0 for a in treatments) / n
+    adoption = sum(a["valid_mcp_calls"] > 0 for a in treatments) / n
+    # All runs must use the same agent/model, instructions, pinned source and
+    # independent grader. Without this evidence a CSV can claim a spurious
+    # advantage by mixing models, graders, or task revisions across arms.
+    provenance_fields = ("model", "effort", "agent_version", "source_commit",
+                         "policy_sha", "grader_sha")
+    provenance = {
+        field: {a.get(field, "") for a in treatments + baselines}
+        for field in provenance_fields
+    }
+    provenance_verified = all(
+        len(values) == 1 and all(values) for values in provenance.values()
+    )
     readiness = {
         "enough_independent_tasks": n_tasks >= min_tasks,
         "enough_repeats_each_task": all(rep >= min_repeats for rep in reps.values()),
@@ -114,6 +136,11 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             acceptance[treatment]["accepted"] >= acceptance["baseline"]["accepted"]),
         "trials_have_explicit_completion_and_grading": all(
             a["evidence_verified"] for a in (treatments + baselines)),
+        "same_pinned_agent_source_policy_and_grader": provenance_verified,
+        "trace_verified_mcp_call_counts": all(
+            a["usage_verified"] for a in (treatments + baselines)),
+        "baseline_has_no_mcp_calls": all(
+            a["mcp_calls"] == 0 for a in baselines),
         # The product is explicitly deployed with AGENTS.md/CLAUDE.md.
         # Requiring natural/voluntary adoption as a pass gate rejects the
         # exact usage contract being evaluated. In 'required' trials *every*
@@ -174,6 +201,7 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
         "readiness": readiness,
         "acceptance": acceptance,
         "treatment_adoption_rate": round(adoption, 4),
+        "treatment_adoption_definition": "at least one successful MCP call per trial",
         "metrics": metrics,
         "interpretation": (
             "Qualified under the predeclared gates; replicate on a held-out codebase."
