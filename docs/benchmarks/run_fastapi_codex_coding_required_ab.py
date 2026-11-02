@@ -49,6 +49,50 @@ def prepare(source, dst):
         p=call(cmd,cwd=dst)
         if p.returncode:raise RuntimeError(p.stderr)
 
+def successful_mcp_call(item):
+    """Count a call only if its trace contains a non-error MCP response.
+
+    The coding profile uses --result-format text: an LSP application error
+    can live solely in content[0].text, with no structured_content. Merely
+    seeing item.completed (or an empty/missing result) is not proof of use.
+    """
+    if item.get("status") != "completed" or item.get("error"):
+        return False
+    result=item.get("result")
+    if isinstance(result,str):
+        try: result=json.loads(result)
+        except ValueError: return False
+    if not isinstance(result,dict) or result.get("isError") or result.get("is_error"):
+        return False
+    structured=result.get("structured_content",result.get("structuredContent"))
+    if isinstance(structured,dict) and structured.get("error"):
+        return False
+    content=result.get("content")
+    if not isinstance(content,list):
+        return isinstance(structured,dict) and bool(structured)
+    useful=False
+    for part in content:
+        if not isinstance(part,dict):
+            continue
+        if part.get("type")=="text":
+            text=part.get("text")
+            if not isinstance(text,str) or not text.strip():
+                continue
+            try: payload=json.loads(text)
+            except ValueError:
+                # Non-JSON text is legitimate for other MCP tools, but a
+                # plain error string is not successful semantic evidence.
+                if text.lstrip().lower().startswith(("error:", "mcp error")):
+                    return False
+            else:
+                if isinstance(payload,dict) and payload.get("error"):
+                    return False
+            useful=True
+        elif part.get("type") in ("image","resource","resource_link","audio"):
+            useful=True
+    return useful or (isinstance(structured,dict) and bool(structured))
+
+
 def evaluate(o,case,mode,rep):
     directory=o.output/"runs"/f"{case}-{mode}-{rep}"
     record=directory/"outcome.json"
@@ -99,17 +143,6 @@ def evaluate(o,case,mode,rep):
     bad=any(e.get("type")=="turn.failed" for e in events)
     items=[e["item"] for e in events if e.get("type")=="item.completed" and isinstance(e.get("item"),dict)]
     mcp=[i for i in items if i.get("type")=="mcp_tool_call" and i.get("server")=="simple-lsp"]
-    def successful_mcp_call(item):
-        if item.get("status") != "completed" or item.get("error"):
-            return False
-        result = item.get("result")
-        if isinstance(result, dict):
-            if result.get("isError") or result.get("is_error"):
-                return False
-            structured = result.get("structured_content")
-            if isinstance(structured, dict) and structured.get("error"):
-                return False
-        return True
     mcpok=[i for i in mcp if successful_mcp_call(i)]
     use=finished[-1].get("usage",{}) if finished else {}
     row=dict(case=case,mode=mode,repeat=rep,seconds=elapsed,exitcode=exitcode,
@@ -118,6 +151,7 @@ def evaluate(o,case,mode,rep):
              output_tokens=use.get("output_tokens"),reasoning_tokens=use.get("reasoning_output_tokens"),
              mcp_calls=len(mcp),valid_mcp_calls=len(mcpok),
              model=o.model,effort=o.effort,agent_version=o.agent_version,
+             mcp_binary_sha=o.mcp_binary_sha,
              source_commit=SHA,policy_sha=hashlib.sha256(POLICY.encode()).hexdigest(),
              tasks_sha=hashlib.sha256((BASE/"docs/benchmarks/fastapi-template-tasks.json").read_bytes()).hexdigest(),
              grader_sha=hashlib.sha256(GRADER.read_bytes()).hexdigest(),
@@ -155,7 +189,7 @@ def report(o,rows):
     fields=("case","mode","repeat","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
             "mcp_calls","valid_mcp_calls","command_calls",
-            "model","effort","agent_version","source_commit","policy_sha","tasks_sha","grader_sha")
+            "model","effort","agent_version","mcp_binary_sha","source_commit","policy_sha","tasks_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
         for r in sorted(rows,key=lambda x:(x["case"],x["mode"],x["repeat"])):
@@ -207,6 +241,8 @@ def main():
     if version.returncode or not version.stdout.strip():
         p.error("Cannot verify Codex CLI version: "+version.stderr)
     o.agent_version=version.stdout.strip()
+    if not o.mcp.is_file():p.error("MCP executable not found: "+str(o.mcp))
+    o.mcp_binary_sha=hashlib.sha256(o.mcp.read_bytes()).hexdigest()
     if o.repeats<1 or o.parallel<1:p.error("Invalid repeats/parallel")
     if o.postgres_url and not ("@127.0.0.1:" in o.postgres_url or "@localhost:" in o.postgres_url):
         p.error("Postgres must be on disposable localhost bench DB")
