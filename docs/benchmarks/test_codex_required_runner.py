@@ -227,6 +227,35 @@ class RequiredABProvenanceTest(unittest.TestCase):
             "content": [{"type": "text", "text": '[{"name": "read_items"}]'}],
         })))
 
+    def test_empty_mcp_payloads_do_not_qualify_as_semantic_use(self):
+        # Codex can report a completed MCP call whose body contains no
+        # source information. Such a call must not satisfy mandatory use.
+        empty_json = ("[]", "{}", "null", "false", "true", "0",
+                      '{"result":[]}', '{"result":{}}', '{"success":true}')
+        for value in empty_json:
+            with self.subTest(value=value):
+                item = {"status": "completed", "result": {
+                    "content": [{"type": "text", "text": value}]}}
+                self.assertFalse(runner.successful_mcp_call(item))
+        self.assertFalse(runner.successful_mcp_call({
+            "status": "completed",
+            "result": {"structured_content": {"result": []}},
+        }))
+        self.assertFalse(runner.successful_mcp_call({
+            "status": "completed",
+            "result": {"structured_content": {"ok": True}},
+        }))
+        self.assertTrue(runner.successful_mcp_call({
+            "status": "completed",
+            "result": {"structured_content": {
+                "result": [{"name": "read_items", "path": "items.py"}]}},
+        }))
+        self.assertTrue(runner.successful_mcp_call({
+            "status": "completed",
+            "result": {"content": [
+                {"type": "text", "text": "def read_items(): pass"}]},
+        }))
+
     def test_repeated_calls_count_attempts_not_lifecycle_events(self):
         def event(kind, ident, typ, **kwargs):
             return {"type": kind, "item": {"id": ident, "type": typ, **kwargs}}
