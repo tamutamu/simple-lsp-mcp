@@ -135,17 +135,19 @@ func (e *Engine) DocumentSymbols(ctx context.Context, in map[string]any) (map[st
 	if err != nil {
 		return nil, err
 	}
-	var tree []protocol.DocumentSymbol
-	if json.Unmarshal(raw, &tree) == nil && tree != nil {
-		symbols := e.documentTree(p, s, d, tree)
+	tree, flat, hierarchical, err := decodeDocumentSymbolResponse(raw)
+	if err != nil {
+		return nil, err
+	}
+	if hierarchical {
+		symbols, err := e.documentTree(p, s, d, tree)
+		if err != nil {
+			return nil, err
+		}
 		if detail == "full" {
 			return map[string]any{"symbols": symbols}, nil
 		}
 		return map[string]any{"path": path, "symbols": outlineDocumentSymbols(symbols)}, nil
-	}
-	var flat []protocol.SymbolInformation
-	if err := json.Unmarshal(raw, &flat); err != nil {
-		return nil, err
 	}
 	out, err := e.flatDocumentSymbols(p, s, d, flat)
 	if err != nil {

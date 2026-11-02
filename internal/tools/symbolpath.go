@@ -74,17 +74,17 @@ func siblingSegments(vs []protocol.DocumentSymbol) []string {
 // (unescaped, already disambiguated) path segments of every enclosing
 // symbol; containerName is the immediate parent's raw name, or "" at the
 // document root.
-func walkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol, parents []string, containerName string) []symbolNode {
+func walkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol, parents []string, containerName string) ([]symbolNode, error) {
 	segs := siblingSegments(vs)
 	out := make([]symbolNode, 0, len(vs))
 	for i, v := range vs {
 		rr, err := rangeFromText(text, v.Range, encoding)
 		if err != nil {
-			continue
+			return nil, core.WithCause(core.IncompleteSearch, "invalid LSP range for document symbol "+v.Name, err)
 		}
 		sr, err := rangeFromText(text, v.SelectionRange, encoding)
 		if err != nil {
-			continue
+			return nil, core.WithCause(core.IncompleteSearch, "invalid LSP selection range for document symbol "+v.Name, err)
 		}
 		segments := make([]string, len(parents)+1)
 		copy(segments, parents)
@@ -100,11 +100,14 @@ func walkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol, pa
 			SelectionRange: sr,
 		}
 		if len(v.Children) > 0 {
-			node.Children = walkDocument(text, encoding, v.Children, segments, v.Name)
+			node.Children, err = walkDocument(text, encoding, v.Children, segments, v.Name)
+			if err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, node)
 	}
-	return out
+	return out, nil
 }
 
 // parseSymbolPath splits a user-supplied symbol path into its raw

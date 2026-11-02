@@ -91,12 +91,15 @@ func TestDocumentTreeConvertsDocumentAbsolutePathToWorkspaceRelativePath(t *test
 	}
 	engine := New(ws, config.Runtime{MaxResults: 10})
 	doc := document.Document{Path: full, URI: "file://" + full, Hash: "test", Text: text}
-	symbols := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
+	symbols, err := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
 		Name:           "greeting",
 		Kind:           12,
 		Range:          protocol.Range{Start: protocol.Position{}, End: protocol.Position{Line: 0, Character: 29}},
 		SelectionRange: protocol.Range{Start: protocol.Position{Character: 16}, End: protocol.Position{Character: 24}},
 	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(symbols) != 1 {
 		t.Fatalf("symbols = %#v, want one symbol", symbols)
 	}
@@ -117,10 +120,13 @@ func TestDocumentTreeStillEmitsLegacyKeys(t *testing.T) {
 	}
 	engine := New(ws, config.Runtime{MaxResults: 10})
 	doc := document.Document{Path: full, URI: "file://" + full, Hash: "test", Text: text}
-	symbols := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
+	symbols, err := engine.documentTree(language.Profile{Name: "typescript", SessionKey: "typescript-javascript"}, session.New("typescript-javascript", ws.Root(), config.Server{}), doc, []protocol.DocumentSymbol{{
 		Name: "greeting",
 		Kind: 12,
 	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(symbols) != 1 {
 		t.Fatalf("symbols = %#v, want one symbol", symbols)
 	}

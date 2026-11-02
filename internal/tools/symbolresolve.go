@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -45,19 +44,29 @@ func (e *Engine) documentNodes(ctx context.Context, p language.Profile, path str
 	if err != nil {
 		return nil, document.Document{}, nil, err
 	}
-	var tree []protocol.DocumentSymbol
-	if json.Unmarshal(raw, &tree) == nil && tree != nil {
-		return s, d, walkDocument(d.Text, s.Capabilities().PositionEncoding, tree, nil, ""), nil
-	}
-	var flat []protocol.SymbolInformation
-	if err := json.Unmarshal(raw, &flat); err != nil {
+	tree, flat, hierarchical, err := decodeDocumentSymbolResponse(raw)
+	if err != nil {
 		return nil, document.Document{}, nil, err
+	}
+	if hierarchical {
+		nodes, err := walkDocument(d.Text, s.Capabilities().PositionEncoding, tree, nil, "")
+		if err != nil {
+			return nil, document.Document{}, nil, err
+		}
+		return s, d, nodes, nil
 	}
 	nodes := make([]symbolNode, 0, len(flat))
 	for _, v := range flat {
+		// SymbolInformation belongs to this document. A different URI must
+		// not be interpreted using this document's bytes and line offsets.
+		if v.Location.URI != d.URI {
+			return nil, document.Document{}, nil, core.NewError(core.IncompleteSearch,
+				"flat documentSymbol location does not match requested document")
+		}
 		rr, err := rangeFromText(d.Text, v.Location.Range, s.Capabilities().PositionEncoding)
 		if err != nil {
-			continue
+			return nil, document.Document{}, nil, core.WithCause(core.IncompleteSearch,
+				"flat documentSymbol has an invalid source range", err)
 		}
 		segments := []string{v.Name}
 		nodes = append(nodes, symbolNode{

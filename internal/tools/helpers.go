@@ -187,14 +187,17 @@ func (e *Engine) symbolFromInfo(p language.Profile, s *session.Session, d docume
 }
 
 // documentTree converts and registers recursive document symbols.
-func (e *Engine) documentTree(p language.Profile, s *session.Session, d document.Document, vs []protocol.DocumentSymbol) []any {
+func (e *Engine) documentTree(p language.Profile, s *session.Session, d document.Document, vs []protocol.DocumentSymbol) ([]any, error) {
 	path := relativeMust(e, d.Path)
-	nodes := walkDocument(d.Text, s.Capabilities().PositionEncoding, vs, nil, "")
+	nodes, err := walkDocument(d.Text, s.Capabilities().PositionEncoding, vs, nil, "")
+	if err != nil {
+		return nil, err
+	}
 	out := make([]any, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, e.nodeMap(p, path, d.URI, d.Hash, n))
 	}
-	return out
+	return out, nil
 }
 
 // registerNode stores one walked node in the symbol registry and returns its handle.
