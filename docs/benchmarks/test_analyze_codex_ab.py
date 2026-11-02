@@ -18,7 +18,7 @@ class EvaluationTest(unittest.TestCase):
                 "study", "task", "arm", "repeat", "seconds", "input_tokens",
                 "mcp_calls", "accepted", "completed", "graded",
                 "valid_mcp_calls", "model", "effort", "agent_version",
-                "source_commit", "policy_sha", "grader_sha"])
+                "source_commit", "policy_sha", "tasks_sha", "grader_sha"])
             w.writeheader()
             for t in range(n_tasks):
                 for rep in range(1, repeats + 1):
@@ -28,14 +28,14 @@ class EvaluationTest(unittest.TestCase):
                                     mcp_calls=0, accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=0, model="model-pinned", effort="low",
                                     agent_version="codex-1", source_commit="source-commit",
-                                    policy_sha="policy-digest", grader_sha="grader-digest"))
+                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
                                     accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=1, model="model-pinned", effort="low",
                                     agent_version="codex-1", source_commit="source-commit",
-                                    policy_sha="policy-digest", grader_sha="grader-digest"))
+                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
 
     def test_current_small_sample_never_qualifies(self):
         with tempfile.TemporaryDirectory() as td:
@@ -163,7 +163,7 @@ class EvaluationTest(unittest.TestCase):
 
     def test_mixed_model_or_grader_cannot_pass(self):
         for field in ("model", "effort", "agent_version", "source_commit",
-                      "policy_sha", "grader_sha"):
+                      "policy_sha", "tasks_sha", "grader_sha"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as td:
                 p = Path(td) / "mismatched.csv"
                 self.write_trials(p, 30, 4, 0.6)
@@ -197,7 +197,7 @@ class EvaluationTest(unittest.TestCase):
             p = Path(td) / "dupe.csv"
             self.write_trials(p, 2, 1, 0.9)
             with p.open("a") as f:
-                f.write("controlled,task0,mcp,1,9,9000,1,true,true,true,1,model-pinned,low,codex-1,source-commit,policy-digest,grader-digest\n")
+                f.write("controlled,task0,mcp,1,9,9000,1,true,true,true,1,model-pinned,low,codex-1,source-commit,policy-digest,tasks-digest,grader-digest\n")
             with self.assertRaisesRegex(ValueError, "Duplicate trial"):
                 ab.read_paired(p, "controlled")
 
