@@ -88,6 +88,19 @@ def read_paired(path, study, treatment="mcp"):
         else:
             row["retry_count"] = 0
         row["accepted"] = parse_bool(row.get("accepted", "false"))
+        # A self-reported graded/accepted flag is insufficient: the independent
+        # grader must actually have completed with a successful process exit.
+        # Old pilot CSVs without this field remain exploratory only.
+        grader_exit_raw = row.get("grader_exitcode")
+        row["grader_exit_verified"] = grader_exit_raw not in (None, "")
+        if row["grader_exit_verified"]:
+            try:
+                grader_exitcode = int(grader_exit_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid grader_exitcode in {key}, {arm}") from exc
+            if str(grader_exitcode) != str(grader_exit_raw).strip():
+                raise ValueError(f"Invalid grader_exitcode in {key}, {arm}")
+            row["grader_exitcode"] = grader_exitcode
         # Legacy pilot CSVs omit these evidence flags. Keep them analyzable,
         # but never let unverifiable trials qualify as product-grade evidence.
         row["evidence_verified"] = (
@@ -179,6 +192,9 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             acceptance[treatment]["accepted"] >= acceptance["baseline"]["accepted"]),
         "trials_have_explicit_completion_and_grading": all(
             a["evidence_verified"] for a in (treatments + baselines)),
+        "independent_grader_exited_successfully_in_every_trial": all(
+            a["grader_exit_verified"] and a["grader_exitcode"] == 0
+            for a in (treatments + baselines)),
         "all_trials_are_first_attempts_with_verified_provenance": all(
             a["retry_verified"] and a["retry_count"] == 0
             for a in (treatments + baselines)),

@@ -1,8 +1,12 @@
 """Regression checks for Claude A/B evidence extraction."""
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
+import run_fastapi_agent_ab as claude_runner
 from claude_trace import token_usage, trace_tool_counts
 from run_fastapi_agent_ab import STUDY, report
 from analyze_codex_ab import read_paired
@@ -107,6 +111,65 @@ class TraceTest(unittest.TestCase):
                 {"type": "tool_result", "tool_use_id": "other", "content": "ok"}]}},
         ]
         self.assertEqual(trace_tool_counts(events)["valid_mcp_calls"], 0)
+
+
+    def test_claude_independent_grader_failures_are_recorded_as_rejections(self):
+        scenarios = ("truthy_false", "nonzero_exit", "timeout", "invalid_json",
+                     "syntax_timeout", "diff_timeout")
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as td:
+                work = Path(td) / "checkout"
+                work.mkdir()
+                row = {"case": "search", "mode": "baseline", "repeat": 1,
+                       "worktree": str(work), "completed": True,
+                       "graded": False, "accepted": False}
+                args = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+
+                def fake_call(argv, **kwargs):
+                    command = " ".join(map(str, argv))
+                    if "fastapi-template-grader.py" in command:
+                        if scenario == "timeout":
+                            raise subprocess.TimeoutExpired(argv, 60)
+                        if scenario == "truthy_false":
+                            return SimpleNamespace(returncode=0,
+                                                   stdout='{"success": "false"}', stderr="")
+                        if scenario == "nonzero_exit":
+                            return SimpleNamespace(returncode=2,
+                                                   stdout='{"success": true}', stderr="failed")
+                        if scenario == "invalid_json":
+                            return SimpleNamespace(returncode=0,
+                                                   stdout='[{"success": true}]', stderr="")
+                        return SimpleNamespace(returncode=0,
+                                               stdout='{"success": true}', stderr="")
+                    if scenario == "syntax_timeout" and "compileall" in command:
+                        raise subprocess.TimeoutExpired(argv, 45)
+                    if scenario == "diff_timeout" and "diff --check" in command:
+                        raise subprocess.TimeoutExpired(argv, 30)
+                    return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+                with patch.object(claude_runner, "call", side_effect=fake_call):
+                    claude_runner.score(args, [row])
+                self.assertTrue(row["graded"])
+                self.assertFalse(row["accepted"])
+                self.assertEqual(row["grader_exitcode"], 124 if scenario == "timeout"
+                                 else 2 if scenario == "nonzero_exit" else 0)
+                self.assertFalse(json.loads((work.parent / "result.json").read_text())["accepted"])
+
+    def test_claude_independent_grader_accepts_only_real_success(self):
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td) / "checkout"
+            work.mkdir()
+            row = {"case": "search", "mode": "mcp", "repeat": 1,
+                   "worktree": str(work), "completed": True,
+                   "graded": False, "accepted": False}
+            args = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+            with patch.object(claude_runner, "call", return_value=SimpleNamespace(
+                    returncode=0, stdout='{"success": true}', stderr="")):
+                claude_runner.score(args, [row])
+            self.assertTrue(row["graded"])
+            self.assertTrue(row["accepted"])
+            self.assertEqual(row["grader_exitcode"], 0)
+
 
 
 if __name__ == "__main__":

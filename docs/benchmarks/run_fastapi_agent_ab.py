@@ -222,17 +222,39 @@ def score(args, rows):
         if row["case"] == "summary":
             env["BENCH_POSTGRES_URL"] = args.postgres_url
             env["BENCH_ALLOW_DISPOSABLE_RESET"] = "YES"
-        proc = call([str(args.python), str(GRADER), str(work), row["case"]],
-                    cwd=work, env=env, timeout=60)
-        try: result = json.loads(proc.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            result = {"success": False, "error": (proc.stdout + proc.stderr)[-600:]}
-        syntax = call([str(args.python), "-I", "-m", "compileall", "-q",
-                       str(work / "backend/app")], cwd=work, timeout=45).returncode == 0
-        clean = call(["git", "diff", "--check"], cwd=work).returncode == 0
+        # The independent grader is the acceptance authority. A nonzero
+        # process exit, timeout, malformed JSON, or a truthy string such as
+        # {"success": "false"} must never be recorded as a passed trial.
+        try:
+            proc = call([str(args.python), str(GRADER), str(work), row["case"]],
+                        cwd=work, env=env, timeout=60)
+            grader_exitcode = proc.returncode
+            try:
+                result = json.loads(proc.stdout.strip().splitlines()[-1])
+                if not isinstance(result, dict):
+                    raise ValueError("Grader response must be a JSON object")
+            except (ValueError, IndexError):
+                result = {"success": False,
+                          "error": "Invalid grader output: " + (proc.stdout + proc.stderr)[-600:]}
+        except subprocess.TimeoutExpired:
+            grader_exitcode = 124
+            result = {"success": False, "error": "Independent grader timed out"}
+        try:
+            syntax = call([str(args.python), "-I", "-m", "compileall", "-q",
+                           str(work / "backend/app")], cwd=work, timeout=45).returncode == 0
+        except subprocess.TimeoutExpired:
+            syntax = False
+        try:
+            clean = call(["git", "diff", "--check"], cwd=work, timeout=30).returncode == 0
+        except subprocess.TimeoutExpired:
+            clean = False
+        row["grader_exitcode"] = grader_exitcode
+        row["syntax_ok"] = syntax
+        row["diff_check_ok"] = clean
         row["graded"] = True
         row["grader"] = result
-        row["accepted"] = bool(row["completed"] and result.get("success") and syntax and clean)
+        row["accepted"] = bool(row["completed"] and grader_exitcode == 0
+                               and result.get("success") is True and syntax and clean)
         (work.parent / "result.json").write_text(json.dumps(row, indent=2) + "\n")
         print("GRADE", row["case"], row["mode"], row["repeat"], row["accepted"], flush=True)
 
@@ -244,6 +266,7 @@ def report(args, rows):
             "uncached_input_tokens", "cached_tokens", "output_tokens",
             "model", "requested_model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
             "policy_sha", "tasks_sha", "grader_sha",
+            "grader_exitcode", "syntax_ok", "diff_check_ok",
             "graded", "accepted", "mcp_used_as_required")
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, keys)
