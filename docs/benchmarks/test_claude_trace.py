@@ -33,6 +33,8 @@ class TraceTest(unittest.TestCase):
             response("1", [{"type": "text", "text": '{"source":"def f(): pass"}'}]),
             assistant("2", "mcp__simple-lsp__find_references"),
             response("2", [{"type": "text", "text": '{"error":{"code":"INCOMPLETE_SEARCH"}}'}]),
+            assistant("2b", "mcp__simple-lsp__inspect_symbol"),
+            response("2b", [{"type": "text", "text": '{"error":{}}'}]),
             assistant("3", "mcp__simple-lsp__inspect_symbol"),
             response("3", [{"type": "text", "text": "Error: LSP failed"}]),
             assistant("4", "mcp__simple-lsp__inspect_symbol"),
@@ -41,7 +43,7 @@ class TraceTest(unittest.TestCase):
             assistant("6", "Bash"),
             response("6", [{"type": "text", "text": "ok"}]),
         ]
-        self.assertEqual(trace_tool_counts(events), {"tool_calls": 6, "mcp_calls": 5,
+        self.assertEqual(trace_tool_counts(events), {"tool_calls": 7, "mcp_calls": 6,
             "valid_mcp_calls": 1, "command_calls": 1, "native_lsp_calls": 0})
 
     def test_empty_or_unmatched_results_are_not_success(self):
