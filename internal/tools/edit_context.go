@@ -40,7 +40,7 @@ func selectEditContext(source []byte, symbolRange core.Range, code string, maxCo
 	// statement at the same indentation; allow indented multiline arguments.
 	from := start
 	indent := len(lines[start]) - len(strings.TrimLeft(lines[start], " \t"))
-	decoratorScan:
+decoratorScan:
 	for i := start - 1; i >= 0 && start-i <= maxEditContextLookback; i-- {
 		trimmed := strings.TrimSpace(lines[i])
 		if trimmed == "" {
