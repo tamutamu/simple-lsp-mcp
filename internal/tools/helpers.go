@@ -239,9 +239,13 @@ func (e *Engine) locationsIn(c *fileCache, raw json.RawMessage, encoding string)
 		out := make([]core.Location, 0, len(links))
 		for _, x := range links {
 			l, err := e.linkIn(c, x, encoding)
-			if err == nil {
-				out = append(out, l)
+			if err != nil {
+				// Dropping one failed conversion silently changes the meaning of
+				// a complete references/definition result. An agent must not
+				// treat the remaining locations as exhaustive.
+				return nil, core.WithCause(core.IncompleteSearch, "LSP location link could not be resolved", err)
 			}
+			out = append(out, l)
 		}
 		return out, nil
 	}
@@ -257,9 +261,10 @@ func (e *Engine) locationsIn(c *fileCache, raw json.RawMessage, encoding string)
 	out := make([]core.Location, 0, len(many))
 	for _, x := range many {
 		l, err := e.locationIn(c, x, encoding)
-		if err == nil {
-			out = append(out, l)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "LSP location could not be resolved", err)
 		}
+		out = append(out, l)
 	}
 	return out, nil
 }
