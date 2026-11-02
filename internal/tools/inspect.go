@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -294,9 +295,23 @@ func inspectRangeContains(r core.Range, p core.Position) bool {
 // first identifier rather than column 1; returning whole lines makes the
 // snippet directly useful to a coding agent. No heuristic text searching is used.
 func extractSymbolSource(text []byte, r core.Range, maxLines, maxBytes int, signature bool) (string, bool, error) {
-	all := strings.SplitAfter(string(text), "\n")
-	if r.Start.Line < 1 || r.End.Line < r.Start.Line || r.Start.Line > len(all) || r.End.Line > len(all) {
+	if r.Start.Line < 1 || r.End.Line < r.Start.Line {
 		return "", false, core.NewError(core.InvalidArgument, "LSP symbol range outside source file")
+	}
+	// Validate the end line while locating the first requested line. Unlike
+	// strings.SplitAfter on the entire source, this visits only the prefix
+	// needed by the requested declaration and allocates no per-line strings.
+	// An empty final line after a trailing newline is a valid source line.
+	startOffset, offset := 0, 0
+	for line := 1; line < r.End.Line; line++ {
+		next := bytes.IndexByte(text[offset:], '\n')
+		if next < 0 {
+			return "", false, core.NewError(core.InvalidArgument, "LSP symbol range outside source file")
+		}
+		offset += next + 1
+		if line+1 == r.Start.Line {
+			startOffset = offset
+		}
 	}
 	// LSP end is exclusive. If it points to column 1 of the next line, that
 	// next line contains no declaration source.
@@ -312,40 +327,50 @@ func extractSymbolSource(text []byte, r core.Range, maxLines, maxBytes int, sign
 		availableEnd = r.Start.Line + signatureMaxLines - 1
 	}
 	if signature {
-		// Stop after the declaration's opening boundary rather than returning
-		// implementation statements. A multiline Python signature ends in
-		// "):"; Go/TypeScript braces open the body. No code-body parsing is
-		// claimed; this is a bounded declaration-header preview.
-		for i := r.Start.Line - 1; i < availableEnd; i++ {
-			line := strings.TrimSpace(all[i])
-			if strings.HasSuffix(line, "):") || strings.HasSuffix(line, ":") ||
-				strings.HasSuffix(line, "{") || strings.Contains(line, "=> {") {
-				availableEnd = i + 1
+		// Inspect at most the bounded signature lines; do not split the
+		// remainder of a potentially huge file just to locate the header.
+		scan := startOffset
+		for line := r.Start.Line; line <= availableEnd; line++ {
+			next := len(text)
+			if n := bytes.IndexByte(text[scan:], '\n'); n >= 0 {
+				next = scan + n + 1
+			}
+			header := strings.TrimSpace(string(text[scan:next]))
+			if strings.HasSuffix(header, "):") || strings.HasSuffix(header, ":") ||
+				strings.HasSuffix(header, "{") || strings.Contains(header, "=> {") {
+				availableEnd = line
 				break
 			}
+			scan = next
 		}
 	}
 	var sb strings.Builder
 	lastLine := r.Start.Line - 1
 	truncated := availableEnd < endLine
-	for i := r.Start.Line - 1; i < availableEnd; i++ {
-		line := all[i]
-		if sb.Len()+len(line) > maxBytes {
+	scan := startOffset
+	for line := r.Start.Line; line <= availableEnd; line++ {
+		next := len(text)
+		if n := bytes.IndexByte(text[scan:], '\n'); n >= 0 {
+			next = scan + n + 1
+		}
+		sourceLine := text[scan:next]
+		if sb.Len()+len(sourceLine) > maxBytes {
 			remaining := maxBytes - sb.Len()
 			if remaining > 0 {
 				// Cut at a UTF-8 boundary; don't generate invalid source text.
-				part := line[:remaining]
-				for !utf8.ValidString(part) {
+				part := sourceLine[:remaining]
+				for !utf8.Valid(part) {
 					part = part[:len(part)-1]
 				}
-				sb.WriteString(part)
+				sb.Write(part)
 			}
 			truncated = true
-			lastLine = i + 1
+			lastLine = line
 			break
 		}
-		sb.WriteString(line)
-		lastLine = i + 1
+		sb.Write(sourceLine)
+		lastLine = line
+		scan = next
 	}
 	if lastLine < r.Start.Line {
 		return "", false, core.NewError(core.InternalError, "empty declaration source range")
