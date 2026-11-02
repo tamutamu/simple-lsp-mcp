@@ -46,24 +46,38 @@ func joinSymbolPath(segments []string) string {
 	return strings.Join(escaped, symbolPathSeparator)
 }
 
-// siblingSegments assigns each document symbol in one sibling group a raw
-// path segment: the symbol's own name, disambiguated when a name repeats
-// ("createUser", "createUser#2", "createUser#3", ...), or "#<index>" when
-// the symbol has no name at all.
+// siblingSegments assigns unique raw path segments to siblings. The first
+// occurrence keeps its literal LSP name; duplicates get a #N suffix and
+// anonymous symbols start at #<index>. Reserve *all* literal sibling names
+// before assigning suffixes: otherwise ["Run", "Run", "Run#2"] produces two
+// "Run#2" paths and an exact semantic target can resolve to the wrong symbol.
 func siblingSegments(vs []protocol.DocumentSymbol) []string {
 	segments := make([]string, len(vs))
-	counts := map[string]int{}
+	reserved := make(map[string]bool, len(vs))
+	used := make(map[string]bool, len(vs))
+	for _, v := range vs {
+		if v.Name != "" {
+			reserved[v.Name] = true
+		}
+	}
 	for i, v := range vs {
-		if v.Name == "" {
-			segments[i] = "#" + strconv.Itoa(i)
-			continue
+		base := v.Name
+		if base == "" {
+			base = "#" + strconv.Itoa(i)
 		}
-		counts[v.Name]++
-		if counts[v.Name] == 1 {
-			segments[i] = v.Name
-		} else {
-			segments[i] = v.Name + "#" + strconv.Itoa(counts[v.Name])
+		segment := base
+		// A generated anonymous name must not steal a literal name that
+		// appears later in the LSP response.
+		if used[segment] || (v.Name == "" && reserved[segment]) {
+			for suffix := 2; ; suffix++ {
+				segment = base + "#" + strconv.Itoa(suffix)
+				if !used[segment] && !reserved[segment] {
+					break
+				}
+			}
 		}
+		segments[i] = segment
+		used[segment] = true
 	}
 	return segments
 }
