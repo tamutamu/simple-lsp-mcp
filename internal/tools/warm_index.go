@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
@@ -138,12 +140,12 @@ func warmBloomMayContain(bits *[warmBloomBytes]byte, needle []byte) bool {
 	return true
 }
 
-// warmContainsIdentifier is a candidate filter, not symbol resolution.
-// A substring scan would treat "grid" or "valid" as hits for the symbol "id",
-// opening unrelated documents and even exceeding the 512-candidate limit.
-// TS/JS '$' is an identifier character. Non-ASCII adjacent bytes are treated
-// as possible boundaries to avoid excluding real references after Unicode
-// whitespace or punctuation; extra candidates are safe.
+// warmContainsIdentifier filters lexical candidates before LSP synchronization.
+// UTF-8 identifier neighbors must be decoded as runes: treating every non-ASCII
+// byte as a boundary falsely matches "id" inside "日本id語", potentially opening
+// hundreds of unrelated files and hitting the 512-candidate fail-closed limit.
+// Invalid UTF-8 is conservatively treated as a boundary (extra candidates,
+// never a missed valid reference). The LSP still determines symbol identity.
 func warmContainsIdentifier(content, name []byte) bool {
 	if len(name) == 0 {
 		return false
@@ -155,14 +157,40 @@ func warmContainsIdentifier(content, name []byte) bool {
 		}
 		start := offset + relative
 		end := start + len(name)
-		before := start == 0 || !warmIdentifierByte(content[start-1])
-		after := end == len(content) || !warmIdentifierByte(content[end])
-		if before && after {
+		if warmIdentifierBoundary(content, start, true) &&
+			warmIdentifierBoundary(content, end, false) {
 			return true
 		}
 		offset = start + 1
 	}
 	return false
+}
+
+// Treat only known identifier-continuation runes as non-boundaries. Unicode
+// whitespace, punctuation, symbols and malformed bytes remain possible
+// boundaries so the candidate filter cannot discard valid references.
+func warmIdentifierBoundary(content []byte, at int, before bool) bool {
+	if at == 0 || at == len(content) {
+		return true
+	}
+	if before {
+		if content[at-1] < utf8.RuneSelf {
+			return !warmIdentifierByte(content[at-1])
+		}
+		r, size := utf8.DecodeLastRune(content[:at])
+		return size == 1 && r == utf8.RuneError || !warmIdentifierRune(r)
+	}
+	if content[at] < utf8.RuneSelf {
+		return !warmIdentifierByte(content[at])
+	}
+	r, size := utf8.DecodeRune(content[at:])
+	return size == 1 && r == utf8.RuneError || !warmIdentifierRune(r)
+}
+
+func warmIdentifierRune(r rune) bool {
+	return r == '_' || r == '$' || r == '\u200c' || r == '\u200d' ||
+		unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) ||
+		unicode.Is(unicode.Pc, r)
 }
 
 func warmIdentifierByte(b byte) bool {

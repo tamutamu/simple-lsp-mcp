@@ -92,7 +92,12 @@ func TestWarmContainsIdentifierCandidateBoundaries(t *testing.T) {
 		{"const $id = 1", false},
 		{"const id$ = 1", false},
 		{"const id_ = 1", false},
-		{"const 日本id = 1", true}, // Conservative Unicode false positive.
+		{"const 日本id = 1", false}, // Unicode letters are identifier neighbors.
+		{"const id語 = 1", false},
+		{"const id\u0301 = 1", false}, // Combining mark extends an identifier.
+		{"const id\u200c = 1", false}, // JavaScript joiner extends an identifier.
+		{"const id🚀 = 1", true}, // Emoji is not an identifier continuation.
+		{"const id。 = 1", true}, // Unicode punctuation is a boundary.
 		{"const id\u00a0= 1", true}, // Unicode whitespace is a real boundary.
 	}
 	for _, tc := range cases {
