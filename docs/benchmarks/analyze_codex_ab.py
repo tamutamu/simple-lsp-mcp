@@ -50,6 +50,14 @@ def read_paired(path, study, treatment="mcp"):
         rep = row.get("repeat")
         if not task or not rep:
             raise ValueError("Every trial must identify task and repeat")
+        # Repeats are a predeclared 1-based trial grid, not arbitrary labels.
+        # Otherwise post-hoc additions can masquerade as independent repeats.
+        try:
+            repeat_number = int(rep)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid repeat identifier: {rep!r}") from exc
+        if repeat_number < 1 or str(repeat_number) != rep:
+            raise ValueError(f"Invalid repeat identifier: {rep!r}")
         key = (task, rep)
         if arm in pairs[key]:
             raise ValueError(f"Duplicate trial: {key}, {arm}")
@@ -128,6 +136,17 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
     for (task, rep), arms in pairs.items():
         by_task[task].append(arms)
     reps = {task: len(x) for task, x in by_task.items()}
+    # Every task must have the same complete, contiguous repeat identifiers.
+    # Requiring merely >=3 permits selectively adding favorable trials to
+    # individual tasks after inspecting outcomes (optional stopping).
+    repeat_grid = {
+        task: {int(rep) for (name, rep) in pairs if name == task}
+        for task in by_task
+    }
+    all_repeats = set.union(*repeat_grid.values())
+    balanced_repeat_grid = all(
+        ids == all_repeats for ids in repeat_grid.values()
+    ) and all_repeats == set(range(1, max(all_repeats) + 1))
     n_tasks = len(by_task)
     treatments = [a[treatment] for a in pairs.values()]
     baselines = [a["baseline"] for a in pairs.values()]
@@ -153,6 +172,7 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
     readiness = {
         "enough_independent_tasks": n_tasks >= min_tasks,
         "enough_repeats_each_task": all(rep >= min_repeats for rep in reps.values()),
+        "balanced_contiguous_repeat_grid": balanced_repeat_grid,
         "quality_lower_bound_both_at_least_95_percent": all(
             v["wilson_lower_95"] >= 0.95 for v in acceptance.values()),
         "treatment_quality_at_least_baseline": (
