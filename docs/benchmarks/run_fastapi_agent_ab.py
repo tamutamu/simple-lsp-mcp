@@ -232,7 +232,7 @@ def score(args, rows):
 def report(args, rows):
     path = args.output / "results.csv"
     keys = ("case", "mode", "repeat", "seconds", "exit_code", "completed",
-            "cost_usd", "turns", "tool_calls", "command_calls", "mcp_calls",
+            "cost_usd", "turns", "tool_calls", "repeated_tool_calls", "command_calls", "mcp_calls",
             "valid_mcp_calls", "native_lsp_calls", "input_tokens",
             "uncached_input_tokens", "cached_tokens", "output_tokens",
             "model", "requested_model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
