@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
 
@@ -35,7 +37,7 @@ func TestWalkDocumentBuildsNestedPaths(t *testing.T) {
 			Range: protocol.Range{Start: protocol.Position{Line: 1}, End: protocol.Position{Line: 1}},
 		}},
 	}}
-	nodes := walkDocument(text, "utf-16", vs, nil, "")
+	nodes := mustWalkDocument(text, "utf-16", vs, nil, "")
 	if len(nodes) != 1 || nodes[0].SymbolPath != "UserService" {
 		t.Fatalf("nodes = %#v", nodes)
 	}
@@ -57,7 +59,7 @@ func TestWalkDocumentDisambiguatesDuplicateSiblings(t *testing.T) {
 		{Name: "createUser", Kind: 6},
 		{Name: "createUser", Kind: 6},
 	}
-	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
+	nodes := mustWalkDocument([]byte(""), "utf-16", vs, nil, "")
 	if len(nodes) != 3 {
 		t.Fatalf("nodes = %#v", nodes)
 	}
@@ -71,18 +73,41 @@ func TestWalkDocumentDisambiguatesDuplicateSiblings(t *testing.T) {
 
 func TestWalkDocumentNamesAnonymousSymbolsByIndex(t *testing.T) {
 	vs := []protocol.DocumentSymbol{{Name: "a"}, {Name: ""}, {Name: ""}}
-	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
+	nodes := mustWalkDocument([]byte(""), "utf-16", vs, nil, "")
 	if nodes[1].SymbolPath != "#1" || nodes[2].SymbolPath != "#2" {
 		t.Fatalf("nodes = %#v", nodes)
 	}
 }
 
-func TestWalkDocumentSkipsSymbolsWithUnconvertibleRanges(t *testing.T) {
-	// A range past the end of an empty file cannot be converted.
-	vs := []protocol.DocumentSymbol{{Name: "a", Range: protocol.Range{Start: protocol.Position{Line: 5}, End: protocol.Position{Line: 5, Character: 1}}}}
-	nodes := walkDocument([]byte(""), "utf-16", vs, nil, "")
-	if len(nodes) != 0 {
-		t.Fatalf("nodes = %#v, want none", nodes)
+func TestWalkDocumentRejectsPartialHierarchicalResponse(t *testing.T) {
+	// Both invalid siblings and invalid nested children previously vanished
+	// while the tool reported a successful, supposedly complete outline.
+	valid := protocol.DocumentSymbol{Name: "Valid"}
+	invalid := protocol.DocumentSymbol{Name: "Stale", Range: protocol.Range{
+		Start: protocol.Position{Line: 5}, End: protocol.Position{Line: 5, Character: 1},
+	}}
+	for _, tc := range []struct {
+		name string
+		symbols []protocol.DocumentSymbol
+	}{
+		{"invalid sibling", []protocol.DocumentSymbol{valid, invalid}},
+		{"invalid nested child", []protocol.DocumentSymbol{{
+			Name: "Parent", Children: []protocol.DocumentSymbol{valid, invalid},
+		}}},
+		{"invalid selection", []protocol.DocumentSymbol{{
+			Name: "BadSelection", SelectionRange: invalid.Range,
+		}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, err := walkDocument([]byte(""), "utf-16", tc.symbols, nil, "")
+			var appErr *core.AppError
+			if !errors.As(err, &appErr) || appErr.Code != core.IncompleteSearch {
+				t.Fatalf("expected incomplete search; got nodes=%#v err=%v", nodes, err)
+			}
+			if len(nodes) != 0 {
+				t.Fatalf("partial document symbols leaked: %#v", nodes)
+			}
+		})
 	}
 }
 
@@ -154,7 +179,7 @@ func documentSymbolNodes() []symbolNode {
 			}},
 		}},
 	}}
-	return walkDocument(text, "utf-16", vs, nil, "")
+	return mustWalkDocument(text, "utf-16", vs, nil, "")
 }
 
 func TestMatchNodesPrefersExactOverSuffix(t *testing.T) {
@@ -191,7 +216,7 @@ func TestMatchNodesReturnsEveryCandidateWhenAmbiguous(t *testing.T) {
 		{Name: "A", Kind: 5, Children: []protocol.DocumentSymbol{{Name: "createUser", Kind: 6}}},
 		{Name: "B", Kind: 5, Children: []protocol.DocumentSymbol{{Name: "createUser", Kind: 6}}},
 	}
-	nodes := walkDocument(text, "utf-16", vs, nil, "")
+	nodes := mustWalkDocument(text, "utf-16", vs, nil, "")
 	got := matchNodes(nodes, []string{"createUser"}, false)
 	if len(got) != 2 {
 		t.Fatalf("matchNodes = %#v, want two candidates", got)
@@ -228,4 +253,12 @@ func TestMatchNodesReturnsAmbiguousFlatReceiverQualifiedMethods(t *testing.T) {
 	if got := matchNodes(nodes, []string{"Run"}, false); len(got) != 2 {
 		t.Fatalf("matchNodes = %#v, want two ambiguous methods", got)
 	}
+}
+
+func mustWalkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol, parents []string, containerName string) []symbolNode {
+	nodes, err := walkDocument(text, encoding, vs, parents, containerName)
+	if err != nil {
+		panic(err)
+	}
+	return nodes
 }
