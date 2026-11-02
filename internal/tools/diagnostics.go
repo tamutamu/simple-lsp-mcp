@@ -1,16 +1,25 @@
 package tools
 
 import (
+	"fmt"
+
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
 
-func (e *Engine) diagnostics(path string, xs []protocol.Diagnostic, encoding string) []core.Diagnostic {
+func (e *Engine) diagnostics(path string, xs []protocol.Diagnostic, encoding string) ([]core.Diagnostic, error) {
+	// A diagnostic batch can contain hundreds of locations in the same file.
+	// Reuse the source and its position index rather than rereading the file
+	// for every primary or related range.
+	cache := newFileCache()
 	out := make([]core.Diagnostic, 0, len(xs))
-	for _, x := range xs {
-		r, err := e.rangeForPath(path, x.Range, encoding)
+	for i, x := range xs {
+		r, err := e.rangeIn(cache, path, x.Range, encoding)
 		if err != nil {
-			continue
+			// Silently skipping an invalid primary range can turn a file with
+			// errors into a misleading clean diagnostic result.
+			return nil, core.WithCause(core.IncompleteSearch,
+				fmt.Sprintf("invalid LSP diagnostic range in %s at item %d", path, i+1), err)
 		}
 		sev := 4
 		if x.Severity != nil {
@@ -18,14 +27,14 @@ func (e *Engine) diagnostics(path string, xs []protocol.Diagnostic, encoding str
 		}
 		d := core.Diagnostic{Path: path, Range: r, Severity: severity(sev), Code: x.Code, Source: x.Source, Message: x.Message}
 		for _, ri := range x.RelatedInformation {
-			l, err := e.location(ri.Location, encoding)
+			l, err := e.locationIn(cache, ri.Location, encoding)
 			if err == nil {
 				d.Locations = append(d.Locations, l)
 			}
 		}
 		out = append(out, d)
 	}
-	return out
+	return out, nil
 }
 func severity(n int) string {
 	switch n {

@@ -326,7 +326,10 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 		}
 		diagnosticPath := relativeMust(e, d.Path)
 		if pullErr == nil && !unsupported {
-			ds = e.diagnostics(diagnosticPath, raw.Items, s.Capabilities().PositionEncoding)
+			ds, err = e.diagnostics(diagnosticPath, raw.Items, s.Capabilities().PositionEncoding)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			// Some servers (including gopls versions in the real-LSP suite)
 			// implement pull diagnostics without advertising diagnosticProvider.
@@ -346,7 +349,10 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 			if !ready {
 				complete = false
 			}
-			ds = e.diagnostics(diagnosticPath, published, s.Capabilities().PositionEncoding)
+			ds, err = e.diagnostics(diagnosticPath, published, s.Capabilities().PositionEncoding)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		complete = false
