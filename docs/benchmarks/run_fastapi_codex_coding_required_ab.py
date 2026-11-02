@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Codex A/B: same pinned FastAPI source and identical AGENTS.md, MCP on/off."""
-import argparse, csv, json, os, select, shutil, statistics, subprocess, time
+import argparse, csv, hashlib, json, os, select, shutil, statistics, subprocess, time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -99,13 +99,27 @@ def evaluate(o,case,mode,rep):
     bad=any(e.get("type")=="turn.failed" for e in events)
     items=[e["item"] for e in events if e.get("type")=="item.completed" and isinstance(e.get("item"),dict)]
     mcp=[i for i in items if i.get("type")=="mcp_tool_call" and i.get("server")=="simple-lsp"]
-    mcpok=[i for i in mcp if i.get("status") == "completed" and not i.get("error") and not (i.get("result") or {}).get("structured_content",{}).get("error")]
+    def successful_mcp_call(item):
+        if item.get("status") != "completed" or item.get("error"):
+            return False
+        result = item.get("result")
+        if isinstance(result, dict):
+            if result.get("isError") or result.get("is_error"):
+                return False
+            structured = result.get("structured_content")
+            if isinstance(structured, dict) and structured.get("error"):
+                return False
+        return True
+    mcpok=[i for i in mcp if successful_mcp_call(i)]
     use=finished[-1].get("usage",{}) if finished else {}
     row=dict(case=case,mode=mode,repeat=rep,seconds=elapsed,exitcode=exitcode,
              completed=exitcode==0 and bool(finished) and not bad,
              input_tokens=use.get("input_tokens"),cached_tokens=use.get("cached_input_tokens"),
              output_tokens=use.get("output_tokens"),reasoning_tokens=use.get("reasoning_output_tokens"),
              mcp_calls=len(mcp),valid_mcp_calls=len(mcpok),
+             model=o.model,effort=o.effort,agent_version=o.agent_version,
+             source_commit=SHA,policy_sha=hashlib.sha256(POLICY.encode()).hexdigest(),
+             grader_sha=hashlib.sha256(GRADER.read_bytes()).hexdigest(),
              mcp_tools=[x.get("tool") for x in mcp],
              command_calls=sum(i.get("type")=="command_execution" for i in items),
              graded=False,accepted=False,grader=None,
@@ -139,7 +153,8 @@ def grade(o,records):
 def report(o,rows):
     fields=("case","mode","repeat","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
-            "mcp_calls","valid_mcp_calls","command_calls")
+            "mcp_calls","valid_mcp_calls","command_calls",
+            "model","effort","agent_version","source_commit","policy_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
         for r in sorted(rows,key=lambda x:(x["case"],x["mode"],x["repeat"])):
@@ -187,6 +202,10 @@ def main():
     o.python=Path(os.path.abspath(o.python)) # keep virtualenv symlink
     actual=call(["git","rev-parse","HEAD"],cwd=o.source,check=True).stdout.strip()
     if actual!=SHA:p.error("Pinned template required: "+actual)
+    version=call([str(o.node),str(o.codex),"--version"],timeout=20)
+    if version.returncode or not version.stdout.strip():
+        p.error("Cannot verify Codex CLI version: "+version.stderr)
+    o.agent_version=version.stdout.strip()
     if o.repeats<1 or o.parallel<1:p.error("Invalid repeats/parallel")
     if o.postgres_url and not ("@127.0.0.1:" in o.postgres_url or "@localhost:" in o.postgres_url):
         p.error("Postgres must be on disposable localhost bench DB")
