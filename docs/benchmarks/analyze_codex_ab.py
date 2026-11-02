@@ -98,6 +98,15 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
              min_token_reduction=0.30):
     if selection_policy not in ("required", "natural"):
         raise ValueError("selection_policy must be required or natural")
+    # These are *qualification* floors, not exploratory tuning knobs. Allow
+    # stricter studies, but never permit a CLI flag or direct library call to
+    # turn an underpowered/weak-effect pilot into a product GO decision.
+    if min_tasks < 20 or min_repeats < 3:
+        raise ValueError("qualification requires at least 20 independent tasks and 3 repeats")
+    if min_time_reduction < 0.25 or min_token_reduction < 0.30:
+        raise ValueError("qualification requires >=25% time and >=30% total-input reduction")
+    if selection_policy == "natural" and min_adoption < 0.8:
+        raise ValueError("natural-selection qualification requires >=80% MCP adoption")
     for threshold in (min_time_reduction, min_token_reduction):
         if not 0 < threshold < 1:
             raise ValueError("minimum reductions must be within (0, 1)")
@@ -225,8 +234,8 @@ def main():
                    help="Evaluate either mandatory AGENTS.md LSP usage or natural discovery; both are valid study designs")
     p.add_argument("--require-qualified", action="store_true")
     args = p.parse_args()
-    if args.bootstrap < 1000 or args.min_tasks < 2 or args.min_repeats < 1:
-        p.error("Invalid power/design parameters")
+    if args.bootstrap < 1000 or args.min_tasks < 20 or args.min_repeats < 3:
+        p.error("Invalid power/design parameters: qualification requires >=20 tasks and >=3 repeats")
     pairs = read_paired(args.csv, args.study, args.treatment)
     report = evaluate(pairs, treatment=args.treatment, min_tasks=args.min_tasks,
                       min_repeats=args.min_repeats, bootstrap=args.bootstrap,
