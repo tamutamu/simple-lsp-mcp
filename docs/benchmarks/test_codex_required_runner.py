@@ -281,10 +281,10 @@ class RequiredABProvenanceTest(unittest.TestCase):
             def fake_call(cmd, **kwargs):
                 stdout = ""
                 if cmd[0] != "git":
-                    stdout = "".join(json.dumps(event) + "\\n" for event in trace)
+                    stdout = "".join(json.dumps(event) + "\n" for event in trace)
                 return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
-            with patch.object(runner, "prepare", side_effect=lambda _, dst: dst.mkdir()), \\
+            with patch.object(runner, "prepare", side_effect=lambda _, dst: dst.mkdir()), \
                  patch.object(runner, "call", side_effect=fake_call):
                 row = runner.evaluate(o, "search", "baseline", 1)
             self.assertEqual(row["uncached_input_tokens"], 200)
