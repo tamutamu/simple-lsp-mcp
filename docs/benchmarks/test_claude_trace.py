@@ -1,9 +1,31 @@
 """Regression checks for Claude A/B evidence extraction."""
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from claude_trace import token_usage, trace_tool_counts
+from run_fastapi_agent_ab import STUDY, report
+from analyze_codex_ab import read_paired
 
 
 class TraceTest(unittest.TestCase):
+    def test_claude_csv_preserves_study_for_shared_qualification_analyzer(self):
+        # Previously report() omitted 'study', so --study claude-required
+        # discarded every trial as unrelated and could never evaluate A/B.
+        with tempfile.TemporaryDirectory() as td:
+            rows = [
+                {"study": STUDY, "case": "search", "mode": mode, "repeat": 1,
+                 "seconds": 10.0, "input_tokens": 1000, "cost_usd": 0.1,
+                 "completed": True, "graded": True, "accepted": True,
+                 "mcp_calls": int(mode == "mcp"),
+                 "valid_mcp_calls": int(mode == "mcp")}
+                for mode in ("baseline", "mcp")
+            ]
+            report(SimpleNamespace(output=Path(td), cases=["search"]), rows)
+            paired = read_paired(Path(td) / "results.csv", STUDY)
+            self.assertEqual(len(paired), 1)
+            self.assertEqual(set(paired[("search", "1")]), {"baseline", "mcp"})
+
     def test_model_usage_includes_cache_in_total_input(self):
         result = {"modelUsage": {
             "claude-a": {"inputTokens": 20, "cacheReadInputTokens": 100,
