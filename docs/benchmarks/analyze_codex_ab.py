@@ -65,6 +65,20 @@ def read_paired(path, study, treatment="mcp"):
             if not math.isfinite(n) or n <= 0:
                 raise ValueError(f"Invalid {metric}={n} in {key}")
             row[metric] = n
+        # Selectively retrying failed runs and keeping successes creates
+        # post-hoc selection bias. Missing attempt provenance is not proof.
+        retry_raw = row.get("retry_count")
+        row["retry_verified"] = retry_raw not in (None, "")
+        if row["retry_verified"]:
+            try:
+                count = int(retry_raw)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"Invalid retry_count in {key}, {arm}") from exc
+            if count < 0 or str(count) != str(retry_raw).strip():
+                raise ValueError(f"Invalid retry_count in {key}, {arm}")
+            row["retry_count"] = count
+        else:
+            row["retry_count"] = 0
         row["accepted"] = parse_bool(row.get("accepted", "false"))
         # Legacy pilot CSVs omit these evidence flags. Keep them analyzable,
         # but never let unverifiable trials qualify as product-grade evidence.
@@ -145,6 +159,9 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             acceptance[treatment]["accepted"] >= acceptance["baseline"]["accepted"]),
         "trials_have_explicit_completion_and_grading": all(
             a["evidence_verified"] for a in (treatments + baselines)),
+        "all_trials_are_first_attempts_with_verified_provenance": all(
+            a["retry_verified"] and a["retry_count"] == 0
+            for a in (treatments + baselines)),
         "same_pinned_agent_source_policy_and_grader": provenance_verified,
         "trace_verified_mcp_call_counts": all(
             a["usage_verified"] for a in (treatments + baselines)),
