@@ -166,6 +166,10 @@ def execute_trial(args, case, mode, rep):
     final = next((e for e in reversed(events) if e.get("type") == "result"), {})
     counts = trace_tool_counts(events)
     usage = token_usage(final) or {}
+    observed_models = {e.get("message", {}).get("model") for e in events
+                       if e.get("type") == "assistant" and isinstance(e.get("message"), dict)
+                       and e["message"].get("model")}
+    actual_model = next(iter(observed_models)) if len(observed_models) == 1 else ""
     row = {
         "case": case, "mode": mode, "repeat": rep, "seconds": elapsed,
         "exit_code": exitcode, "completed": bool(final) and exitcode == 0
@@ -175,7 +179,7 @@ def execute_trial(args, case, mode, rep):
         "terminal_reason": final.get("terminal_reason"),
         **counts, **usage,
         "mcp_used_as_required": mode != "mcp" or counts["valid_mcp_calls"] > 0,
-        "model": args.model, "effort": "medium",
+        "model": actual_model, "requested_model": args.model, "effort": "medium",
         "agent_version": args.agent_version, "mcp_binary_sha": args.mcp_binary_sha,
         "source_commit": PINNED,
         "policy_sha": hashlib.sha256(POLICY.encode()).hexdigest(),
@@ -231,7 +235,7 @@ def report(args, rows):
             "cost_usd", "turns", "tool_calls", "command_calls", "mcp_calls",
             "valid_mcp_calls", "native_lsp_calls", "input_tokens",
             "uncached_input_tokens", "cached_tokens", "output_tokens",
-            "model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
+            "model", "requested_model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
             "policy_sha", "tasks_sha", "grader_sha",
             "graded", "accepted", "mcp_used_as_required")
     with path.open("w", newline="") as f:
