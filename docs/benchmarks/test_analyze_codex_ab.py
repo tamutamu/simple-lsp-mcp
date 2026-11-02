@@ -46,6 +46,24 @@ class EvaluationTest(unittest.TestCase):
             self.assertFalse(result["readiness"]["enough_independent_tasks"])
             self.assertFalse(result["readiness"]["quality_lower_bound_both_at_least_95_percent"])
 
+    def test_qualification_thresholds_cannot_be_weakened(self):
+        # Even perfect synthetic outcomes must not qualify after lowering
+        # sample-size, effect-size or natural-adoption requirements.
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "thresholds.csv"
+            self.write_trials(p, 3, 2, 0.6)
+            pairs = ab.read_paired(p, "controlled")
+            for override in (
+                {"min_tasks": 2},
+                {"min_repeats": 2},
+                {"min_time_reduction": 0.20},
+                {"min_token_reduction": 0.20},
+                {"selection_policy": "natural", "min_adoption": 0.50},
+            ):
+                with self.subTest(override=override):
+                    with self.assertRaisesRegex(ValueError, "qualification requires"):
+                        ab.evaluate(pairs, bootstrap=1000, **override)
+
     def test_larger_consistent_effect_passes_gates(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "large.csv"
