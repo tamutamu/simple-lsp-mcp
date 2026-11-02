@@ -55,7 +55,7 @@ def _has_successful_content(content):
     if isinstance(content, list):
         return bool(content) and all(_has_successful_content(part) for part in content)
     if isinstance(content, dict):
-        if content.get("isError") or content.get("is_error") or content.get("error"):
+        if content.get("isError") or content.get("is_error") or "error" in content:
             return False
         if content.get("type") == "text":
             return _has_successful_content(content.get("text"))
@@ -71,7 +71,7 @@ def _has_successful_content(content):
         decoded = json.loads(s)
     except (TypeError, ValueError):
         return True
-    if isinstance(decoded, dict) and (decoded.get("error") or decoded.get("isError")
+    if isinstance(decoded, dict) and ("error" in decoded or decoded.get("isError")
                                       or decoded.get("is_error")):
         return False
     return bool(decoded)
