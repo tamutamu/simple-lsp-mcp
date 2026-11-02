@@ -266,6 +266,7 @@ def report(args, rows):
             "uncached_input_tokens", "cached_tokens", "output_tokens",
             "model", "requested_model", "effort", "agent_version", "mcp_binary_sha", "source_commit",
             "policy_sha", "tasks_sha", "grader_sha",
+            "grader_exitcode", "syntax_ok", "diff_check_ok",
             "graded", "accepted", "mcp_used_as_required")
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, keys)
