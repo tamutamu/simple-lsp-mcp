@@ -83,6 +83,56 @@ class EvaluationTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Invalid retry_count"):
                     ab.read_paired(p, "controlled")
 
+    def test_invalid_repeat_identifiers_are_rejected(self):
+        for invalid in ("0", "-1", "01", "1.0", "pilot"):
+            with self.subTest(repeat=invalid), tempfile.TemporaryDirectory() as td:
+                p = Path(td) / "invalid-repeat.csv"
+                self.write_trials(p, 2, 3, 0.6)
+                rows = list(csv.DictReader(p.open()))
+                rows[0]["repeat"] = invalid
+                with p.open("w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    w.writeheader()
+                    w.writerows(rows)
+                with self.assertRaisesRegex(ValueError, "Invalid repeat identifier"):
+                    ab.read_paired(p, "controlled")
+
+    def test_unbalanced_extra_repeat_cannot_qualify(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "selected-repeat.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            # One selected task gets an extra successful pair after results
+            # are known; all original sample-size/effect gates still pass.
+            for arm in ("baseline", "mcp"):
+                extra = next(r.copy() for r in rows
+                             if r["task"] == "task0" and r["arm"] == arm)
+                extra["repeat"] = "5"
+                rows.append(extra)
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["balanced_contiguous_repeat_grid"])
+
+    def test_skipped_repeat_number_cannot_qualify(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "skipped-repeat.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                if row["repeat"] == "3":
+                    row["repeat"] = "5"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["balanced_contiguous_repeat_grid"])
+
     def test_current_small_sample_never_qualifies(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "small.csv"
