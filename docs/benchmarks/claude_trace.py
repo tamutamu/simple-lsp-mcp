@@ -63,7 +63,15 @@ def _has_nested_error(value):
 
 
 def _has_successful_content(content):
+    """Require actual semantic data, not merely a successful MCP envelope.
+
+    Claude can emit a completed tool_result containing {"success": true},
+    {"result": []}, or a bare "ok". Those acknowledge execution but do not
+    show that the agent received source or other useful LSP information.
+    """
     if isinstance(content, list):
+        # A partially empty multi-block result cannot prove all requested
+        # source snippets were delivered.
         return bool(content) and all(_has_successful_content(part) for part in content)
     if isinstance(content, dict):
         if _has_nested_error(content):
@@ -72,19 +80,26 @@ def _has_successful_content(content):
             return _has_successful_content(content.get("text"))
         if "content" in content:
             return _has_successful_content(content["content"])
-        return bool(content)
+        # Status-only wrappers (including nested ones) are not semantic data.
+        control = {"success", "ok", "status", "isError", "is_error",
+                   "meta", "complete", "truncated"}
+        return any(_has_successful_content(value) for key, value in content.items()
+                   if key not in control)
     if not isinstance(content, str) or not content.strip():
         return False
     s = content.strip()
     if s.lower().startswith(("error:", "error ", "mcp error", "lsp error")):
         return False
+    if s.lower() in {"ok", "success", "done", "true", "false", "null", "none"}:
+        return False
     try:
         decoded = json.loads(s)
     except (TypeError, ValueError):
+        # Ordinary source code / symbol names are valid non-JSON responses.
         return True
-    # A JSON array of error objects (or an error nested under "result")
-    # used to pass as a valid semantic response merely because it was nonempty.
-    return bool(decoded) and not _has_nested_error(decoded)
+    # Recurse into JSON. bool/int/null, empty arrays, and empty objects are
+    # not source data; a nonempty outer envelope alone is insufficient.
+    return _has_successful_content(decoded)
 
 
 def successful_tool_result(part):

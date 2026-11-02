@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 import run_fastapi_agent_ab as claude_runner
-from claude_trace import token_usage, trace_tool_counts
+from claude_trace import token_usage, trace_tool_counts, successful_tool_result
 from run_fastapi_agent_ab import STUDY, report
 from analyze_codex_ab import read_paired
 
@@ -93,6 +93,46 @@ class TraceTest(unittest.TestCase):
         counts = trace_tool_counts(events)
         self.assertEqual(counts["mcp_calls"], 3)
         self.assertEqual(counts["valid_mcp_calls"], 1)
+
+    def test_acknowledgment_only_mcp_results_do_not_prove_semantic_use(self):
+        # A successful Claude tool_result can be only an empty/status
+        # envelope. This must never satisfy mandatory MCP usage.
+        acknowledgments = (
+            '{"success":true}', '{"ok":true}', '{"result":[]}',
+            '{"result":{}}', '{"result":{"status":"ok"}}',
+            '{"meta":{"complete":true}}', '[]', '{}', 'null',
+            'false', 'true', '0', '"ok"', 'ok', '',
+        )
+        for payload in acknowledgments:
+            with self.subTest(payload=payload):
+                part = {"type": "tool_result", "content": [
+                    {"type": "text", "text": payload}]}
+                self.assertFalse(successful_tool_result(part))
+
+        # Genuine source snippets and symbol information still count.
+        for payload in (
+            '{"result":{"path":"items.py","code":"def read_items(): pass"}}',
+            '{"result":[{"name":"read_items","path":"items.py"}]}',
+            'def read_items(): pass',
+        ):
+            with self.subTest(semantic_payload=payload):
+                part = {"type": "tool_result", "content": [
+                    {"type": "text", "text": payload}]}
+                self.assertTrue(successful_tool_result(part))
+
+    def test_claude_trace_counts_acknowledgments_as_attempts_not_valid_calls(self):
+        events = [
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "ack",
+                 "name": "mcp__simple-lsp__inspect_symbol"}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "ack",
+                 "content": [{"type": "text",
+                              "text": '{"result":{"status":"ok"}}'}]}]}},
+        ]
+        counts = trace_tool_counts(events)
+        self.assertEqual(counts["mcp_calls"], 1)
+        self.assertEqual(counts["valid_mcp_calls"], 0)
 
     def test_identical_tool_inputs_counted_without_confusing_distinct_reads(self):
         events = [{"type": "assistant", "message": {"content": [
