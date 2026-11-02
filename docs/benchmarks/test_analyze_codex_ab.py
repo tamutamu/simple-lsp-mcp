@@ -18,7 +18,8 @@ class EvaluationTest(unittest.TestCase):
                 "study", "task", "arm", "repeat", "seconds", "input_tokens",
                 "mcp_calls", "accepted", "completed", "graded",
                 "valid_mcp_calls", "model", "effort", "agent_version", "mcp_binary_sha",
-                "source_commit", "policy_sha", "tasks_sha", "grader_sha"])
+                "source_commit", "policy_sha", "tasks_sha", "grader_sha",
+                "retry_count"])
             w.writeheader()
             for t in range(n_tasks):
                 for rep in range(1, repeats + 1):
@@ -28,14 +29,59 @@ class EvaluationTest(unittest.TestCase):
                                     mcp_calls=0, accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=0, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
-                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
+                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
+                                    retry_count=0))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
                                     accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=1, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
-                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
+                                    policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
+                                    retry_count=0))
+
+    def test_selected_retry_cannot_qualify(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "retried.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            rows[1]["retry_count"] = "1"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["all_trials_are_first_attempts_with_verified_provenance"])
+
+    def test_missing_retry_provenance_cannot_qualify(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "legacy.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                row.pop("retry_count")
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["all_trials_are_first_attempts_with_verified_provenance"])
+
+    def test_invalid_retry_count_rejected(self):
+        for invalid in ("-1", "1.0", "unknown"):
+            with self.subTest(value=invalid), tempfile.TemporaryDirectory() as td:
+                p = Path(td) / "invalid.csv"
+                self.write_trials(p, 2, 1, 0.6)
+                rows = list(csv.DictReader(p.open()))
+                rows[0]["retry_count"] = invalid
+                with p.open("w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    w.writeheader()
+                    w.writerows(rows)
+                with self.assertRaisesRegex(ValueError, "Invalid retry_count"):
+                    ab.read_paired(p, "controlled")
 
     def test_current_small_sample_never_qualifies(self):
         with tempfile.TemporaryDirectory() as td:
