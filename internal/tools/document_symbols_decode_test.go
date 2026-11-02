@@ -37,7 +37,7 @@ func TestDecodeDocumentSymbolResponseDistinguishesFlatFromHierarchical(t *testin
 }
 
 func TestDecodeDocumentSymbolResponseRejectsAmbiguousOrPartialShapes(t *testing.T) {
-	cases := map[string]json.RawMessage{
+	cases := map[string]string{
 		"mixed entries": `[{"name":"A","kind":12,"location":{}},
 			{"name":"B","kind":12,"range":{},"selectionRange":{}}]`,
 		"missing location and range": `[{"name":"A","kind":12}]`,
@@ -48,7 +48,7 @@ func TestDecodeDocumentSymbolResponseRejectsAmbiguousOrPartialShapes(t *testing.
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
-			tree, flat, _, err := decodeDocumentSymbolResponse(raw)
+			tree, flat, _, err := decodeDocumentSymbolResponse(json.RawMessage(raw))
 			var appErr *core.AppError
 			if !errors.As(err, &appErr) || appErr.Code != core.IncompleteSearch {
 				t.Fatalf("accepted malformed response: tree=%#v flat=%#v err=%v", tree, flat, err)
@@ -61,8 +61,8 @@ func TestDecodeDocumentSymbolResponseRejectsAmbiguousOrPartialShapes(t *testing.
 }
 
 func TestDecodeDocumentSymbolResponseAcceptsEmpty(t *testing.T) {
-	for _, raw := range []json.RawMessage{`[]`, `null`} {
-		tree, flat, hierarchical, err := decodeDocumentSymbolResponse(raw)
+	for _, raw := range []string{`[]`, `null`} {
+		tree, flat, hierarchical, err := decodeDocumentSymbolResponse(json.RawMessage(raw))
 		if err != nil || !hierarchical || len(tree) != 0 || len(flat) != 0 {
 			t.Fatalf("empty response %s: tree=%#v flat=%#v hierarchical=%v err=%v", raw, tree, flat, hierarchical, err)
 		}
