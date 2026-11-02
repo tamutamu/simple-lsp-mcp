@@ -16,18 +16,26 @@ class EvaluationTest(unittest.TestCase):
         with path.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=[
                 "study", "task", "arm", "repeat", "seconds", "input_tokens",
-                "mcp_calls", "accepted", "completed", "graded"])
+                "mcp_calls", "accepted", "completed", "graded",
+                "valid_mcp_calls", "model", "effort", "agent_version",
+                "source_commit", "policy_sha", "grader_sha"])
             w.writeheader()
             for t in range(n_tasks):
                 for rep in range(1, repeats + 1):
                     base = 10 + t
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="baseline",
                                     repeat=rep, seconds=base, input_tokens=base*1000,
-                                    mcp_calls=0, accepted=True, completed=True, graded=True))
+                                    mcp_calls=0, accepted=True, completed=True, graded=True,
+                                    valid_mcp_calls=0, model="model-pinned", effort="low",
+                                    agent_version="codex-1", source_commit="source-commit",
+                                    policy_sha="policy-digest", grader_sha="grader-digest"))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
-                                    accepted=True, completed=True, graded=True))
+                                    accepted=True, completed=True, graded=True,
+                                    valid_mcp_calls=1, model="model-pinned", effort="low",
+                                    agent_version="codex-1", source_commit="source-commit",
+                                    policy_sha="policy-digest", grader_sha="grader-digest"))
 
     def test_current_small_sample_never_qualifies(self):
         with tempfile.TemporaryDirectory() as td:
@@ -120,12 +128,75 @@ class EvaluationTest(unittest.TestCase):
             self.assertFalse(result["readiness"]["treatment_quality_at_least_baseline"])
             self.assertFalse(result["qualified_product_efficiency"])
 
+
+    def test_attempted_but_failed_mcp_call_cannot_prove_product_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "failed-mcp.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                if row["arm"] == "mcp" and row["task"] == "task0" and row["repeat"] == "1":
+                    row["valid_mcp_calls"] = "0"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["qualified_product_efficiency"])
+            self.assertFalse(result["readiness"]["treatment_mcp_usage_matches_policy"])
+
+    def test_baseline_mcp_contamination_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "contaminated.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            rows[0]["mcp_calls"] = "1"
+            rows[0]["valid_mcp_calls"] = "1"
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["readiness"]["baseline_has_no_mcp_calls"])
+            self.assertFalse(result["qualified_product_efficiency"])
+
+    def test_mixed_model_or_grader_cannot_pass(self):
+        for field in ("model", "effort", "agent_version", "source_commit",
+                      "policy_sha", "grader_sha"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as td:
+                p = Path(td) / "mismatched.csv"
+                self.write_trials(p, 30, 4, 0.6)
+                rows = list(csv.DictReader(p.open()))
+                rows[1][field] = "other"
+                with p.open("w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    w.writeheader()
+                    w.writerows(rows)
+                result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+                self.assertFalse(result["readiness"]["same_pinned_agent_source_policy_and_grader"])
+                self.assertFalse(result["qualified_product_efficiency"])
+
+    def test_missing_trace_provenance_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "unverified.csv"
+            self.write_trials(p, 30, 4, 0.6)
+            rows = list(csv.DictReader(p.open()))
+            for row in rows:
+                row.pop("valid_mcp_calls")
+            with p.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                w.writerows(rows)
+            result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+            self.assertFalse(result["readiness"]["trace_verified_mcp_call_counts"])
+            self.assertFalse(result["qualified_product_efficiency"])
+
     def test_duplicate_trial_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "dupe.csv"
             self.write_trials(p, 2, 1, 0.9)
             with p.open("a") as f:
-                f.write("controlled,task0,mcp,1,9,9000,1,true,true,true\n")
+                f.write("controlled,task0,mcp,1,9,9000,1,true,true,true,1,model-pinned,low,codex-1,source-commit,policy-digest,grader-digest\n")
             with self.assertRaisesRegex(ValueError, "Duplicate trial"):
                 ab.read_paired(p, "controlled")
 
