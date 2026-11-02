@@ -40,6 +40,7 @@ func selectEditContext(source []byte, symbolRange core.Range, code string, maxCo
 	// statement at the same indentation; allow indented multiline arguments.
 	from := start
 	indent := len(lines[start]) - len(strings.TrimLeft(lines[start], " \t"))
+	decoratorScan:
 	for i := start - 1; i >= 0 && start-i <= maxEditContextLookback; i-- {
 		trimmed := strings.TrimSpace(lines[i])
 		if trimmed == "" {
@@ -57,7 +58,7 @@ func selectEditContext(source []byte, symbolRange core.Range, code string, maxCo
 			strings.HasPrefix(trimmed, "#")):
 			// Closing parenthesis or a comment within a decorator block.
 		default:
-			i = -1 // End the scan without widening the dependency boundary.
+			break decoratorScan // Do not widen the dependency boundary.
 		}
 	}
 	if from < start {
