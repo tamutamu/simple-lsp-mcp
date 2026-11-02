@@ -60,6 +60,31 @@ def _has_nested_error(value):
     return False
 
 
+
+def _has_meaningful_payload(value):
+    """A completed MCP response is not useful when its JSON body is empty.
+
+    Empty arrays, objects, null, booleans and success-only envelopes cannot
+    establish that an agent received semantic source information.
+    """
+    if isinstance(value, str):
+        value = value.strip()
+        if not value or value.lower().startswith(
+                ("error:", "error ", "mcp error", "lsp error")):
+            return False
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return True  # Non-JSON source text is a valid MCP result.
+        return _has_meaningful_payload(decoded)
+    if isinstance(value, list):
+        return any(_has_meaningful_payload(part) for part in value)
+    if isinstance(value, dict):
+        return any(_has_meaningful_payload(part) for key, part in value.items()
+                   if key not in ("success", "ok", "status", "isError", "is_error"))
+    return False
+
+
 def successful_mcp_call(item):
     """Count a call only if its trace contains a non-error MCP response.
 
@@ -89,17 +114,10 @@ def successful_mcp_call(item):
                 continue
             try: payload=json.loads(text)
             except ValueError:
-                # Non-JSON text is legitimate for other MCP tools, but a
-                # plain error string is not successful semantic evidence.
-                if text.lstrip().lower().startswith(("error:", "error ", "mcp error", "lsp error")):
-                    return False
-            else:
-                if _has_nested_error(payload):
-                    return False
-                if isinstance(payload, str) and payload.lstrip().lower().startswith(
-                        ("error:", "error ", "mcp error", "lsp error")):
-                    return False
-            useful=True
+                payload=text
+            if _has_nested_error(payload):
+                return False
+            useful = useful or _has_meaningful_payload(payload)
         elif part.get("type") in ("image","resource","resource_link","audio"):
             useful=True
     return useful or (isinstance(structured,dict) and bool(structured))
