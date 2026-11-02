@@ -96,12 +96,14 @@ def successful_mcp_call(item):
 def evaluate(o,case,mode,rep):
     directory=o.output/"runs"/f"{case}-{mode}-{rep}"
     record=directory/"outcome.json"
+    retry_count=0
     if o.resume and record.exists():
         old=json.loads(record.read_text())
         if old["completed"] or not o.retry_incomplete:return old
         archive=o.output/"incomplete-attempts"/directory.name
         archive.parent.mkdir(parents=True,exist_ok=True)
         if archive.exists():raise RuntimeError("Archived trial exists: "+str(archive))
+        retry_count=int(old.get("retry_count",0))+1
         directory.rename(archive)
     if directory.exists():raise RuntimeError("Refusing to overwrite trial "+str(directory))
     directory.mkdir(parents=True)
@@ -145,7 +147,8 @@ def evaluate(o,case,mode,rep):
     mcp=[i for i in items if i.get("type")=="mcp_tool_call" and i.get("server")=="simple-lsp"]
     mcpok=[i for i in mcp if successful_mcp_call(i)]
     use=finished[-1].get("usage",{}) if finished else {}
-    row=dict(case=case,mode=mode,repeat=rep,seconds=elapsed,exitcode=exitcode,
+    row=dict(study="coding-required",case=case,mode=mode,repeat=rep,
+             retry_count=retry_count,seconds=elapsed,exitcode=exitcode,
              completed=exitcode==0 and bool(finished) and not bad,
              input_tokens=use.get("input_tokens"),cached_tokens=use.get("cached_input_tokens"),
              output_tokens=use.get("output_tokens"),reasoning_tokens=use.get("reasoning_output_tokens"),
@@ -186,7 +189,7 @@ def grade(o,records):
         print("GRADE",r["case"],r["mode"],r["repeat"],r["accepted"],flush=True)
 
 def report(o,rows):
-    fields=("case","mode","repeat","seconds","exitcode","completed","graded","accepted",
+    fields=("study","case","mode","repeat","retry_count","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
             "mcp_calls","valid_mcp_calls","command_calls",
             "model","effort","agent_version","mcp_binary_sha","source_commit","policy_sha","tasks_sha","grader_sha")
