@@ -107,6 +107,7 @@ def prepare(source, work):
 def execute_trial(args, case, mode, rep):
     directory = args.output / "runs" / (case + "-" + mode + "-" + str(rep))
     result_file = directory / "result.json"
+    retry_count = 0
     if args.resume and result_file.exists():
         existing = json.loads(result_file.read_text())
         if existing["completed"] or not args.retry_incomplete:
@@ -118,6 +119,9 @@ def execute_trial(args, case, mode, rep):
         if archived.exists():
             raise RuntimeError("Archived failed attempt already exists: " + str(archived))
         directory.rename(archived)
+        # A successful rerun after a failed attempt is selected evidence,
+        # not an independent preregistered trial.
+        retry_count = int(existing.get("retry_count", 0)) + 1
     if directory.exists():
         raise RuntimeError("Existing incomplete trial: " + str(directory))
     directory.mkdir(parents=True)
@@ -173,7 +177,8 @@ def execute_trial(args, case, mode, rep):
                        and e["message"].get("model")}
     actual_model = next(iter(observed_models)) if len(observed_models) == 1 else ""
     row = {
-        "study": STUDY, "case": case, "mode": mode, "repeat": rep, "seconds": elapsed,
+        "study": STUDY, "case": case, "mode": mode, "repeat": rep,
+        "retry_count": retry_count, "seconds": elapsed,
         "exit_code": exitcode, "completed": bool(final) and exitcode == 0
                      and final.get("subtype") == "success" and not final.get("is_error"),
         "cost_usd": final.get("total_cost_usd"), "turns": final.get("num_turns"),
@@ -233,7 +238,7 @@ def score(args, rows):
 
 def report(args, rows):
     path = args.output / "results.csv"
-    keys = ("study", "case", "mode", "repeat", "seconds", "exit_code", "completed",
+    keys = ("study", "case", "mode", "repeat", "retry_count", "seconds", "exit_code", "completed",
             "cost_usd", "turns", "tool_calls", "repeated_tool_calls", "command_calls", "mcp_calls",
             "valid_mcp_calls", "native_lsp_calls", "input_tokens",
             "uncached_input_tokens", "cached_tokens", "output_tokens",
@@ -282,7 +287,7 @@ def main():
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--retry-incomplete", action="store_true",
-                    help="With --resume, archive quota/timeouts and rerun only incomplete trials")
+                    help="With --resume, archive failures; retried trials cannot qualify")
     ap.add_argument("--rescore-only", action="store_true",
                     help="Re-evaluate existing completed agent runs; do not call the model")
     ap.add_argument("--skip-network-check", action="store_true")
