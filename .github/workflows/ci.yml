@@ -23,6 +23,7 @@ jobs:
       - name: Check predeclared Codex evaluation gates
         run: |
           python3 -m unittest discover -s docs/benchmarks -p 'test_analyze_codex_ab.py' -v
+          python3 -m unittest discover -s docs/benchmarks -p 'test_claude_trace.py' -v
           python3 docs/benchmarks/analyze_codex_ab.py \
             --csv docs/benchmarks/codex-fastapi-ab-2026-11-01.csv \
             --study coding-required > /tmp/codex-ab-audit.json
