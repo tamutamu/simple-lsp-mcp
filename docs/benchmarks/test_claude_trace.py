@@ -69,6 +69,27 @@ class TraceTest(unittest.TestCase):
             "valid_mcp_calls": 1, "command_calls": 1, "native_lsp_calls": 0,
             "repeated_tool_calls": 0})
 
+    def test_nested_json_mcp_errors_do_not_count_as_successful_semantics(self):
+        def assistant(ident):
+            return {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": ident,
+                 "name": "mcp__simple-lsp__inspect_symbol"}]}}
+        def response(ident, payload):
+            return {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": ident,
+                 "content": [{"type": "text", "text": payload}]}]}}
+        events = [
+            assistant("array"),
+            response("array", '[{"result":{"error":{"code":"INCOMPLETE_SEARCH"}}}]'),
+            assistant("nested"),
+            response("nested", '{"result":{"data":{"error":{"code":"LSP_FAILED"}}}}'),
+            assistant("valid"),
+            response("valid", '{"result":{"source":"def f(): pass","references":[]}}'),
+        ]
+        counts = trace_tool_counts(events)
+        self.assertEqual(counts["mcp_calls"], 3)
+        self.assertEqual(counts["valid_mcp_calls"], 1)
+
     def test_identical_tool_inputs_counted_without_confusing_distinct_reads(self):
         events = [{"type": "assistant", "message": {"content": [
             {"type": "tool_use", "id": "a", "name": "Read", "input": {"file_path": "x.py"}},
