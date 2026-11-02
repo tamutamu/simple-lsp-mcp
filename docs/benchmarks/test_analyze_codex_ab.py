@@ -88,6 +88,7 @@ class EvaluationTest(unittest.TestCase):
             for row in rows:
                 if row["arm"] == "mcp" and row["task"] == "task0" and row["repeat"] == "1":
                     row["mcp_calls"] = "0"
+                    row["valid_mcp_calls"] = "0"
             with p.open("w", newline="") as f:
                 w = csv.DictWriter(f, fieldnames=rows[0].keys())
                 w.writeheader()
