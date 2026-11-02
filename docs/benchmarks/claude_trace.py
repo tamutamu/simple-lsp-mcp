@@ -51,11 +51,22 @@ def token_usage(final):
             "cached_tokens": values[1] + values[2], "output_tokens": values[3]}
 
 
+def _has_nested_error(value):
+    """Detect errors hidden inside JSON arrays or nested structured MCP results."""
+    if isinstance(value, dict):
+        if "error" in value or value.get("isError") or value.get("is_error"):
+            return True
+        return any(_has_nested_error(part) for part in value.values())
+    if isinstance(value, list):
+        return any(_has_nested_error(part) for part in value)
+    return False
+
+
 def _has_successful_content(content):
     if isinstance(content, list):
         return bool(content) and all(_has_successful_content(part) for part in content)
     if isinstance(content, dict):
-        if content.get("isError") or content.get("is_error") or "error" in content:
+        if _has_nested_error(content):
             return False
         if content.get("type") == "text":
             return _has_successful_content(content.get("text"))
@@ -71,10 +82,9 @@ def _has_successful_content(content):
         decoded = json.loads(s)
     except (TypeError, ValueError):
         return True
-    if isinstance(decoded, dict) and ("error" in decoded or decoded.get("isError")
-                                      or decoded.get("is_error")):
-        return False
-    return bool(decoded)
+    # A JSON array of error objects (or an error nested under "result")
+    # used to pass as a valid semantic response merely because it was nonempty.
+    return bool(decoded) and not _has_nested_error(decoded)
 
 
 def successful_tool_result(part):
