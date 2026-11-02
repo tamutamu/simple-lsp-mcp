@@ -98,6 +98,19 @@ func TestWalkDocumentDisambiguatesSuffixLikeLiteralNames(t *testing.T) {
 	}
 }
 
+func TestFlatDocumentSymbolPathsAreUniqueWithSuffixLikeNames(t *testing.T) {
+	flat := []protocol.SymbolInformation{
+		{Name: "Run"}, {Name: "Run"}, {Name: "Run#2"}, {Name: ""},
+	}
+	got := flatSymbolSegments(flat)
+	want := []string{"Run", "Run#3", "Run#2", "#3"}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("flat symbol %d: got %q, want %q", i, got[i], w)
+		}
+	}
+}
+
 func TestWalkDocumentAnonymousNamesDoNotCollideWithLiteralNames(t *testing.T) {
 	vs := []protocol.DocumentSymbol{
 		{Name: ""}, {Name: "#0"}, {Name: "#0#2"}, {Name: ""},
