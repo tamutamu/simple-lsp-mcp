@@ -119,6 +119,7 @@ def evaluate(o,case,mode,rep):
              mcp_calls=len(mcp),valid_mcp_calls=len(mcpok),
              model=o.model,effort=o.effort,agent_version=o.agent_version,
              source_commit=SHA,policy_sha=hashlib.sha256(POLICY.encode()).hexdigest(),
+             tasks_sha=hashlib.sha256((BASE/"docs/benchmarks/fastapi-template-tasks.json").read_bytes()).hexdigest(),
              grader_sha=hashlib.sha256(GRADER.read_bytes()).hexdigest(),
              mcp_tools=[x.get("tool") for x in mcp],
              command_calls=sum(i.get("type")=="command_execution" for i in items),
@@ -154,7 +155,7 @@ def report(o,rows):
     fields=("case","mode","repeat","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
             "mcp_calls","valid_mcp_calls","command_calls",
-            "model","effort","agent_version","source_commit","policy_sha","grader_sha")
+            "model","effort","agent_version","source_commit","policy_sha","tasks_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
         for r in sorted(rows,key=lambda x:(x["case"],x["mode"],x["repeat"])):
