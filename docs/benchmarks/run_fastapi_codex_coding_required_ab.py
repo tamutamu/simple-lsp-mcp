@@ -103,7 +103,7 @@ def successful_mcp_call(item):
     structured=result.get("structured_content",result.get("structuredContent"))
     content=result.get("content")
     if not isinstance(content,list):
-        return isinstance(structured,dict) and bool(structured)
+        return isinstance(structured,dict) and _has_meaningful_payload(structured)
     useful=False
     for part in content:
         if not isinstance(part,dict):
@@ -120,7 +120,7 @@ def successful_mcp_call(item):
             useful = useful or _has_meaningful_payload(payload)
         elif part.get("type") in ("image","resource","resource_link","audio"):
             useful=True
-    return useful or (isinstance(structured,dict) and bool(structured))
+    return useful or (isinstance(structured,dict) and _has_meaningful_payload(structured))
 
 
 
