@@ -93,6 +93,40 @@ def successful_mcp_call(item):
     return useful or (isinstance(structured,dict) and bool(structured))
 
 
+
+def trace_mcp_calls(events):
+    """Return every attempted Simple LSP call and only verified successful ones.
+
+    Codex emits item.started, item.updated and item.completed/item.failed for
+    the same id. Counting only item.completed hides failed and interrupted
+    attempts, corrupting the baseline-is-MCP-free audit and call efficiency.
+    A missing id cannot safely be coalesced with another event.
+    """
+    attempts = {}
+    successful = {}
+    for index, event in enumerate(events):
+        kind = event.get("type")
+        if kind not in ("item.started", "item.updated", "item.completed", "item.failed"):
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "mcp_tool_call":
+            continue
+        if item.get("server") != "simple-lsp":
+            continue
+        identifier = item.get("id")
+        key = identifier if isinstance(identifier, str) and identifier else ("unknown", index)
+        if key not in attempts or kind in ("item.completed", "item.failed"):
+            attempts[key] = item
+        if kind == "item.failed":
+            successful.pop(key, None)
+        elif kind == "item.completed":
+            if successful_mcp_call(item):
+                successful[key] = item
+            else:
+                successful.pop(key, None)
+    return list(attempts.values()), list(successful.values())
+
+
 def evaluate(o,case,mode,rep):
     directory=o.output/"runs"/f"{case}-{mode}-{rep}"
     record=directory/"outcome.json"
@@ -144,8 +178,7 @@ def evaluate(o,case,mode,rep):
     finished=[e for e in events if e.get("type")=="turn.completed"]
     bad=any(e.get("type")=="turn.failed" for e in events)
     items=[e["item"] for e in events if e.get("type")=="item.completed" and isinstance(e.get("item"),dict)]
-    mcp=[i for i in items if i.get("type")=="mcp_tool_call" and i.get("server")=="simple-lsp"]
-    mcpok=[i for i in mcp if successful_mcp_call(i)]
+    mcp,mcpok=trace_mcp_calls(events)
     use=finished[-1].get("usage",{}) if finished else {}
     row=dict(study="coding-required",case=case,mode=mode,repeat=rep,
              retry_count=retry_count,seconds=elapsed,exitcode=exitcode,
@@ -184,7 +217,7 @@ def grade(o,records):
         ok_diff=call(["git","diff","--check"],cwd=root).returncode==0
         r["grader"]=judge;r["graded"]=True
         r["syntax_ok"]=ok_syntax;r["diff_ok"]=ok_diff
-        r["accepted"]=bool(judge.get("success") and ok_syntax and ok_diff)
+        r["accepted"]=bool(p.returncode==0 and judge.get("success") and ok_syntax and ok_diff)
         (root.parent/"outcome.json").write_text(json.dumps(r,indent=2)+"\n")
         print("GRADE",r["case"],r["mode"],r["repeat"],r["accepted"],flush=True)
 
