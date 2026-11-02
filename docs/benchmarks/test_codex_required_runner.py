@@ -120,7 +120,7 @@ class RequiredABProvenanceTest(unittest.TestCase):
 
             def fake_call(argv, **kwargs):
                 if "fastapi-template-grader.py" in " ".join(map(str, argv)):
-                    return SimpleNamespace(returncode=1, stdout='{"success": true}\\n', stderr="")
+                    return SimpleNamespace(returncode=1, stdout='{"success": true}', stderr="")
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             with patch.object(runner, "call", side_effect=fake_call):
