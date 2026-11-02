@@ -257,28 +257,65 @@ func (e *Engine) renderInspected(d document.Document, selected symbolNode, view 
 // position chooses the smallest enclosing code scope, not a random local
 // variable or a same-named declaration elsewhere.
 func findInspectNode(nodes []symbolNode, position core.Position, exactOnly bool) (symbolNode, error) {
-	var exact, enclosing symbolNode
-	exactFound, enclosingFound := false, false
+	var exact []symbolNode
+	var enclosing []symbolNode
 	var walk func([]symbolNode)
 	walk = func(items []symbolNode) {
 		for _, node := range items {
 			if node.SelectionRange.Start == position {
-				exact, exactFound = node, true
+				exact = append(exact, node)
 			}
 			if !exactOnly && isStructuralSymbol(node.Kind) && inspectRangeContains(node.Range, position) {
-				enclosing, enclosingFound = node, true
+				enclosing = append(enclosing, node)
 			}
 			walk(node.Children)
 		}
 	}
 	walk(nodes)
-	if exactFound {
-		return exact, nil
+	// A selection position is not a unique identity when the LSP returns
+	// overlapping or duplicated declarations. Never silently choose the last.
+	if len(exact) > 1 {
+		return symbolNode{}, core.NewError(core.AmbiguousSymbol, "multiple LSP declarations share the requested selection position")
 	}
-	if enclosingFound {
-		return enclosing, nil
+	if len(exact) == 1 {
+		return exact[0], nil
 	}
-	return symbolNode{}, core.NewError(core.SymbolNotFound, "no LSP declaration at or enclosing the requested position")
+	if len(enclosing) == 0 {
+		return symbolNode{}, core.NewError(core.SymbolNotFound, "no LSP declaration at or enclosing the requested position")
+	}
+
+	// Find the unique innermost scope by range containment, not traversal
+	// order. Flat or malformed LSP symbol lists may contain overlapping
+	// siblings; guessing a scope would return unrelated code to the agent.
+	best := enclosing[0]
+	for _, candidate := range enclosing[1:] {
+		if inspectRangeStrictlyContains(best.Range, candidate.Range) {
+			best = candidate
+		}
+	}
+	equal := 0
+	for _, candidate := range enclosing {
+		if candidate.Range == best.Range {
+			equal++
+			continue
+		}
+		if !inspectRangeStrictlyContains(candidate.Range, best.Range) {
+			return symbolNode{}, core.NewError(core.AmbiguousSymbol, "overlapping LSP scopes enclose the requested position")
+		}
+	}
+	if equal != 1 {
+		return symbolNode{}, core.NewError(core.AmbiguousSymbol, "multiple LSP scopes have the same enclosing range")
+	}
+	return best, nil
+}
+
+func inspectRangeStrictlyContains(outer, inner core.Range) bool {
+	beforeOrEqual := func(a, b core.Position) bool {
+		return a.Line < b.Line || a.Line == b.Line && a.Column <= b.Column
+	}
+	return outer != inner &&
+		beforeOrEqual(outer.Start, inner.Start) &&
+		beforeOrEqual(inner.End, outer.End)
 }
 
 func inspectRangeContains(r core.Range, p core.Position) bool {
