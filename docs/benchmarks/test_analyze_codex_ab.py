@@ -34,7 +34,7 @@ class EvaluationTest(unittest.TestCase):
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
                                     accepted=True, completed=True, graded=True,
                                     valid_mcp_calls=1, model="model-pinned", effort="low",
-                                    agent_version="codex-1", source_commit="source-commit",
+                                    agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest"))
 
     def test_current_small_sample_never_qualifies(self):
