@@ -1,6 +1,7 @@
 """Regression tests for the Codex A/B runner's qualification provenance."""
 import csv
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -127,6 +128,74 @@ class RequiredABProvenanceTest(unittest.TestCase):
                 runner.grade(o, [row])
             self.assertTrue(row["graded"])
             self.assertFalse(row["accepted"])
+
+
+    def test_grader_timeout_is_a_recorded_rejection_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            work = output / "runs" / "search-baseline-1" / "checkout"
+            work.mkdir(parents=True)
+            row = self.trial("baseline")
+            row.update(workdir=str(work), case="search", graded=False, accepted=False)
+            o = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+
+            def fake_call(argv, **kwargs):
+                if "fastapi-template-grader.py" in " ".join(map(str, argv)):
+                    raise subprocess.TimeoutExpired(argv, 80)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.object(runner, "call", side_effect=fake_call):
+                runner.grade(o, [row])
+            self.assertTrue(row["graded"])
+            self.assertFalse(row["accepted"])
+            self.assertEqual(row["grader_exitcode"], 124)
+            self.assertIn("timed out", row["grader"]["error"])
+            saved = json.loads((work.parent / "outcome.json").read_text())
+            self.assertFalse(saved["accepted"])
+            runner.report(SimpleNamespace(output=output, model="fixed-model",
+                                          effort="low", cases=["search"]), [row])
+            self.assertTrue((output / "results.csv").is_file())
+
+    def test_truthy_string_grader_success_is_not_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "checkout"
+            work.mkdir()
+            row = self.trial("baseline")
+            row.update(workdir=str(work), case="search", graded=False, accepted=False)
+            o = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+
+            def fake_call(argv, **kwargs):
+                if "fastapi-template-grader.py" in " ".join(map(str, argv)):
+                    return SimpleNamespace(returncode=0, stdout='{"success": "false"}', stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.object(runner, "call", side_effect=fake_call):
+                runner.grade(o, [row])
+            self.assertTrue(row["graded"])
+            self.assertFalse(row["accepted"])
+
+    def test_syntax_check_timeout_rejects_without_losing_grader_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "checkout"
+            work.mkdir()
+            row = self.trial("baseline")
+            row.update(workdir=str(work), case="search", graded=False, accepted=False)
+            o = SimpleNamespace(python=Path("/usr/bin/python3"), postgres_url="")
+
+            def fake_call(argv, **kwargs):
+                cmd = " ".join(map(str, argv))
+                if "fastapi-template-grader.py" in cmd:
+                    return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
+                if "compileall" in cmd:
+                    raise subprocess.TimeoutExpired(argv, 60)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.object(runner, "call", side_effect=fake_call):
+                runner.grade(o, [row])
+            self.assertTrue(row["graded"])
+            self.assertFalse(row["syntax_ok"])
+            self.assertFalse(row["accepted"])
+            self.assertEqual(row["grader_exitcode"], 0)
 
 
 if __name__ == "__main__":

@@ -209,22 +209,34 @@ def grade(o,records):
             if not o.postgres_url:continue
             env["BENCH_POSTGRES_URL"]=o.postgres_url
             env["BENCH_ALLOW_DISPOSABLE_RESET"]="YES"
-        p=call([str(o.python),str(GRADER),str(root),r["case"]],
-               cwd=root,env=env,timeout=80)
+        try:
+            p=call([str(o.python),str(GRADER),str(root),r["case"]],
+                   cwd=root,env=env,timeout=80)
+        except subprocess.TimeoutExpired:
+            # A stalled independent grader is a failed acceptance trial, not
+            # a reason to lose the whole paired study and its CSV evidence.
+            p=subprocess.CompletedProcess([],124,"","Independent grader timed out after 80 seconds")
         try:judge=json.loads(p.stdout.splitlines()[-1])
         except (ValueError,IndexError):judge={"success":False,"error":(p.stderr+p.stdout)[-1000:]}
-        ok_syntax=call([str(o.python),"-m","compileall","-q",str(root/"backend/app")],cwd=root,timeout=60).returncode==0
+        if not isinstance(judge,dict):
+            judge={"success":False,"error":"Independent grader must return a JSON object"}
+        try:
+            ok_syntax=call([str(o.python),"-m","compileall","-q",str(root/"backend/app")],cwd=root,timeout=60).returncode==0
+        except subprocess.TimeoutExpired:
+            ok_syntax=False
         ok_diff=call(["git","diff","--check"],cwd=root).returncode==0
         r["grader"]=judge;r["graded"]=True
+        r["grader_exitcode"]=p.returncode
         r["syntax_ok"]=ok_syntax;r["diff_ok"]=ok_diff
-        r["accepted"]=bool(p.returncode==0 and judge.get("success") and ok_syntax and ok_diff)
+        # Truthy strings such as "false" must never pass independent grading.
+        r["accepted"]=bool(p.returncode==0 and judge.get("success") is True and ok_syntax and ok_diff)
         (root.parent/"outcome.json").write_text(json.dumps(r,indent=2)+"\n")
         print("GRADE",r["case"],r["mode"],r["repeat"],r["accepted"],flush=True)
 
 def report(o,rows):
     fields=("study","case","mode","repeat","retry_count","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
-            "mcp_calls","valid_mcp_calls","command_calls",
+            "mcp_calls","valid_mcp_calls","command_calls","grader_exitcode",
             "model","effort","agent_version","mcp_binary_sha","source_commit","policy_sha","tasks_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
