@@ -26,6 +26,8 @@ REPO = Path(__file__).resolve().parents[2]
 TASKS = json.loads((REPO / "docs/benchmarks/fastapi-template-tasks.json").read_text())
 GRADER = REPO / "docs/benchmarks/fastapi-template-grader.py"
 PINNED = "b1125d8839482cb7bbae603ddc6d0081bf87532e"
+# Required-use study identity must survive CSV export for preregistered analysis.
+STUDY = "claude-required"
 # Copy the exact same checked-in CLAUDE.md into baseline and treatment.
 # If the MCP is connected, this file REQUIRES an actual semantic LSP tool call.
 # If it is absent, the exact same file tells Claude to proceed normally.
@@ -171,7 +173,7 @@ def execute_trial(args, case, mode, rep):
                        and e["message"].get("model")}
     actual_model = next(iter(observed_models)) if len(observed_models) == 1 else ""
     row = {
-        "case": case, "mode": mode, "repeat": rep, "seconds": elapsed,
+        "study": STUDY, "case": case, "mode": mode, "repeat": rep, "seconds": elapsed,
         "exit_code": exitcode, "completed": bool(final) and exitcode == 0
                      and final.get("subtype") == "success" and not final.get("is_error"),
         "cost_usd": final.get("total_cost_usd"), "turns": final.get("num_turns"),
@@ -231,7 +233,7 @@ def score(args, rows):
 
 def report(args, rows):
     path = args.output / "results.csv"
-    keys = ("case", "mode", "repeat", "seconds", "exit_code", "completed",
+    keys = ("study", "case", "mode", "repeat", "seconds", "exit_code", "completed",
             "cost_usd", "turns", "tool_calls", "repeated_tool_calls", "command_calls", "mcp_calls",
             "valid_mcp_calls", "native_lsp_calls", "input_tokens",
             "uncached_input_tokens", "cached_tokens", "output_tokens",
