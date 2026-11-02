@@ -44,7 +44,17 @@ class TraceTest(unittest.TestCase):
             response("6", [{"type": "text", "text": "ok"}]),
         ]
         self.assertEqual(trace_tool_counts(events), {"tool_calls": 7, "mcp_calls": 6,
-            "valid_mcp_calls": 1, "command_calls": 1, "native_lsp_calls": 0})
+            "valid_mcp_calls": 1, "command_calls": 1, "native_lsp_calls": 0,
+            "repeated_tool_calls": 0})
+
+    def test_identical_tool_inputs_counted_without_confusing_distinct_reads(self):
+        events = [{"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "a", "name": "Read", "input": {"file_path": "x.py"}},
+            {"type": "tool_use", "id": "b", "name": "Read", "input": {"file_path": "x.py"}},
+            {"type": "tool_use", "id": "c", "name": "Read", "input": {"file_path": "y.py"}}]}}]
+        counts = trace_tool_counts(events)
+        self.assertEqual(counts["tool_calls"], 3)
+        self.assertEqual(counts["repeated_tool_calls"], 1)
 
     def test_empty_or_unmatched_results_are_not_success(self):
         events = [
