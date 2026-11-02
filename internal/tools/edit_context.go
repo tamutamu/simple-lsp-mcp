@@ -32,29 +32,40 @@ func selectEditContext(source []byte, symbolRange core.Range, code string, maxCo
 	}
 	var out editContext
 
-	// Decorators are immediately before a declaration, including multiline
-	// Python route decorators. Only scan until the nearest blank separator.
+	// Only the contiguous decorator block belongs to this declaration.
+	// A blank line is not required between module imports/bindings and a
+	// decorator. Previously the lookback crossed into those statements,
+	// causing the decorator to disappear AND excluding relevant dependencies
+	// from the import/binding scan below. Stop at a preceding declaration or
+	// statement at the same indentation; allow indented multiline arguments.
 	from := start
+	indent := len(lines[start]) - len(strings.TrimLeft(lines[start], " \t"))
+decoratorScan:
 	for i := start - 1; i >= 0 && start-i <= maxEditContextLookback; i-- {
-		if strings.TrimSpace(lines[i]) == "" {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
 			break
 		}
-		from = i
+		leading := len(lines[i]) - len(strings.TrimLeft(lines[i], " \t"))
+		switch {
+		case leading == indent && strings.HasPrefix(trimmed, "@"):
+			from = i
+		case leading > indent:
+			// Continuation lines of a multiline decorator. If these are
+			// instead the body of a preceding function, its declaration
+			// at the same indentation will stop this scan.
+		case leading == indent && (strings.HasPrefix(trimmed, ")") ||
+			strings.HasPrefix(trimmed, "#")):
+			// Closing parenthesis or a comment within a decorator block.
+		default:
+			break decoratorScan // Do not widen the dependency boundary.
+		}
 	}
 	if from < start {
-		hasDecorator := false
-		for i := from; i < start; i++ {
-			if strings.HasPrefix(strings.TrimSpace(lines[i]), "@") {
-				hasDecorator = true
-				break
-			}
-		}
-		if hasDecorator && strings.HasPrefix(strings.TrimSpace(lines[from]), "@") {
-			out.Prefix = strings.Join(lines[from:start], "")
-			if len(out.Prefix)+len(code) > maxCodeBytes {
-				out.Prefix = ""
-				out.Truncated = true
-			}
+		out.Prefix = strings.Join(lines[from:start], "")
+		if len(out.Prefix)+len(code) > maxCodeBytes {
+			out.Prefix = ""
+			out.Truncated = true
 		}
 	}
 
