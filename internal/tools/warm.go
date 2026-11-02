@@ -154,15 +154,13 @@ func (e *Engine) warmNameForPosition(ctx context.Context, p language.Profile, s 
 // LSP's negotiated UTF-8/16/32 position encoding. This is a *candidate filter*,
 // never a substitute for the language server's semantic resolution.
 func warmIdentifierAtPosition(text []byte, position protocol.Position, encoding string) string {
-	point, err := document.FromLSP(text, position, encoding)
+	point, sourceLine, err := document.FromLSPWithLine(text, position, encoding)
 	if err != nil {
 		return ""
 	}
-	lines := strings.Split(string(text), "\n")
-	if point.Line < 1 || point.Line > len(lines) {
-		return ""
-	}
-	line := []rune(strings.TrimSuffix(lines[point.Line-1], "\r"))
+	// Do not split and allocate the entire source for a single cursor.
+	// FromLSPWithLine already validated and extracted the requested line.
+	line := []rune(sourceLine)
 	offset := point.Column - 1
 	// JavaScript identifiers may spell a character as \\uXXXX or \\u{...}.
 	// Decode the token and cursor together so a position inside an escape
