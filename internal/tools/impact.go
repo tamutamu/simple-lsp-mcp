@@ -227,8 +227,21 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 		unmapped += missing
 		for _, ref := range refs {
 			key := ref.Owner.key()
-			next, exists := seen[key]
-			if !exists {
+			next, known := seen[key]
+			// Do not create unreachable/orphan nodes after the edge budget
+			// has been exhausted. Budget checks must precede mutations.
+			targetID := fmt.Sprintf("n%d", next)
+			if !known {
+				targetID = fmt.Sprintf("n%d", len(nodes))
+			}
+			from := nodes[item.index].ID
+			edgeKey := from+"->"+targetID
+			edgeIndex, alreadyEdge := edgeIndices[edgeKey]
+			if !alreadyEdge && len(edges) >= edgeLimit {
+				reasons["max_edges"] = true
+				continue
+			}
+			if !known {
 				if len(nodes) >= nodeLimit {
 					reasons["max_nodes"] = true
 					continue
@@ -236,17 +249,10 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 				next = addNode(ref.Owner, item.depth+1)
 				queue = append(queue, work{symbol: ref.Owner, index: next, depth: item.depth+1})
 			}
-			from, to := nodes[item.index].ID, nodes[next].ID
-			edgeKey := from+"->"+to
-			edgeIndex, exists := edgeIndices[edgeKey]
-			if !exists {
-				if len(edges) >= edgeLimit {
-					reasons["max_edges"] = true
-					continue
-				}
+			if !alreadyEdge {
 				edgeIndex = len(edges)
 				edgeIndices[edgeKey] = edgeIndex
-				edges = append(edges, impactEdge{From: from, To: to})
+				edges = append(edges, impactEdge{From: from, To: nodes[next].ID})
 			}
 			edge := &edges[edgeIndex]
 			edge.ReferenceCount++
