@@ -87,6 +87,17 @@ def read_paired(path, study, treatment="mcp"):
             row["retry_count"] = count
         else:
             row["retry_count"] = 0
+        # Independent acceptance must include successful syntax and diff checks.
+        # A grader exit code of zero alone cannot prove these checks ran.
+        row["checks_verified"] = all(
+            row.get(field) in ("True", "False", "true", "false", True, False)
+            for field in ("syntax_ok", "diff_check_ok")
+        )
+        row["checks_passed"] = (
+            row["checks_verified"]
+            and parse_bool(row["syntax_ok"])
+            and parse_bool(row["diff_check_ok"])
+        )
         row["accepted"] = parse_bool(row.get("accepted", "false"))
         # A self-reported graded/accepted flag is insufficient: the independent
         # grader must actually have completed with a successful process exit.
@@ -192,6 +203,8 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             acceptance[treatment]["accepted"] >= acceptance["baseline"]["accepted"]),
         "trials_have_explicit_completion_and_grading": all(
             a["evidence_verified"] for a in (treatments + baselines)),
+        "independent_syntax_and_diff_checks_passed": all(
+            a["checks_passed"] for a in (treatments + baselines)),
         "independent_grader_exited_successfully_in_every_trial": all(
             a["grader_exit_verified"] and a["grader_exitcode"] == 0
             for a in (treatments + baselines)),
