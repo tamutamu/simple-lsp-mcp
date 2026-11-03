@@ -9,10 +9,10 @@ import (
 )
 
 var expectedTools = []string{
-	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics",
+	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics", "analyze_impact",
 	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
-	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "analyze_impact",
+	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
 }
 
 func TestMinimalLSPToolSurface(t *testing.T) {
