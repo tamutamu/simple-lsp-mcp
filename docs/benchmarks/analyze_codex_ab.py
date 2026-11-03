@@ -87,6 +87,19 @@ def read_paired(path, study, treatment="mcp"):
             row["retry_count"] = count
         else:
             row["retry_count"] = 0
+        # An agent process that exited unsuccessfully cannot be accepted even
+        # if stale or forged completion/acceptance fields claim success.
+        # Historical CSVs without an exit code remain exploratory only.
+        agent_exit_raw = row.get("exitcode")
+        row["agent_exit_verified"] = agent_exit_raw not in (None, "")
+        if row["agent_exit_verified"]:
+            try:
+                agent_exitcode = int(agent_exit_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid agent exitcode in {key}, {arm}") from exc
+            if str(agent_exitcode) != str(agent_exit_raw).strip():
+                raise ValueError(f"Invalid agent exitcode in {key}, {arm}")
+            row["exitcode"] = agent_exitcode
         # Independent acceptance must include successful syntax and diff checks.
         # A grader exit code of zero alone cannot prove these checks ran.
         row["checks_verified"] = all(
@@ -205,6 +218,9 @@ def evaluate(pairs, treatment="mcp", min_tasks=20, min_repeats=3,
             a["evidence_verified"] for a in (treatments + baselines)),
         "independent_syntax_and_diff_checks_passed": all(
             a["checks_passed"] for a in (treatments + baselines)),
+        "agent_exited_successfully_in_every_trial": all(
+            a["agent_exit_verified"] and a["exitcode"] == 0
+            for a in (treatments + baselines)),
         "independent_grader_exited_successfully_in_every_trial": all(
             a["grader_exit_verified"] and a["grader_exitcode"] == 0
             for a in (treatments + baselines)),
