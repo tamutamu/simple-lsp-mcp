@@ -8,7 +8,6 @@ import (
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/document"
 	"github.com/tamutamu/simple-lsp-mcp/internal/language"
-	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/session"
 )
 
