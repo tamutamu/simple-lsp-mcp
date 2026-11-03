@@ -60,6 +60,70 @@ func TestWorkspaceEditPlanPreviewAndApply(t *testing.T) {
 	}
 }
 
+func TestCompactRenamePreviewBoundsLargeEditOutput(t *testing.T) {
+	edits := make([]editPreview, 300)
+	for i := range edits {
+		edits[i] = editPreview{
+			Range: core.Range{
+				Start: core.Position{Line: i + 1, Column: 1},
+				End: core.Position{Line: i + 1, Column: 8},
+			},
+			NewText: "replacementIdentifier",
+		}
+	}
+	original := map[string]any{
+		"new_name": "replacementIdentifier",
+		"applied": false,
+		"file_count": 1,
+		"edit_count": len(edits),
+		"files": []fileEditPreview{{Path: "src/example.ts", Edits: edits}},
+	}
+	fullBytes, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact := compactRenamePreview(original)
+	compactBytes, err := json.Marshal(compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compactBytes)*4 >= len(fullBytes) {
+		t.Fatalf("large rename output was not meaningfully reduced: full=%d compact=%d", len(fullBytes), len(compactBytes))
+	}
+	if compact["edit_count"] != len(edits) || compact["file_count"] != 1 || compact["applied"] != false {
+		t.Fatalf("rename result lost validated edit totals: %#v", compact)
+	}
+	if compact["preview_truncated"] != true {
+		t.Fatal("partial display was not explicitly marked")
+	}
+	files, ok := compact["files"].([]map[string]any)
+	if !ok || len(files) != 1 {
+		t.Fatalf("missing summarized file: %#v", compact["files"])
+	}
+	if files[0]["edit_count"] != 300 || files[0]["omitted_edits"] != 298 || files[0]["path"] != "src/example.ts" {
+		t.Fatalf("inaccurate edit counts: %#v", files[0])
+	}
+	if edits[299].NewText != "replacementIdentifier" {
+		t.Fatal("preview compacting unexpectedly mutated semantic edit data")
+	}
+}
+
+func TestCompactRenamePreviewLeavesSmallResultsComplete(t *testing.T) {
+	edits := []editPreview{{
+		Range: core.Range{Start: core.Position{Line: 1, Column: 1}},
+		NewText: "Next",
+	}}
+	result := map[string]any{"edit_count": 1, "files": []fileEditPreview{{Path: "a.go", Edits: edits}}}
+	got := compactRenamePreview(result)
+	if _, ok := got["preview_truncated"]; ok {
+		t.Fatal("small rename preview was unnecessarily truncated")
+	}
+	files, ok := got["files"].([]fileEditPreview)
+	if !ok || len(files) != 1 || len(files[0].Edits) != 1 || files[0].Edits[0].NewText != "Next" {
+		t.Fatalf("small rename lost edit detail: %#v", got)
+	}
+}
+
 func TestWorkspaceEditPlanRejectsOutsideWorkspace(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.go")
