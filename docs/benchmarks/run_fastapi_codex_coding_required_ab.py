@@ -308,7 +308,7 @@ def grade(o,records):
         ok_diff=call(["git","diff","--check"],cwd=root).returncode==0
         r["grader"]=judge;r["graded"]=True
         r["grader_exitcode"]=p.returncode
-        r["syntax_ok"]=ok_syntax;r["diff_ok"]=ok_diff
+        r["syntax_ok"]=ok_syntax;r["diff_check_ok"]=ok_diff
         # Truthy strings such as "false" must never pass independent grading.
         r["accepted"]=bool(p.returncode==0 and judge.get("success") is True and ok_syntax and ok_diff)
         (root.parent/"outcome.json").write_text(json.dumps(r,indent=2)+"\n")
@@ -318,6 +318,7 @@ def report(o,rows):
     fields=("study","case","mode","repeat","retry_count","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","uncached_input_tokens","output_tokens","reasoning_tokens",
             "mcp_calls","valid_mcp_calls","command_calls","repeated_tool_calls","grader_exitcode",
+            "syntax_ok","diff_check_ok",
             "model","effort","agent_version","mcp_binary_sha","source_commit","policy_sha","tasks_sha","grader_sha")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()

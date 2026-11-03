@@ -19,7 +19,7 @@ class EvaluationTest(unittest.TestCase):
                 "mcp_calls", "accepted", "completed", "graded",
                 "valid_mcp_calls", "model", "effort", "agent_version", "mcp_binary_sha",
                 "source_commit", "policy_sha", "tasks_sha", "grader_sha",
-                "retry_count", "grader_exitcode"])
+                "retry_count", "grader_exitcode", "syntax_ok", "diff_check_ok"])
             w.writeheader()
             for t in range(n_tasks):
                 for rep in range(1, repeats + 1):
@@ -30,7 +30,7 @@ class EvaluationTest(unittest.TestCase):
                                     valid_mcp_calls=0, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
-                                    retry_count=0, grader_exitcode=0))
+                                    retry_count=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
@@ -38,7 +38,7 @@ class EvaluationTest(unittest.TestCase):
                                     valid_mcp_calls=1, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
-                                    retry_count=0, grader_exitcode=0))
+                                    retry_count=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
 
 
     def test_failed_or_unverified_independent_grader_cannot_qualify(self):
@@ -66,6 +66,28 @@ class EvaluationTest(unittest.TestCase):
                     self.assertFalse(result["qualified_product_efficiency"])
                     self.assertFalse(result["readiness"][
                         "independent_grader_exited_successfully_in_every_trial"])
+
+    def test_missing_or_failed_syntax_diff_check_cannot_qualify(self):
+        for scenario in ("missing", "syntax_failed", "diff_failed"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as td:
+                p = Path(td) / "checks.csv"
+                self.write_trials(p, 30, 4, 0.6)
+                rows = list(csv.DictReader(p.open()))
+                if scenario == "missing":
+                    for row in rows:
+                        row.pop("syntax_ok")
+                        row.pop("diff_check_ok")
+                elif scenario == "syntax_failed":
+                    rows[1]["syntax_ok"] = "False"
+                else:
+                    rows[1]["diff_check_ok"] = "False"
+                with p.open("w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    w.writeheader()
+                    w.writerows(rows)
+                result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+                self.assertFalse(result["qualified_product_efficiency"])
+                self.assertFalse(result["readiness"]["independent_syntax_and_diff_checks_passed"])
 
     def test_selected_retry_cannot_qualify(self):
         with tempfile.TemporaryDirectory() as td:
