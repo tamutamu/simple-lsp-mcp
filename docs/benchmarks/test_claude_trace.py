@@ -39,6 +39,23 @@ class TraceTest(unittest.TestCase):
         self.assertEqual(token_usage(result), {"input_tokens": 200,
             "uncached_input_tokens": 30, "cached_tokens": 170, "output_tokens": 13})
 
+    def test_token_usage_rejects_fractional_and_nonfinite_counts(self):
+        # Invalid counters must not be silently truncated in A/B evidence.
+        for invalid in (1.5, -0.5, "1.5", "-1", "1e3", "NaN", float("nan"),
+                        float("inf"), True, None):
+            with self.subTest(value=repr(invalid)):
+                model = {"modelUsage": {"claude": {
+                    "inputTokens": invalid, "cacheReadInputTokens": 0,
+                    "cacheCreationInputTokens": 0, "outputTokens": 1}}}
+                fallback = {"usage": {"input_tokens": invalid,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0, "output_tokens": 1}}
+                self.assertIsNone(token_usage(model))
+                self.assertIsNone(token_usage(fallback))
+        self.assertEqual(token_usage({"usage": {"input_tokens": "12",
+            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+            "output_tokens": 1}})["input_tokens"], 12)
+
     def test_usage_fallback_and_missing_fields_fail_closed(self):
         result = {"usage": {"input_tokens": 7, "cache_read_input_tokens": 3,
                             "cache_creation_input_tokens": 2, "output_tokens": 4}}

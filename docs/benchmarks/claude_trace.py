@@ -12,11 +12,12 @@ import json
 def _nonnegative(value):
     if isinstance(value, bool):
         return None
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number >= 0 else None
+    # Token counts must be exact integers: int(1.9) silently becomes 1.
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        return int(value)
+    return None
 
 
 def token_usage(final):
