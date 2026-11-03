@@ -118,7 +118,7 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"analyze_impact", "Recursive LSP references by declaration path+line; depth=1 direct, depth=2 next hop (default 8, max 16). Cycle-safe; incomplete results explicit.", objSchema(props("path", "line", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.AnalyzeImpact(c, i)
 		}},
 
