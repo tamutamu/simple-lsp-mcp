@@ -15,9 +15,9 @@ import (
 // the caller passes apply=false. Keep the existing RenameSymbol API for
 // compatibility, but never allow a preview invocation to write.
 func (e *Engine) PreviewRename(ctx context.Context, in map[string]any) (map[string]any, error) {
-	detail := stringVal(in, "detail")
+	detail := stringVal(in, "preview_detail")
 	if detail != "" && detail != "summary" && detail != "full" {
-		return nil, core.NewError(core.InvalidArgument, "detail must be summary or full")
+		return nil, core.NewError(core.InvalidArgument, "preview_detail must be summary or full")
 	}
 	preview := make(map[string]any, len(in)+1)
 	for key, value := range in {
@@ -38,7 +38,7 @@ func (e *Engine) PreviewRename(ctx context.Context, in map[string]any) (map[stri
 // each replacement string and complete range in the MCP response is usually
 // wasted model context when the agent first wants to know which files change.
 // All edits have already passed the exact workspaceEditPlan validation.
-// Keep the complete preview available via detail=full for deliberate auditing.
+// Keep the complete preview available via preview_detail=full for deliberate auditing.
 // This only compacts preview_rename; rename_symbol remains backward compatible.
 func compactRenamePreview(result map[string]any) map[string]any {
 	files, ok := result["files"].([]fileEditPreview)
@@ -86,7 +86,7 @@ func compactRenamePreview(result map[string]any) map[string]any {
 	result["preview_detail"] = "summary"
 	result["preview_truncated"] = true
 	result["sample_edit_count"] = sampled
-	result["full_preview_available"] = "preview_rename(detail=full)"
+	result["full_preview_available"] = "preview_rename(preview_detail=full)"
 	return result
 }
 
