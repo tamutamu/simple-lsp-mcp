@@ -95,11 +95,11 @@ func TestImpactNodeAndEdgeBudgetsNeverGiveCompleteResult(t *testing.T) {
 		}
 		return nil, 0, nil
 	}
-	nodes, _, limits, _, err := traverseImpact(context.Background(), a, 5, 2, 100, fetch)
+	nodes, edges, limits, _, err := traverseImpact(context.Background(), a, 5, 2, 100, fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 2 || !strings.Contains(strings.Join(limits, ","), "max_nodes") {
+	if len(nodes) != 2 || len(edges) != 1 || !strings.Contains(strings.Join(limits, ","), "max_nodes") {
 		t.Fatalf("node budget not enforced: nodes=%#v limits=%#v", nodes, limits)
 	}
 	nodes, edges, limits, _, err = traverseImpact(context.Background(), a, 5, 20, 1, fetch)
