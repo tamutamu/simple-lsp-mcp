@@ -114,22 +114,41 @@ def grade(o,records):
             if not o.postgres_url:continue
             env["BENCH_POSTGRES_URL"]=o.postgres_url
             env["BENCH_ALLOW_DISPOSABLE_RESET"]="YES"
-        p=call([str(o.python),str(GRADER),str(root),r["case"]],
-               cwd=root,env=env,timeout=80)
-        try:judge=json.loads(p.stdout.splitlines()[-1])
-        except (ValueError,IndexError):judge={"success":False,"error":(p.stderr+p.stdout)[-1000:]}
-        ok_syntax=call([str(o.python),"-m","compileall","-q",str(root/"backend/app")],cwd=root,timeout=60).returncode==0
-        ok_diff=call(["git","diff","--check"],cwd=root).returncode==0
+        try:
+            p=call([str(o.python),str(GRADER),str(root),r["case"]],
+                   cwd=root,env=env,timeout=80)
+            grader_exitcode=p.returncode
+            try:
+                judge=json.loads(p.stdout.splitlines()[-1])
+                if not isinstance(judge,dict):
+                    raise ValueError("Grader response must be an object")
+            except (ValueError,IndexError):
+                judge={"success":False,"error":(p.stderr+p.stdout)[-1000:]}
+        except subprocess.TimeoutExpired:
+            grader_exitcode=124
+            judge={"success":False,"error":"Independent grader timed out"}
+        try:
+            ok_syntax=call([str(o.python),"-I","-m","compileall","-q",
+                            str(root/"backend/app")],cwd=root,timeout=60).returncode==0
+        except subprocess.TimeoutExpired:
+            ok_syntax=False
+        try:
+            ok_diff=call(["git","diff","--check"],cwd=root,timeout=30).returncode==0
+        except subprocess.TimeoutExpired:
+            ok_diff=False
         r["grader"]=judge;r["graded"]=True
+        r["grader_exitcode"]=grader_exitcode
         r["syntax_ok"]=ok_syntax;r["diff_ok"]=ok_diff
-        r["accepted"]=bool(judge.get("success") and ok_syntax and ok_diff)
+        r["accepted"]=(grader_exitcode==0 and judge.get("success") is True
+                       and ok_syntax and ok_diff)
         (root.parent/"outcome.json").write_text(json.dumps(r,indent=2)+"\n")
         print("GRADE",r["case"],r["mode"],r["repeat"],r["accepted"],flush=True)
 
 def report(o,rows):
     fields=("case","mode","repeat","seconds","exitcode","completed","graded","accepted",
             "input_tokens","cached_tokens","output_tokens","reasoning_tokens",
-            "mcp_calls","valid_mcp_calls","command_calls")
+            "mcp_calls","valid_mcp_calls","command_calls",
+            "grader_exitcode","syntax_ok","diff_ok")
     with (o.output/"results.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
         for r in sorted(rows,key=lambda x:(x["case"],x["mode"],x["repeat"])):
