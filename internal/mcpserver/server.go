@@ -98,7 +98,7 @@ func definitions() []definition {
 		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview exact cross-file LSP rename edits without writing or requesting write approval.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: preview LSP rename. Large edit lists are summarized by file; pass preview_detail=full for every exact edit before applying.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -196,6 +196,7 @@ func allProperties() map[string]any {
 				"symbol_path": stringSchema(), "line": positiveIntegerSchema(),
 				"column": positiveIntegerSchema(), "language": stringSchema(),
 			}}}, "Batch 1–8 targets sharing one view; no top-level target."),
+		"preview_detail":           describe(enumStringSchema("summary", "full"), "Rename preview size: summary (default; sample when more than 12 edits), full (every validated edit)."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),

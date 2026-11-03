@@ -15,12 +15,79 @@ import (
 // the caller passes apply=false. Keep the existing RenameSymbol API for
 // compatibility, but never allow a preview invocation to write.
 func (e *Engine) PreviewRename(ctx context.Context, in map[string]any) (map[string]any, error) {
+	detail := stringVal(in, "preview_detail")
+	if detail != "" && detail != "summary" && detail != "full" {
+		return nil, core.NewError(core.InvalidArgument, "preview_detail must be summary or full")
+	}
 	preview := make(map[string]any, len(in)+1)
 	for key, value := range in {
 		preview[key] = value
 	}
 	preview["apply"] = false
-	return e.RenameSymbol(ctx, preview)
+	result, err := e.RenameSymbol(ctx, preview)
+	if err != nil {
+		return nil, err
+	}
+	if detail == "full" {
+		return result, nil
+	}
+	return compactRenamePreview(result), nil
+}
+
+// A project-wide semantic rename may update hundreds of locations. Repeating
+// each replacement string and complete range in the MCP response is usually
+// wasted model context when the agent first wants to know which files change.
+// All edits have already passed the exact workspaceEditPlan validation.
+// Keep the complete preview available via preview_detail=full for deliberate auditing.
+// This only compacts preview_rename; rename_symbol remains backward compatible.
+func compactRenamePreview(result map[string]any) map[string]any {
+	files, ok := result["files"].([]fileEditPreview)
+	if !ok {
+		return result
+	}
+	const inlineEditLimit = 12
+	const samplePerFile = 2
+	const maxTotalSamples = 12
+	totalEdits := 0
+	for _, file := range files {
+		totalEdits += len(file.Edits)
+	}
+	if totalEdits <= inlineEditLimit {
+		return result
+	}
+	summaries := make([]map[string]any, 0, len(files))
+	sampled := 0
+	for _, file := range files {
+		entry := map[string]any{
+			"path": file.Path,
+			"edit_count": len(file.Edits),
+		}
+		if len(file.Edits) > 0 {
+			entry["first_line"] = file.Edits[0].Range.Start.Line
+			entry["last_line"] = file.Edits[len(file.Edits)-1].Range.Start.Line
+		}
+		budget := samplePerFile
+		if remaining := maxTotalSamples - sampled; budget > remaining {
+			budget = remaining
+		}
+		if budget > len(file.Edits) {
+			budget = len(file.Edits)
+		}
+		if budget > 0 {
+			entry["sample_edits"] = file.Edits[:budget]
+			sampled += budget
+		}
+		if omitted := len(file.Edits) - budget; omitted > 0 {
+			entry["omitted_edits"] = omitted
+		}
+		summaries = append(summaries, entry)
+	}
+	result["files"] = summaries
+	result["preview_detail"] = "summary"
+	result["preview_truncated"] = true
+	result["sample_edit_count"] = sampled
+	result["full_preview_available"] = "preview_rename(preview_detail=full)"
+	return result
 }
 
 // RenameSymbol asks the selected language server to compute a semantic rename.

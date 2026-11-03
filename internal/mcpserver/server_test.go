@@ -160,6 +160,17 @@ func TestRenamePreviewIsReadOnlyAndRetainsExplicitWriteOperation(t *testing.T) {
 	if _, ok := rename.schema["properties"].(map[string]any)["apply"]; !ok {
 		t.Fatal("existing apply-capable rename contract lost")
 	}
+	detail, ok := preview.schema["properties"].(map[string]any)["preview_detail"].(map[string]any)
+	if !ok {
+		t.Fatal("preview_rename missing full-detail opt-in")
+	}
+	values, _ := detail["enum"].([]any)
+	if len(values) != 2 || values[0] != "summary" || values[1] != "full" {
+		t.Fatalf("unexpected preview detail values: %#v", values)
+	}
+	if _, ok := rename.schema["properties"].(map[string]any)["preview_detail"]; ok {
+		t.Fatal("write-capable rename unexpectedly changed its stable schema")
+	}
 }
 
 func TestFormatPreviewCannotRequestWrites(t *testing.T) {
