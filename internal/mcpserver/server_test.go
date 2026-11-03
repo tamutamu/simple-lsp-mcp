@@ -9,7 +9,7 @@ import (
 )
 
 var expectedTools = []string{
-	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics",
+	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics", "analyze_impact",
 	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
 	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
@@ -36,6 +36,39 @@ func TestMinimalLSPToolSurface(t *testing.T) {
 	for _, deleted := range []string{"find_symbol", "get_symbol_outline", "get_symbol_context", "get_semantic_slice", "impact_analysis", "verify_change", "get_symbol", "onboard"} {
 		if seen[deleted] {
 			t.Fatalf("obsolete tool remains: %s", deleted)
+		}
+	}
+}
+
+
+func TestImpactMCPOnlyNeedsPathAndLineWithConfigurableDepth(t *testing.T) {
+	full, coding := definitionsForProfile("full"), definitionsForProfile("coding")
+	for _, ds := range [][]definition{full, coding} {
+		found := false
+		for _, d := range ds {
+			if d.name != "analyze_impact" {
+				continue
+			}
+			found = true
+			if !toolAnnotations(d.name).ReadOnlyHint {
+				t.Fatal("impact graph must be a read-only MCP tool")
+			}
+			required, ok := d.schema["required"].([]string)
+			if !ok || len(required) != 2 || required[0] != "path" || required[1] != "line" {
+				t.Fatalf("unexpected impact required arguments: %#v", d.schema["required"])
+			}
+			props := d.schema["properties"].(map[string]any)
+			for _, key := range []string{"path", "line", "depth", "max_nodes"} {
+				if _, ok := props[key]; !ok {
+					t.Fatalf("impact schema missing %s", key)
+				}
+			}
+			if _, ok := props["column"]; ok {
+				t.Fatal("impact graph unexpectedly requires or exposes a column")
+			}
+		}
+		if !found {
+			t.Fatal("analyze_impact is missing from tool profile")
 		}
 	}
 }
@@ -233,7 +266,7 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 21 || len(coding) != 11 {
+	if len(full) != 22 || len(coding) != 12 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
 	for _, d := range coding {

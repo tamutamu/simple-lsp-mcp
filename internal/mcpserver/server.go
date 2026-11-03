@@ -74,6 +74,7 @@ func definitionsForProfile(profile string) []definition {
 		"find_references": true, "find_implementations": true,
 		"get_diagnostics": true, "get_incoming_calls": true,
 		"get_outgoing_calls": true,
+		"analyze_impact": true,
 	}
 	out := make([]definition, 0, len(allowed))
 	for _, d := range all {
@@ -115,6 +116,10 @@ func definitions() []definition {
 		}},
 		{"get_diagnostics", "Get LSP diagnostics for a file, or cached diagnostics when path is omitted.", objSchema(props("path", "language", "severities", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Diagnostics(c, i)
+		}},
+
+		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.AnalyzeImpact(c, i)
 		}},
 
 		// Discovery and direct symbol inspection.
@@ -182,6 +187,8 @@ func allProperties() map[string]any {
 		"line":                describe(positiveIntegerSchema(), "One-based line."),
 		"column":              describe(positiveIntegerSchema(), "One-based column."),
 		"limit":               describe(positiveIntegerSchema(), "Maximum results."),
+		"depth":               describe(positiveIntegerSchema(), "1=direct, 2=next hop; default 8, maximum 16."),
+		"max_nodes":           describe(positiveIntegerSchema(), "Maximum graph nodes; default 80, maximum 200."),
 		"language":            describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; target tools infer it when possible."),
 		"kinds":               describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":          describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
