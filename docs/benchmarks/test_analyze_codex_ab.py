@@ -19,7 +19,7 @@ class EvaluationTest(unittest.TestCase):
                 "mcp_calls", "accepted", "completed", "graded",
                 "valid_mcp_calls", "model", "effort", "agent_version", "mcp_binary_sha",
                 "source_commit", "policy_sha", "tasks_sha", "grader_sha",
-                "retry_count", "grader_exitcode", "syntax_ok", "diff_check_ok"])
+                "retry_count", "exitcode", "grader_exitcode", "syntax_ok", "diff_check_ok"])
             w.writeheader()
             for t in range(n_tasks):
                 for rep in range(1, repeats + 1):
@@ -30,7 +30,7 @@ class EvaluationTest(unittest.TestCase):
                                     valid_mcp_calls=0, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
-                                    retry_count=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
+                                    retry_count=0, exitcode=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
                     w.writerow(dict(study="controlled", task=f"task{t}", arm="mcp",
                                     repeat=rep, seconds=base*treatment_ratio,
                                     input_tokens=base*1000*treatment_ratio, mcp_calls=1,
@@ -38,8 +38,33 @@ class EvaluationTest(unittest.TestCase):
                                     valid_mcp_calls=1, model="model-pinned", effort="low",
                                     agent_version="codex-1", mcp_binary_sha="mcp-build", source_commit="source-commit",
                                     policy_sha="policy-digest", tasks_sha="tasks-digest", grader_sha="grader-digest",
-                                    retry_count=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
+                                    retry_count=0, exitcode=0, grader_exitcode=0, syntax_ok=True, diff_check_ok=True))
 
+
+    def test_agent_exit_failure_or_missing_evidence_cannot_qualify(self):
+        for scenario in ("missing", "nonzero", "invalid"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as td:
+                p = Path(td) / "agent-exit.csv"
+                self.write_trials(p, 30, 4, 0.6)
+                rows = list(csv.DictReader(p.open()))
+                if scenario == "missing":
+                    for row in rows:
+                        row.pop("exitcode")
+                elif scenario == "nonzero":
+                    rows[1]["exitcode"] = "124"
+                else:
+                    rows[1]["exitcode"] = "not-an-exit-code"
+                with p.open("w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    w.writeheader()
+                    w.writerows(rows)
+                if scenario == "invalid":
+                    with self.assertRaisesRegex(ValueError, "Invalid agent exitcode"):
+                        ab.read_paired(p, "controlled")
+                else:
+                    result = ab.evaluate(ab.read_paired(p, "controlled"), bootstrap=1000)
+                    self.assertFalse(result["qualified_product_efficiency"])
+                    self.assertFalse(result["readiness"]["agent_exited_successfully_in_every_trial"])
 
     def test_failed_or_unverified_independent_grader_cannot_qualify(self):
         for scenario in ("missing", "nonzero", "invalid"):
