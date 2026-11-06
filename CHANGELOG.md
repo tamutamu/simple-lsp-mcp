@@ -3,7 +3,7 @@
 ## Unreleased — opt-in semantic edit context (2026-11-06)
 
 - Extend existing \`inspect_symbol\` with an optional \`related\` list of real LSP facts: references, implementations, declaration/type definition, callers/callees and type hierarchy. **No extra MCP tool** and no extra LSP calls when omitted.
-- Resolve the precise declaration from its LSP selection position; compact and bound each selected relation. Keep explicit \`related_meta.failed\` and \`related_meta.truncated\` so missing evidence is not confused with no references.
+- Resolve the precise declaration from its LSP selection position; compact and bound each selected relation. Shared project preparation avoids repeated candidate scans when multiple relations need it. Keep explicit \`related_meta.failed\` and \`related_meta.truncated\` so missing evidence is not confused with no references.
 - Preserve read-only semantics, batch source inspection, and existing inspect responses; reject relation fan-out across a batch.
 - Tested against real \`gopls\`, unit tests, full Go test suite, \`go vet\`, and race tests. Benefits in large-repository agent A/B tasks remain **unproven**, not inferred from a smaller MCP call count.
 

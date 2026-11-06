@@ -66,3 +66,33 @@ func TestRelatedCallsRetainLSPIdentity(t *testing.T) {
 		t.Fatalf("large unused payload: %#v", got)
 	}
 }
+
+func TestSharedWarmupOnlyForMultipleProjectRelationships(t *testing.T) {
+	if inspectWarmRelationCount([]string{"references"}) != 1 ||
+		inspectWarmRelationCount([]string{"references", "declaration"}) != 1 ||
+		inspectWarmRelationCount([]string{"references", "incoming_calls"}) != 2 {
+		t.Fatal("related context must warm only when multiple relations need it")
+	}
+	if inspectNeedsWarm("outgoing_calls") || inspectNeedsWarm("type_definition") ||
+		!inspectNeedsPrime([]string{"implementations", "incoming_calls"}) ||
+		inspectNeedsPrime([]string{"incoming_calls", "subtypes"}) {
+		t.Fatal("incorrect LSP project warm-up dependencies")
+	}
+}
+
+func TestRelatedLSPInternalOperationsAreMappedCorrectly(t *testing.T) {
+	for related, internal := range map[string]string{
+		"references":      "find_references",
+		"implementations": "find_implementations",
+		"incoming_calls":  "get_incoming_calls",
+		"outgoing_calls":  "get_outgoing_calls",
+		"supertypes":      "get_supertypes",
+		"subtypes":        "get_subtypes",
+		"type_definition": "get_type_definition",
+		"declaration":     "get_declaration",
+	} {
+		if got := inspectInternalToolName(related); got != internal {
+			t.Fatalf("%s: got %s, want %s", related, got, internal)
+		}
+	}
+}

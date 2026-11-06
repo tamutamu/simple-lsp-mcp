@@ -7,6 +7,8 @@ import (
 	"sort"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
+	"github.com/tamutamu/simple-lsp-mcp/internal/document"
+	"github.com/tamutamu/simple-lsp-mcp/internal/language"
 )
 
 const (
@@ -92,7 +94,43 @@ func (e *Engine) inspectWithRelations(ctx context.Context, out map[string]any, n
 	sections := make(map[string]any, len(names))
 	failed := make(map[string]string)
 	truncated := make([]string, 0)
+	// Pyright/TypeScript may scan and open candidate files before each
+	// cross-file relation. When two or more requested sections need the same
+	// project preparation, do it just once for this request. Single relations
+	// keep their original direct LSP path without extra setup.
+	if inspectWarmRelationCount(names) >= 2 {
+		path := out["path"].(string)
+		if profile, err := language.FromPath(path); err == nil && projectWarmSupported(profile) {
+			p, server, doc, err := e.document(ctx, path, "")
+			if err == nil {
+				var posErr error
+				position, conversionErr := document.ToLSP(doc.Text, selection.Start, server.Capabilities().PositionEncoding)
+				if conversionErr != nil {
+					posErr = conversionErr
+				} else {
+					name := e.warmNameForPosition(ctx, p, server, doc, position, subIn)
+					posErr = e.warmProjectSymbolCandidates(ctx, p, server, name)
+					if posErr == nil && inspectNeedsPrime(names) {
+						posErr = e.primeProjectSemantics(ctx, p, server, doc, position)
+					}
+				}
+				err = posErr
+			}
+			if err != nil {
+				for _, name := range names {
+					if inspectNeedsWarm(name) {
+						failed[name] = "project LSP preparation failed: " + err.Error()
+					}
+				}
+			} else {
+				ctx = markProjectWarmed(ctx)
+			}
+		}
+	}
 	for _, name := range names {
+		if _, alreadyFailed := failed[name]; alreadyFailed {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			failed[name] = err.Error()
 			continue
@@ -101,9 +139,9 @@ func (e *Engine) inspectWithRelations(ctx context.Context, out map[string]any, n
 		var err error
 		switch name {
 		case "incoming_calls", "outgoing_calls", "supertypes", "subtypes":
-			res, err = e.Hierarchy(ctx, name, subIn)
+			res, err = e.Hierarchy(ctx, inspectInternalToolName(name), subIn)
 		default:
-			res, err = e.Relationship(ctx, name, inspectRelationMethods[name], relationCapability(name), subIn)
+			res, err = e.Relationship(ctx, inspectInternalToolName(name), inspectRelationMethods[name], relationCapability(name), subIn)
 		}
 		if err != nil {
 			failed[name] = err.Error()
@@ -149,6 +187,49 @@ func (e *Engine) inspectWithRelations(ctx context.Context, out map[string]any, n
 		return nil, core.NewError(core.IncompleteSearch, "semantic context exceeds 48 KiB; request fewer relations or fewer lines")
 	}
 	return out, nil
+}
+
+// Only these operations need project-wide candidate warming in the
+// individual LSP tools. Type/definition queries do not.
+func inspectNeedsWarm(name string) bool {
+	switch name {
+	case "references", "implementations", "incoming_calls", "subtypes":
+		return true
+	}
+	return false
+}
+
+func inspectWarmRelationCount(names []string) int {
+	count := 0
+	for _, name := range names {
+		if inspectNeedsWarm(name) {
+			count++
+		}
+	}
+	return count
+}
+
+func inspectNeedsPrime(names []string) bool {
+	for _, name := range names {
+		if name == "references" || name == "implementations" {
+			return true
+		}
+	}
+	return false
+}
+
+// Relationship and Hierarchy use the registered MCP tool names to select
+// required LSP parameters and the call-vs-type hierarchy. The public
+// related[] values are intentionally shorter. Never pass them through as-is.
+func inspectInternalToolName(name string) string {
+	switch name {
+	case "references":
+		return "find_references"
+	case "implementations":
+		return "find_implementations"
+	default:
+		return "get_" + name
+	}
 }
 
 func relationCapability(name string) string {
