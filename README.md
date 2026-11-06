@@ -34,6 +34,26 @@ Use the read-only `analyze_impact` MCP tool for a function, variable or method d
 
 The MCP response is a compact graph of `nodes` (source path, declaration line, name, kind and hop depth) and `edges` (dependent declarations, reference counts and example lines). It visits each declaration once, so mutually recursive functions and cycles are safe. When exploration stops at the requested depth or a resource limit, `meta.complete=false` and `meta.limit_reasons` explain why. Unmapped references are counted separately, also making the analysis incomplete. LSP references are static evidence: dynamic calls, runtime reflection, missing project indexes and behavior-dependent changes may not appear. These are **potential impacts**, not a guaranteed list of code that must be edited.
 
+### One-call semantic edit context (opt-in)
+
+Use \`inspect_symbol\` with \`related\` when a cross-file change needs more than source text.
+The MCP resolves the exact declaration once, then obtains only the explicitly
+requested facts from the language server:
+
+\`\`\`json
+{"path":"src/services/task.ts","symbol_path":"TaskService/list","view":"edit","related":["references","incoming_calls","implementations"],"relation_limit":8}
+\`\`\`
+
+The response contains the original code plus compact, LSP-resolved references
+(grouped by file), callers and implementations. It reports each unsupported or
+failed relation in \`related_meta.failed\` and each bounded result in
+\`related_meta.truncated\`; an empty successful result is distinct from an
+unavailable relationship. No relations run unless \`related\` is supplied, and
+the feature does not attempt to infer dynamic/runtime dependencies.
+The option is for **one symbol**; use normal \`inspect_symbol(targets=[...])\`
+for multiple source bodies without relation fan-out. This is a design change,
+**not** a proven speedup: measure it against separate LSP calls and Codex without MCP.
+
 ### When coding agents should use it
 
 Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a **known file/function**, call `inspect_symbol(path=..., symbol_path=..., view="edit")` directly, rather than fetching an outline first or rereading the same file. For cross-file renames, call the **read-only** `preview_rename` before any write-capable `rename_symbol(apply=true)` request; this separates safe inspection from tools requiring destructive-operation approval. Large renames (more than 12 edits) return file counts and bounded samples to avoid flooding agent context; use `preview_rename(preview_detail="full")` to review every exact edit when needed. The write-capable `rename_symbol` response remains unchanged. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` supplies a compact file outline, and `inspect_symbol(view="source")` reads the actual relevant implementation without dumping unrelated functions. Use normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
