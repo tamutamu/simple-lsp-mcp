@@ -23,10 +23,18 @@ const (
 // The latter reduces agent/model turns for edits affecting multiple functions
 // while retaining exact LSP identity and per-target source boundaries.
 func (e *Engine) InspectSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
+	related, relationLimit, err := parseInspectRelations(in)
+	if err != nil {
+		return nil, err
+	}
 	if items, present := in["targets"]; present {
 		return e.inspectBatch(ctx, in, items)
 	}
-	return e.inspectSingle(ctx, in)
+	result, err := e.inspectSingle(ctx, in)
+	if err != nil || len(related) == 0 {
+		return result, err
+	}
+	return e.inspectWithRelations(ctx, result, related, relationLimit)
 }
 
 func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any) (map[string]any, error) {
@@ -219,7 +227,7 @@ func (e *Engine) renderInspected(d document.Document, selected symbolNode, view 
 	path := relativeMust(e, d.Path)
 	result := map[string]any{
 		"view": view, "path": path, "name": selected.Name,
-		"kind": selected.Kind, "range": selected.Range,
+		"kind": selected.Kind, "range": selected.Range, "selection_range": selected.SelectionRange,
 	}
 	if view == "location" {
 		return result, nil

@@ -40,6 +40,39 @@ func TestMinimalLSPToolSurface(t *testing.T) {
 	}
 }
 
+func TestInspectableLSPRelationsAreOptionalAndReadOnly(t *testing.T) {
+	for _, profile := range []string{"full", "coding"} {
+		var found bool
+		for _, def := range definitionsForProfile(profile) {
+			if def.name != "inspect_symbol" {
+				continue
+			}
+			found = true
+			if !toolAnnotations(def.name).ReadOnlyHint {
+				t.Fatal("inspect_symbol must remain read-only")
+			}
+			properties := def.schema["properties"].(map[string]any)
+			related, ok := properties["related"].(map[string]any)
+			if !ok || related["type"] != "array" || related["uniqueItems"] != true {
+				t.Fatalf("%s missing selected semantic relations: %#v", profile, related)
+			}
+			items := related["items"].(map[string]any)
+			values := items["enum"].([]any)
+			if len(values) != 8 {
+				t.Fatalf("%s unexpectedly dropped LSP relation options: %#v", profile, values)
+			}
+			if _, ok := properties["relation_limit"]; !ok {
+				t.Fatal("related context must expose a result cap")
+			}
+			if _, ok := properties["apply"]; ok {
+				t.Fatal("inspection cannot request code modification")
+			}
+		}
+		if !found {
+			t.Fatalf("%s lost inspect_symbol", profile)
+		}
+	}
+}
 
 func TestImpactMCPOnlyNeedsPathAndLineWithConfigurableDepth(t *testing.T) {
 	full, coding := definitionsForProfile("full"), definitionsForProfile("coding")
@@ -302,21 +335,27 @@ func TestTextOnlyResultAvoidsDuplicateStructuredPayload(t *testing.T) {
 		t.Fatalf("expected JSON text block, got %T", textOnly.Content[0])
 	}
 	wireBoth, err := json.Marshal(both)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	wireText, err := json.Marshal(textOnly)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(wireText) >= len(wireBoth) {
 		t.Fatalf("text-only did not shrink wire payload: both=%d text=%d", len(wireBoth), len(wireText))
 	}
 	var decoded map[string]any
-	if err := json.Unmarshal([]byte(textOnly.Content[0].(*mcp.TextContent).Text), &decoded); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal([]byte(textOnly.Content[0].(*mcp.TextContent).Text), &decoded); err != nil {
+		t.Fatal(err)
+	}
 	if len(decoded["symbols"].([]any)) != 2 {
 		t.Fatalf("text content changed: %#v", decoded)
 	}
 	if outputSchemaForFormat("text") != nil || outputSchemaForFormat("both") == nil {
 		t.Fatal("text-only must not advertise a structured output schema")
 	}
-	if !resultWithFormat(map[string]any{"error":"bad"}, true, "text").IsError {
+	if !resultWithFormat(map[string]any{"error": "bad"}, true, "text").IsError {
 		t.Fatal("text-only must retain tool error status")
 	}
 }

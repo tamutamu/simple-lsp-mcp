@@ -74,7 +74,7 @@ func definitionsForProfile(profile string) []definition {
 		"find_references": true, "find_implementations": true,
 		"get_diagnostics": true, "get_incoming_calls": true,
 		"get_outgoing_calls": true,
-		"analyze_impact": true,
+		"analyze_impact":     true,
 	}
 	out := make([]definition, 0, len(allowed))
 	for _, d := range all {
@@ -135,7 +135,7 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "DIRECT FIRST CALL for a known file/function: inspect_symbol(path,symbol_path,view=edit). No outline/sed needed; returns code, decorators/imports. targets[] batches 1–8.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Read one exact LSP symbol and optional related[] facts; targets[] batches without relations.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets", "related", "relation_limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
@@ -183,7 +183,7 @@ func allProperties() map[string]any {
 		"cursor":              describe(stringSchema(), "next_cursor from a prior workspace-symbol page."),
 		"path":                describe(stringSchema(), "Workspace-relative file path."),
 		"symbol_id":           describe(stringSchema(), "Previously returned symbol_id."),
-		"symbol_path":         describe(stringSchema(), "Symbol path like UserService/createUser; a unique suffix is allowed, leading / requires exact, and path scopes the file."),
+		"symbol_path":         describe(stringSchema(), "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors."),
 		"line":                describe(positiveIntegerSchema(), "One-based line."),
 		"column":              describe(positiveIntegerSchema(), "One-based column."),
 		"limit":               describe(positiveIntegerSchema(), "Maximum results."),
@@ -196,13 +196,15 @@ func allProperties() map[string]any {
 		"detail":              describe(enumStringSchema("compact", "outline", "full"), "compact (default), outline or full LSP details."),
 		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
 		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
-		"max_lines":           describe(positiveIntegerSchema(), "Source lines: default 120, max 500; reports truncation."),
+		"max_lines":           describe(positiveIntegerSchema(), "Source lines, default 120, max 500."),
+		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "LSP facts; failures in related_meta."),
+		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Per-relation cap, default 8."),
 		"targets": describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 8,
 			"items": map[string]any{"type": "object", "properties": map[string]any{
 				"path": stringSchema(), "symbol_id": stringSchema(),
 				"symbol_path": stringSchema(), "line": positiveIntegerSchema(),
 				"column": positiveIntegerSchema(), "language": stringSchema(),
-			}}}, "Batch 1–8 targets sharing one view; no top-level target."),
+			}}}, "Batch 1–8, shared view; no top-level target."),
 		"preview_detail":           describe(enumStringSchema("summary", "full"), "Rename preview size: summary (default; sample when more than 12 edits), full (every validated edit)."),
 		"new_name":                 describe(stringSchema(), "New LSP rename name."),
 		"apply":                    describe(map[string]any{"type": "boolean"}, "Apply validated edits; preview tools default false."),

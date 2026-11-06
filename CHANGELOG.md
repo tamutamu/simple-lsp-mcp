@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — opt-in semantic edit context (2026-11-06)
+
+- Extend existing \`inspect_symbol\` with an optional \`related\` list of real LSP facts: references, implementations, declaration/type definition, callers/callees and type hierarchy. **No extra MCP tool** and no extra LSP calls when omitted.
+- Resolve the precise declaration from its LSP selection position; compact and bound each selected relation. Keep explicit \`related_meta.failed\` and \`related_meta.truncated\` so missing evidence is not confused with no references.
+- Preserve read-only semantics, batch source inspection, and existing inspect responses; reject relation fan-out across a batch.
+- Tested against real \`gopls\`, unit tests, full Go test suite, \`go vet\`, and race tests. Benefits in large-repository agent A/B tasks remain **unproven**, not inferred from a smaller MCP call count.
+
+
 ## Core correctness and I/O fixes (2026-11-01)
 
 - Correct document synchronization to track **each language-server session**, not only the file path. Two servers can now independently open the same file; after a crash and successful restart, an unchanged file is sent with `didOpen` to the new server generation.

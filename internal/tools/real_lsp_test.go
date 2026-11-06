@@ -133,6 +133,30 @@ func TestRealLanguageServers(t *testing.T) {
 			if !foundPreview {
 				t.Fatalf("LSP reference previews omitted actual use: %#v", refs)
 			}
+			// Opt-in semantic context must resolve the exact selected declaration
+			// and preserve both source and reference evidence in one MCP result.
+			related, err := engine.InspectSymbol(ctx, map[string]any{
+				"path": tc.filename, "symbol_path": "Add", "view": "edit",
+				"related": []any{"references", "incoming_calls"}, "relation_limit": 8,
+			})
+			if err != nil {
+				t.Fatalf("real semantic edit context: %v", err)
+			}
+			if code, _ := related["code"].(string); !strings.Contains(code, tc.original) {
+				t.Fatalf("semantic edit context did not preserve exact source: %#v", related)
+			}
+			sections, ok := related["related"].(map[string]any)
+			if !ok {
+				t.Fatalf("semantic context missing LSP sections: %#v", related)
+			}
+			referenceGroups, ok := sections["references"].([]map[string]any)
+			if !ok || len(referenceGroups) == 0 || referenceGroups[0]["path"] != tc.filename {
+				t.Fatalf("semantic context omitted exact LSP reference: %#v", related)
+			}
+			if _, ok := related["related_meta"].(map[string]any); !ok {
+				t.Fatalf("semantic context lacks completeness information: %#v", related)
+			}
+
 			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{"detail": "full"})
 			if err != nil {
 				t.Fatalf("real workspace enumeration: %v", err)
