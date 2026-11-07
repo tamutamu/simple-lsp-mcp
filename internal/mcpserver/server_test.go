@@ -299,14 +299,22 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 22 || len(coding) != 12 {
+	if len(full) != 22 || len(coding) != 14 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
+	exposed := map[string]bool{}
 	for _, d := range coding {
+		exposed[d.name] = true
 		switch d.name {
-		case "rename_symbol", "format_document", "get_code_actions", "apply_code_action":
-			t.Fatalf("writing tool exposed in opt-in read/navigation profile: %s", d.name)
+		case "format_document", "get_code_actions", "apply_code_action":
+			t.Fatalf("unrelated write tool exposed in coding profile: %s", d.name)
 		}
+	}
+	if !exposed["preview_rename"] || !exposed["rename_symbol"] {
+		t.Fatal("coding profile cannot perform semantic rename")
+	}
+	if !toolAnnotations("preview_rename").ReadOnlyHint || !*toolAnnotations("rename_symbol").DestructiveHint {
+		t.Fatal("rename preview/write annotations are incorrect")
 	}
 	catalog := make([]*mcp.Tool, 0, len(coding))
 	for _, d := range coding {
@@ -316,9 +324,42 @@ func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) >= 12*1024 {
+	if len(data) >= 16*1024 {
 		t.Fatalf("coding catalog still too large: %d bytes", len(data))
 	}
+}
+
+func TestRenameProfileIsCompactAndSupportsWriteWithApproval(t *testing.T) {
+	rename := definitionsForProfile("rename")
+	if len(rename) != 2 {
+		t.Fatalf("rename profile tool count=%d, want 2", len(rename))
+	}
+	got := map[string]bool{}
+	for _, tool := range rename {
+		got[tool.name] = true
+	}
+	if !got["preview_rename"] || !got["rename_symbol"] {
+		t.Fatalf("missing semantic rename operations: %#v", got)
+	}
+	if !toolAnnotations("preview_rename").ReadOnlyHint || !*toolAnnotations("rename_symbol").DestructiveHint {
+		t.Fatal("rename tool approval hints are incorrect")
+	}
+	catalog, err := json.Marshal(renameCatalogForTest(rename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) > 4000 {
+		t.Fatalf("rename-only tool catalog not compact: %d bytes", len(catalog))
+	}
+}
+
+func renameCatalogForTest(ds []definition) []*mcp.Tool {
+	result := make([]*mcp.Tool, 0, len(ds))
+	for _, d := range ds {
+		result = append(result, &mcp.Tool{Name: d.name, Description: d.description,
+			InputSchema: d.schema, OutputSchema: objectSchema(), Annotations: toolAnnotations(d.name)})
+	}
+	return result
 }
 
 func TestTextOnlyResultAvoidsDuplicateStructuredPayload(t *testing.T) {

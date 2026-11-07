@@ -11,15 +11,15 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For known functions, call inspect_symbol(view=edit, path, symbol_path) directly; do not fetch an outline first or reread the same code. Use targets[] for 2-8 functions. Use rg for unknown files/literals; use references for exact semantic identity. For renames use preview_rename then rename_symbol(apply=true); for formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "For an explicit cross-file rename with a known symbol, use rename_symbol(apply=true) directly; preview_rename is optional when the target is ambiguous or needs review. Avoid inspect_symbol + grep + manual edits. Use the exact path and symbol_path when known. Confirm application with concise diff checks. For other known functions call inspect_symbol(view=edit) directly; batch 2-8 with targets[]. Use rg for unknown files/literals and LSP references for semantic identity. For formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
 }
 
 // NewWithProfile preserves the full API by default. The opt-in "coding"
-// profile avoids sending irrelevant refactor/format/type-hierarchy schemas
-// on everyday search/read/edit jobs. The omitted tools remain in "full".
+// profile includes compact navigation and semantic rename, but omits unrelated
+// format/type-hierarchy and code-action schemas. The full API is unchanged.
 func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
 	return NewWithOptions(engine, version, profile, "both")
 }
@@ -43,6 +43,12 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 			if err != nil {
 				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
 			}
+			// Once a semantic rename is applied, the agent needs only a
+			// summary to verify the diff. Do not echo the same edits
+			// again into its prompt when using the text-only format.
+			if def.name == "rename_symbol" && resultFormat == "text" {
+				out = tools.CompactAppliedRename(out)
+			}
 			return resultWithFormat(out, false, resultFormat), nil
 		})
 	}
@@ -60,14 +66,26 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 
 // definitionsForProfile only filters the exposed schema. It never changes
 // LSP resolution, stored identities, or behavior of exposed operations.
-// All semantic refactors and advanced relationship tools stay accessible via
-// --tool-profile full.
+// Advanced relationship, formatting and code-action tools stay accessible
+// via --tool-profile full. Semantic rename is a routine coding operation.
 func definitionsForProfile(profile string) []definition {
 	all := definitions()
+	if profile == "rename" {
+		// Optional small catalog for one-shot semantic refactor workflows.
+		// Does not replace the normal coding/full surfaces.
+		out := make([]definition, 0, 2)
+		for _, d := range all {
+			if d.name == "preview_rename" || d.name == "rename_symbol" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
 	if profile != "coding" {
 		return all
 	}
 	allowed := map[string]bool{
+		"preview_rename": true, "rename_symbol": true,
 		"search_symbols": true, "list_workspace_symbols": true,
 		"get_document_symbols": true, "inspect_symbol": true,
 		"get_hover": true, "get_definition": true,
@@ -96,10 +114,10 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		// Exact LSP operations. The agent chooses which relation to inspect.
-		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"rename_symbol", "ONE-CALL SEMANTIC RENAME: for an explicit rename, apply=true updates all LSP-identified references across files. The text response returns only a compact applied summary. Use preview_rename only when review is needed.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview LSP rename. Large edit lists are summarized by file; pass preview_detail=full for every exact edit before applying.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: review semantically identified cross-file rename edits before applying. Optional for an explicit, unambiguous rename; rename_symbol(apply=true) can act in one call.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {

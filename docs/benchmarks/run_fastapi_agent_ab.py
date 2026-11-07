@@ -43,7 +43,7 @@ def call(argv, cwd=None, **kwargs):
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, **kwargs)
 
 def validate_lean_catalog(executable, source):
-    """Reject stale binaries: coding profile must expose exactly 11 tools."""
+    """Reject stale binaries: coding profile must expose the current 14 tools."""
     proc = subprocess.Popen([str(executable), "--workspace", str(source),
                              "--tool-profile", "coding", "--result-format", "text"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -70,9 +70,9 @@ def validate_lean_catalog(executable, source):
                 proc.stdin.flush()
             else:
                 names = {tool["name"] for tool in obj["result"]["tools"]}
-                if len(names) != 11 or "inspect_symbol" not in names:
-                    raise RuntimeError("Expected the coding 11-tool MCP binary, got: " + ", ".join(sorted(names)))
-        print("Coding MCP verified: 11 tools", flush=True)
+                if len(names) != 14 or not {"inspect_symbol","rename_symbol","preview_rename"}.issubset(names):
+                    raise RuntimeError("Expected the coding 14-tool MCP binary, got: " + ", ".join(sorted(names)))
+        print("Coding MCP verified: 14 tools", flush=True)
     finally:
         proc.terminate()
         try: proc.wait(timeout=3)
