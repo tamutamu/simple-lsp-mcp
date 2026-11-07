@@ -120,6 +120,42 @@ jobs:
               new=statistics.median(improved[name])
               print(f'{name}: base={old:,.0f}ns, improved={new:,.0f}ns, speedup={old/new:.2f}x')
           PYBENCH
+  real-reference-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26.x'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm install -g typescript@6 typescript-language-server
+      - name: Compare full semantic references against main
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SIMPLE_LSP_REAL_LSP=1
+          export SIMPLE_LSP_TSSERVER_PATH="$(npm root -g)/typescript/lib/tsserver.js"
+          base_commit="$(git merge-base HEAD origin/main)"
+          base_dir="$(mktemp -d)"
+          git worktree add --detach "$base_dir" "$base_commit"
+          cp internal/tools/real_reference_performance_test.go "$base_dir/internal/tools/real_reference_performance_test.go"
+          echo "BASE_COMMIT=$base_commit"
+          (cd "$base_dir" && go test ./internal/tools -run '^$' -bench '^BenchmarkRealTypeScriptReferenceWorkflow$' -benchmem -benchtime=8x -count=3 -timeout=8m) | tee /tmp/real-base.log
+          go test ./internal/tools -run '^$' -bench '^BenchmarkRealTypeScriptReferenceWorkflow$' -benchmem -benchtime=8x -count=3 -timeout=8m | tee /tmp/real-improved.log
+          python3 - <<'PYBENCH'
+          import re, statistics
+          from pathlib import Path
+          def read(path):
+              return [float(m.group(1)) for m in re.finditer(
+                  r'^BenchmarkRealTypeScriptReferenceWorkflow-\d+\s+\d+\s+([\d.]+) ns/op',
+                  Path(path).read_text(), re.M)]
+          a,b=read('/tmp/real-base.log'),read('/tmp/real-improved.log')
+          if len(a)!=3 or len(b)!=3:
+              raise SystemExit('Missing one of three full reference measurements')
+          old,new=statistics.median(a),statistics.median(b)
+          print(f'FULL_REFERENCE_WORKFLOW: baseline={old/1e6:.3f}ms improved={new/1e6:.3f}ms speedup={old/new:.2f}x')
+          PYBENCH
   windows-uri:
     runs-on: windows-latest
     steps:
