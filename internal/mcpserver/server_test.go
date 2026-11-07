@@ -9,7 +9,7 @@ import (
 )
 
 var expectedTools = []string{
-	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics", "analyze_impact",
+	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics", "investigate_change", "analyze_impact",
 	"search_symbols", "list_workspace_symbols", "get_document_symbols", "get_hover", "inspect_symbol",
 	"get_definition", "find_references", "find_implementations", "get_type_definition",
 	"get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes",
@@ -96,8 +96,8 @@ func TestImpactMCPOnlyNeedsPathAndLineWithConfigurableDepth(t *testing.T) {
 					t.Fatalf("impact schema missing %s", key)
 				}
 			}
-			if _, ok := props["column"]; ok {
-				t.Fatal("impact graph unexpectedly requires or exposes a column")
+			if _, ok := props["column"]; !ok {
+				t.Fatal("impact graph needs optional exact declaration column to avoid same-line ambiguity")
 			}
 		}
 		if !found {
@@ -116,7 +116,7 @@ func TestToolCatalogStaysSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(encoded) > 24*1024 {
+	if len(encoded) > 26*1024 {
 		t.Fatalf("MCP tool catalog uses %d bytes", len(encoded))
 	}
 }
@@ -299,7 +299,7 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 22 || len(coding) != 14 {
+	if len(full) != 23 || len(coding) != 15 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
 	exposed := map[string]bool{}
@@ -324,8 +324,46 @@ func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) >= 16*1024 {
+	if len(data) >= 18*1024 {
 		t.Fatalf("coding catalog still too large: %d bytes", len(data))
+	}
+}
+
+func TestInvestigationInputSchemaMatchesAcceptedArguments(t *testing.T) {
+	schema := investigateInputSchema()
+	fields := schema["properties"].(map[string]any)
+	detail := fields["detail"].(map[string]any)["enum"].([]any)
+	if len(detail) != 3 || detail[0] != "files" || detail[1] != "union" || detail[2] != "graph" {
+		t.Fatalf("invalid enum advertised to coding agents: %#v", detail)
+	}
+	targets := fields["targets"].(map[string]any)
+	if targets["minItems"] != 2 || targets["maxItems"] != 6 {
+		t.Fatalf("incorrect batch size limits: %#v", targets)
+	}
+	depth := fields["depth"].(map[string]any)
+	nodes := fields["max_nodes"].(map[string]any)
+	if depth["maximum"] != 16 || nodes["maximum"] != 200 {
+		t.Fatalf("invalid tool bounds: depth=%#v nodes=%#v", depth, nodes)
+	}
+}
+
+func TestInvestigateProfileContainsOnlyReadOnlyHighLevelTool(t *testing.T) {
+	items := definitionsForProfile("investigate")
+	if len(items) != 1 || items[0].name != "investigate_change" {
+		t.Fatalf("wrong investigate tool catalog: %#v", items)
+	}
+	if !toolAnnotations("investigate_change").ReadOnlyHint {
+		t.Fatal("investigate_change must not permit source writes")
+	}
+	coding := definitionsForProfile("coding")
+	var found bool
+	for _, d := range coding {
+		if d.name == "investigate_change" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("coding profile must expose the high-level investigation tool")
 	}
 }
 

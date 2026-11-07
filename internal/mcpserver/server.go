@@ -70,6 +70,16 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 // via --tool-profile full. Semantic rename is a routine coding operation.
 func definitionsForProfile(profile string) []definition {
 	all := definitions()
+	if profile == "investigate" {
+		// High-level semantic impact discovery without the full tool catalog.
+		out := make([]definition, 0, 1)
+		for _, d := range all {
+			if d.name == "investigate_change" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
 	if profile == "rename" {
 		// Optional small catalog for one-shot semantic refactor workflows.
 		// Does not replace the normal coding/full surfaces.
@@ -93,6 +103,7 @@ func definitionsForProfile(profile string) []definition {
 		"get_diagnostics": true, "get_incoming_calls": true,
 		"get_outgoing_calls": true,
 		"analyze_impact":     true,
+		"investigate_change": true,
 	}
 	out := make([]definition, 0, len(allowed))
 	for _, d := range all {
@@ -136,7 +147,11 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and completeness. Supply targets[] (2–6) to investigate several declarations in one call; detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.InvestigateChange(c, i)
+		}},
+
+		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "column", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.AnalyzeImpact(c, i)
 		}},
 
@@ -183,6 +198,26 @@ func hierarchy(name string) func(context.Context, *tools.Engine, map[string]any)
 }
 
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
+
+// investigateInputSchema uses its own detail enum: the generic "detail"
+// parameter applies to document symbols and would advertise invalid choices.
+// The observed Codex agent picked "compact", causing a failed MCP call.
+func investigateInputSchema() map[string]any {
+	fields := props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "max_nodes", "detail")
+	fields["detail"] = describe(enumStringSchema("files", "union", "graph"), "files (default) = grouped evidence, union = compact paths and counts for 2–6 targets, graph = exact edges for a single target.")
+	fields["targets"] = describe(map[string]any{
+		"type": "array", "minItems": 2, "maxItems": 6,
+		"items": map[string]any{
+			"type":                 "object",
+			"properties":           props("symbol_id", "symbol_path", "path", "line", "column", "language"),
+			"additionalProperties": false,
+		},
+	}, "Batch 2–6 exact LSP targets in one tool call; exclusive with top-level symbol target fields. Use depth, max_nodes and files detail for all.")
+
+	fields["depth"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 16}, "LSP reference-hop depth; default 2.")
+	fields["max_nodes"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 200}, "Maximum distinct declarations; default 40.")
+	return objSchema(fields)
+}
 
 // objSchema builds an input schema exposing exactly the named properties.
 func objSchema(properties map[string]any, required ...string) map[string]any {

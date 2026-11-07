@@ -13,10 +13,13 @@ def command(cmd, cwd, stdin=None):
     return subprocess.run(cmd, cwd=cwd, input=stdin, capture_output=True, check=True)
 
 class Client:
-    def __init__(self, binary, root, profile="coding"):
+    def __init__(self, binary, root, profile="coding", request_timeout=None):
         self.counter = 0
+        cmd=[binary, "--workspace", root, "--tool-profile", profile, "--result-format", "text"]
+        if request_timeout is not None:
+            cmd.extend(["--request-timeout",str(request_timeout)+"s"])
         self.proc = subprocess.Popen(
-            [binary, "--workspace", root, "--tool-profile", profile, "--result-format", "text"],
+            cmd,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},

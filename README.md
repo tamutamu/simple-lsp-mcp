@@ -334,7 +334,7 @@ By default each response includes the same JSON as both `content` text and `stru
 **This is an opt-in, client-compatibility experiment.** A smaller MCP response is not proof of fewer model input tokens; the client may expose only one representation to the model already. Validate your client's support before adopting it. The [predeclared significance gates](docs/benchmarks/significance-gates-2026-11-01.md) require repeated *graded agent tasks*, not just smaller protocol output.
 
 
-Direct invocation defaults to `--tool-profile full` with **22** operations. `simple-lsp-mcp setup codex` registers the **14-tool `coding` profile** with `--result-format text`; the profile includes read-only source inspection, symbol navigation, read-only `preview_rename`, and the write-capable `rename_symbol(apply=true)` tool. A Codex agent running an explicit cross-file rename can now apply all semantic edits in a **single authorized MCP call**, instead of reading each source and patching manually. This was **not possible** in the former coding profile, which omitted rename entirely. `rename_symbol` remains marked destructive so clients can enforce write approval; `preview_rename` is separately read-only.
+Direct invocation defaults to `--tool-profile full` with **23** operations. `simple-lsp-mcp setup codex` registers the **14-tool `coding` profile** with `--result-format text`; the profile includes read-only source inspection, symbol navigation, read-only `preview_rename`, and the write-capable `rename_symbol(apply=true)` tool. A Codex agent running an explicit cross-file rename can now apply all semantic edits in a **single authorized MCP call**, instead of reading each source and patching manually. This was **not possible** in the former coding profile, which omitted rename entirely. `rename_symbol` remains marked destructive so clients can enforce write approval; `preview_rename` is separately read-only.
 
 For one-purpose refactoring workflows, the direct server option `--tool-profile rename` exposes just the two rename tools, without changing the default configuration. To expose all navigation, formatting and code-action tools to Codex use `simple-lsp-mcp setup codex --apply --tool-profile full`; Claude Code setup retains full by default. Existing registrations must be updated and restarted to obtain the new surface.
 
@@ -343,7 +343,13 @@ Current direct JSON-RPC `tools/list` measurements with text results: **14,222 by
 When several exact functions are known, call `inspect_symbol(view="edit", targets=[{"path":"backend/app/api/routes/items.py","symbol_path":"read_items"},{"path":"backend/app/api/routes/users.py","symbol_path":"read_users"}])` for their actual source contexts in one call. Supports 1–8 targets, rejects ambiguous/duplicate results and results above 32 KiB. Single-symbol requests are unchanged. In the direct warm-language-server test, three calls took **12.37 ms** vs **12.75 ms** batched and produced **4,117 B** vs **4,133 B** of data. Thus batching saves client calls, **not** backend latency.
 
 [Measurements and limitations](docs/benchmarks/coding-profile-batch-2026-10-26.md).
-## MCP tools (22 goal-oriented operations)
+### High-level change-impact investigation
+
+`investigate_change` combines exact LSP declaration resolution, transitive references (depth configurable), and enclosing-declaration attribution into **one MCP call**. The default `detail=files` groups affected declarations by file, including counts and explicit completeness limits. For longer work, send 2–6 `targets` with `detail=union` to analyze several functions with one call and return a deduplicated file union. The read-only, minimal `--tool-profile investigate` exposes just this tool.
+
+In the [2026-11-07 Codex A/B pilot](docs/benchmarks/composite-impact-evaluation-2026-11-07.md), two paired Teleport tasks investigating three functions found 22 affected files with this tool and none of the Codex-only trials completed the three semantic investigations correctly. **Mean fresh input was ~47% lower** with LSP; elapsed time was ~11% higher when including the fresh server startup. These are exploratory results, not a general guarantee. The tool reports truncation and unmapped references instead of claiming exhaustive impact.
+
+## MCP tools (23 goal-oriented operations)
 
 Every tool returns structured data. Positions are **one-based**, paths workspace-relative. A target may be a `symbol_id` from another tool, a `symbol_path` such as `UserService/createUser` (optionally scoped with `path`), or a file `path` plus `line` and `column`. Use `search_symbols` / `get_document_symbols` to discover identifiers, then request **only the specific relation needed**. Tool calls are not mandatory.
 

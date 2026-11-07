@@ -200,18 +200,27 @@ func (e *Engine) inspectPathSymbol(ctx context.Context, in map[string]any, view 
 			cache[key] = snapshot
 		}
 	}
-	segments, anchored, err := parseSymbolPath(stringVal(in, "symbol_path"))
+	selected, err := resolveInspectNodeByPath(snapshot.nodes, path, stringVal(in, "symbol_path"))
 	if err != nil {
 		return nil, err
 	}
-	matches := matchNodes(snapshot.nodes, segments, anchored)
+	return e.renderInspected(snapshot.doc, selected, view, maxLines)
+}
+
+// resolveInspectNodeByPath is shared by inspect_symbol and investigate_change
+// to guarantee identical handling of nested paths and ambiguous declarations.
+func resolveInspectNodeByPath(nodes []symbolNode, path, symbolPath string) (symbolNode, error) {
+	segments, anchored, err := parseSymbolPath(symbolPath)
+	if err != nil {
+		return symbolNode{}, err
+	}
+	matches := matchNodes(nodes, segments, anchored)
 	switch len(matches) {
 	case 0:
-		return nil, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+stringVal(in, "symbol_path"))
+		return symbolNode{}, core.NewError(core.SymbolNotFound, "no symbol matches symbol_path "+symbolPath)
 	case 1:
-		return e.renderInspected(snapshot.doc, matches[0], view, maxLines)
+		return matches[0], nil
 	default:
-		// Never pick one of several declarations with the same name.
 		list := make([]string, 0, 5)
 		for i, node := range matches {
 			if i == 5 {
@@ -219,7 +228,7 @@ func (e *Engine) inspectPathSymbol(ctx context.Context, in map[string]any, view 
 			}
 			list = append(list, node.SymbolPath)
 		}
-		return nil, core.NewError(core.AmbiguousSymbol, fmt.Sprintf("%q matches %d symbols in %s: %s", stringVal(in, "symbol_path"), len(matches), path, strings.Join(list, ", ")))
+		return symbolNode{}, core.NewError(core.AmbiguousSymbol, fmt.Sprintf("%q matches %d symbols in %s: %s", symbolPath, len(matches), path, strings.Join(list, ", ")))
 	}
 }
 
