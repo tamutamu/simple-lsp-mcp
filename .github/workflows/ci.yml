@@ -84,6 +84,42 @@ jobs:
         with: {go-version: '1.26.x'}
       - name: Compare unchanged document sync against duplicate SHA256
         run: go test ./internal/document -run '^$' -bench '^BenchmarkWarmRepeatedSync$' -benchmem -benchtime=200x -count=3
+  warm-candidate-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26.x'}
+      - name: Compare repeated reference candidate scans against main
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_commit="$(git merge-base HEAD origin/main)"
+          base_dir="$(mktemp -d)"
+          git worktree add --detach "$base_dir" "$base_commit"
+          # Same benchmark source must compile against both implementations.
+          cp internal/tools/warm_index_test.go "$base_dir/internal/tools/warm_index_test.go"
+          echo "BASE_COMMIT=$base_commit"
+          (cd "$base_dir" && go test ./internal/tools -run '^$' -bench '^BenchmarkProjectWarmIndex(Miss|Hit|RepeatShortName)$' -benchmem -benchtime=50x -count=3) | tee /tmp/warm-base.log
+          go test ./internal/tools -run '^$' -bench '^BenchmarkProjectWarmIndex(Miss|Hit|RepeatShortName)$' -benchmem -benchtime=50x -count=3 | tee /tmp/warm-improved.log
+          python3 - <<'PYBENCH'
+          import re, statistics
+          from pathlib import Path
+          def read(path):
+              samples={}
+              for match in re.finditer(r'^Benchmark(\S+)-\d+\s+\d+\s+([\d.]+) ns/op', Path(path).read_text(), re.M):
+                  samples.setdefault(match.group(1), []).append(float(match.group(2)))
+              return samples
+          base=read('/tmp/warm-base.log')
+          improved=read('/tmp/warm-improved.log')
+          for name in ('ProjectWarmIndexMiss','ProjectWarmIndexHit','ProjectWarmIndexRepeatShortName'):
+              if len(base.get(name,[])) != 3 or len(improved.get(name,[])) != 3:
+                  raise SystemExit('Missing three paired samples for '+name)
+              old=statistics.median(base[name])
+              new=statistics.median(improved[name])
+              print(f'{name}: base={old:,.0f}ns, improved={new:,.0f}ns, speedup={old/new:.2f}x')
+          PYBENCH
   windows-uri:
     runs-on: windows-latest
     steps:
