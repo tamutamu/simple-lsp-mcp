@@ -11,15 +11,15 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For known functions, call inspect_symbol(view=edit, path, symbol_path) directly; do not fetch an outline first or reread the same code. Use targets[] for 2-8 functions. Use rg for unknown files/literals; use references for exact semantic identity. For renames use preview_rename then rename_symbol(apply=true); for formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "For an explicit cross-file rename with a known symbol, use rename_symbol(apply=true) directly; preview_rename is optional when the target is ambiguous or needs review. Avoid inspect_symbol + grep + manual edits. Use the exact path and symbol_path when known. Confirm application with concise diff checks. For cross-file change-impact questions prefer investigate_change(path,symbol_path,depth=2) over ad hoc grep; use targets[] (2-6) with detail=union for multiple declarations. For other known functions call inspect_symbol(view=edit) directly; batch 2-8 with targets[]. Use rg for unknown files/literals and LSP references for semantic identity. For formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
 }
 
 // NewWithProfile preserves the full API by default. The opt-in "coding"
-// profile avoids sending irrelevant refactor/format/type-hierarchy schemas
-// on everyday search/read/edit jobs. The omitted tools remain in "full".
+// profile includes compact navigation and semantic rename, but omits unrelated
+// format/type-hierarchy and code-action schemas. The full API is unchanged.
 func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
 	return NewWithOptions(engine, version, profile, "both")
 }
@@ -43,6 +43,12 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 			if err != nil {
 				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
 			}
+			// Once a semantic rename is applied, the agent needs only a
+			// summary to verify the diff. Do not echo the same edits
+			// again into its prompt when using the text-only format.
+			if def.name == "rename_symbol" && resultFormat == "text" {
+				out = tools.CompactAppliedRename(out)
+			}
 			return resultWithFormat(out, false, resultFormat), nil
 		})
 	}
@@ -60,14 +66,36 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 
 // definitionsForProfile only filters the exposed schema. It never changes
 // LSP resolution, stored identities, or behavior of exposed operations.
-// All semantic refactors and advanced relationship tools stay accessible via
-// --tool-profile full.
+// Advanced relationship, formatting and code-action tools stay accessible
+// via --tool-profile full. Semantic rename is a routine coding operation.
 func definitionsForProfile(profile string) []definition {
 	all := definitions()
+	if profile == "investigate" {
+		// High-level semantic impact discovery without the full tool catalog.
+		out := make([]definition, 0, 1)
+		for _, d := range all {
+			if d.name == "investigate_change" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+	if profile == "rename" {
+		// Optional small catalog for one-shot semantic refactor workflows.
+		// Does not replace the normal coding/full surfaces.
+		out := make([]definition, 0, 2)
+		for _, d := range all {
+			if d.name == "preview_rename" || d.name == "rename_symbol" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
 	if profile != "coding" {
 		return all
 	}
 	allowed := map[string]bool{
+		"preview_rename": true, "rename_symbol": true,
 		"search_symbols": true, "list_workspace_symbols": true,
 		"get_document_symbols": true, "inspect_symbol": true,
 		"get_hover": true, "get_definition": true,
@@ -75,6 +103,7 @@ func definitionsForProfile(profile string) []definition {
 		"get_diagnostics": true, "get_incoming_calls": true,
 		"get_outgoing_calls": true,
 		"analyze_impact":     true,
+		"investigate_change": true,
 	}
 	out := make([]definition, 0, len(allowed))
 	for _, d := range all {
@@ -96,10 +125,10 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		// Exact LSP operations. The agent chooses which relation to inspect.
-		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"rename_symbol", "ONE-CALL SEMANTIC RENAME: for an explicit rename, apply=true updates all LSP-identified references across files. The text response returns only a compact applied summary. Use preview_rename only when review is needed.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview LSP rename. Large edit lists are summarized by file; pass preview_detail=full for every exact edit before applying.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: review semantically identified cross-file rename edits before applying. Optional for an explicit, unambiguous rename; rename_symbol(apply=true) can act in one call.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -118,7 +147,11 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and completeness. Supply targets[] (2–6) to investigate several declarations in one call; optional line+column with path+symbol_path corroborates the exact source position and rejects mismatches. detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+			return e.InvestigateChange(c, i)
+		}},
+
+		{"analyze_impact", "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.", objSchema(props("path", "line", "column", "depth", "max_nodes"), "path", "line"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.AnalyzeImpact(c, i)
 		}},
 
@@ -165,6 +198,26 @@ func hierarchy(name string) func(context.Context, *tools.Engine, map[string]any)
 }
 
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
+
+// investigateInputSchema uses its own detail enum: the generic "detail"
+// parameter applies to document symbols and would advertise invalid choices.
+// The observed Codex agent picked "compact", causing a failed MCP call.
+func investigateInputSchema() map[string]any {
+	fields := props("symbol_id", "symbol_path", "path", "line", "column", "language", "depth", "max_nodes", "detail")
+	fields["detail"] = describe(enumStringSchema("files", "union", "graph"), "files (default) = grouped evidence, union = compact paths and counts for 2–6 targets, graph = exact edges for a single target.")
+	fields["targets"] = describe(map[string]any{
+		"type": "array", "minItems": 2, "maxItems": 6,
+		"items": map[string]any{
+			"type":                 "object",
+			"properties":           props("symbol_id", "symbol_path", "path", "line", "column", "language"),
+			"additionalProperties": false,
+		},
+	}, "Batch 2–6 exact LSP targets in one tool call; exclusive with top-level symbol target fields. When symbol_path and path are known, optional line+column corroborates the declaration position. Use depth, max_nodes and detail=union for compact output.")
+
+	fields["depth"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 16}, "LSP reference-hop depth; default 2.")
+	fields["max_nodes"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 200}, "Maximum distinct declarations; default 40.")
+	return objSchema(fields)
+}
 
 // objSchema builds an input schema exposing exactly the named properties.
 func objSchema(properties map[string]any, required ...string) map[string]any {

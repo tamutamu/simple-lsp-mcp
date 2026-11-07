@@ -19,12 +19,12 @@ func setupCommandOptions(client, binary string, autoInstall bool) (string, []str
 	return setupCommandWithProfile(client, binary, autoInstall, "auto")
 }
 
-// "auto" uses the 11-tool, read-only coding surface for Codex.
+// "auto" uses the compact coding surface, including semantic rename, for Codex.
 // Claude retains its existing full surface for backward compatibility.
 // Explicit full/coding overrides remain available for advanced workflows.
 func setupCommandWithProfile(client, binary string, autoInstall bool, profile string) (string, []string, error) {
-	if profile != "auto" && profile != "coding" && profile != "full" {
-		return "", nil, fmt.Errorf("unsupported tool profile %q: use auto, coding or full", profile)
+	if profile != "auto" && profile != "coding" && profile != "full" && profile != "rename" && profile != "investigate" {
+		return "", nil, fmt.Errorf("unsupported tool profile %q: use auto, coding, full, rename or investigate", profile)
 	}
 	switch client {
 	case "claude", "codex":

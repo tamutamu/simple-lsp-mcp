@@ -34,6 +34,8 @@ type warmFileIndex struct {
 	shortBytes [32]byte           // Exact presence of one-byte names.
 	shortPairs [warmBloomBytes]byte // Two-byte name Bloom filter.
 	content    []byte              // Source bytes cached opportunistically, bounded per project.
+	lastNeedle string            // Exact name checked on the most recent completed scan.
+	lastMatch  bool              // Lexical hit for lastNeedle; LSP decides semantic identity.
 }
 
 type warmSourceIndex struct {
@@ -309,6 +311,7 @@ func (e *Engine) scanProjectWarmCandidates(
 ) (warmScanStats, error) {
 	var stats warmScanStats
 	key := root + "\x00" + p.SessionKey
+	needleName := string(needle) // Allocate once per scan, not once per file.
 	previous := e.warmIndex.snapshot(key)
 	next := make(map[string]warmFileIndex, len(previous))
 	cachedBytes := 0
@@ -371,6 +374,13 @@ func (e *Engine) scanProjectWarmCandidates(
 					current = warmFileIndex{info: info}
 					warmBuildIndex(&current, content)
 				}
+			} else if old.lastNeedle == needleName && !old.lastMatch {
+				// This *identical* name was absent from the unchanged file
+				// in the last complete scan. Avoid rereading over-budget
+				// Bloom false positives on repeated reference requests.
+				next[path] = old
+				stats.SkippedRead++
+				return nil
 			} else if !warmIndexedMayContain(&old, needle) {
 				next[path] = old
 				stats.SkippedRead++
@@ -399,8 +409,18 @@ func (e *Engine) scanProjectWarmCandidates(
 		if !unchanged && current.content == nil {
 			warmBuildIndex(&current, content)
 		}
+		// Repeated find_references, incoming_calls and impact queries often
+		// request the same symbol. The candidate filter is deterministic
+		// for unchanged source bytes, so reuse its last answer, including
+		// Unicode / TypeScript-escaped spelling checks.
+		matched := unchanged && old.lastNeedle == needleName && old.lastMatch
+		if !matched && (!unchanged || old.lastNeedle != needleName) {
+			matched = warmContainsProjectIdentifier(content, needle, p.SessionKey)
+		}
+		current.lastNeedle = needleName
+		current.lastMatch = matched
 		next[path] = current
-		if !warmContainsProjectIdentifier(content, needle, p.SessionKey) {
+		if !matched {
 			return nil
 		}
 		stats.Matches++

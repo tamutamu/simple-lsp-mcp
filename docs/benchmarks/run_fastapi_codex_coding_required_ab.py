@@ -26,12 +26,34 @@ Python environment for acceptance tests. Validate with python -m py_compile,
 ruff if locally available, and git diff --check.
 Do not edit AGENTS.md, dependencies, or generated files.
 """
+RENAME_POLICY="""# Matched coding A/B: identical instructions for both arms.
+Implement the requested change and keep the diff minimal.
+If Simple LSP MCP is connected and this task explicitly requests a
+cross-file function rename with a known file and function name:
+1. Call rename_symbol(path, symbol_path, new_name, apply=true) ONCE to
+   atomically apply all language-server-identified references.
+2. Verify the changed file summary, run git diff --check, and check no
+   old symbol references remain. Do not inspect or search the whole project
+   first. Do not repeat manual edits or full-file reads after LSP success.
+Use read-only preview_rename ONLY when the target is ambiguous or a
+preview was explicitly requested. An explicit rename task authorizes the
+write, but the client's tool permissions must still be respected.
+If the MCP's write operation is denied by Codex, report that exact failure
+and use normal editing as the fallback; never claim the LSP rename succeeded.
+For other kinds of coding tasks, use relevant targeted LSP inspection without
+duplicating an already-returned code snippet.
+If MCP is not connected, use the regular shell/editing workflow.
+Both arms must not edit AGENTS.md, dependencies, or generated files.
+The benchmark worktree has no pytest environment. Do not install
+dependencies; an independent grader examines correctness. Check Python
+syntax on edited files and git diff --check.
+"""
 SUFFIX="Follow project AGENTS.md. Work only inside this pinned project checkout. Keep scope minimal; do not edit generated clients, AGENTS.md or dependencies. Run reasonable checks. Finish with a concise result."
 
 def call(argv, cwd=None, **kw):
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, **kw)
 
-def prepare(source, dst):
+def prepare(source, dst, policy=POLICY):
     if dst.exists():raise RuntimeError("Worktree already exists: "+str(dst))
     dst.mkdir(parents=True)
     proc=subprocess.Popen(["git","-C",str(source),"archive","HEAD"], stdout=subprocess.PIPE)
@@ -42,7 +64,7 @@ def prepare(source, dst):
         x=dst/name
         if x.is_dir():shutil.rmtree(x)
         elif x.exists():x.unlink()
-    (dst/"AGENTS.md").write_text(POLICY)
+    (dst/"AGENTS.md").write_text(policy)
     for cmd in (["git","init","-q"],["git","add","-A"],
                 ["git","-c","user.name=Benchmark","-c","user.email=benchmark@example.invalid",
                  "commit","-qm","baseline"]):
@@ -217,16 +239,23 @@ def evaluate(o,case,mode,rep):
     if directory.exists():raise RuntimeError("Refusing to overwrite trial "+str(directory))
     directory.mkdir(parents=True)
     work=directory/"checkout"
-    prepare(o.source,work)
+    if getattr(o,"semantic_rename",False):
+        prepare(o.source,work,o.policy)
+    else:
+        prepare(o.source,work)
     cmd=[str(o.node),str(o.codex),"exec","--ignore-user-config","--ephemeral",
-         "--json","--skip-git-repo-check","--sandbox","workspace-write",
+         "--json","--skip-git-repo-check",
          "--cd",str(work),"--model",o.model,"--config",
          'model_reasoning_effort="'+o.effort+'"']
+    if getattr(o,"semantic_rename",False):
+        cmd.append("--approve-for-me")
+    else:
+        cmd.extend(["--sandbox","workspace-write"])
     if mode=="mcp":
         bins=os.pathsep.join([str(o.node.parent),str(o.lsp_bin),
                               os.environ.get("PATH", "/usr/bin:/bin")])
         cmd+=["-c",'mcp_servers.simple-lsp.command="'+str(o.mcp)+'"',
-              "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'","--tool-profile","coding","--result-format","text"]',
+              "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'","--tool-profile","'+o.mcp_profile+'","--result-format","text"]',
               "-c",'mcp_servers.simple-lsp.env.PATH="'+bins+'"']
         if o.tsserver:
             cmd+=["-c",'mcp_servers.simple-lsp.env.SIMPLE_LSP_TSSERVER_PATH="'+o.tsserver+'"']
@@ -269,7 +298,7 @@ def evaluate(o,case,mode,rep):
              mcp_calls=len(mcp),valid_mcp_calls=len(mcpok),
              model=o.model,effort=o.effort,agent_version=o.agent_version,
              mcp_binary_sha=o.mcp_binary_sha,
-             source_commit=SHA,policy_sha=hashlib.sha256(POLICY.encode()).hexdigest(),
+             source_commit=SHA,policy_sha=hashlib.sha256(getattr(o,'policy',POLICY).encode()).hexdigest(),
              tasks_sha=hashlib.sha256((BASE/"docs/benchmarks/fastapi-template-tasks.json").read_bytes()).hexdigest(),
              grader_sha=hashlib.sha256(GRADER.read_bytes()).hexdigest(),
              mcp_tools=[x.get("tool") for x in mcp],
@@ -330,8 +359,8 @@ def report(o,rows):
            "Source pinned to "+SHA+".",
            "Dollar costs cannot be inferred from Codex CLI token usage.",
            "",
-           "| Task | Arm | Completed | Accepted | Mean time (s) | Mean input tokens | Mean output tokens | MCP calls |",
-           "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+           "| Task | Arm | Completed | Accepted | Time (s) | Input total | Input cached | Input fresh | Output | Reasoning | Commands | Repeats | MCP valid/attempted |",
+           "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for case in o.cases:
         for mode in ("baseline","mcp"):
             ar=[r for r in rows if r["case"]==case and r["mode"]==mode]
@@ -340,7 +369,11 @@ def report(o,rows):
             lines.append("| "+case+" | "+mode+" | "+str(len(done))+"/"+str(len(ar))+
                          " | "+str(sum(r["accepted"] for r in done))+"/"+str(len(done))+
                          " | "+str(avg("seconds"))+" | "+str(avg("input_tokens"))+
-                         " | "+str(avg("output_tokens"))+" | "+str(sum(r["mcp_calls"] for r in ar))+" |")
+                         " | "+str(avg("cached_tokens"))+" | "+str(avg("uncached_input_tokens"))+
+                         " | "+str(avg("output_tokens"))+" | "+str(avg("reasoning_tokens"))+
+                         " | "+str(avg("command_calls"))+" | "+str(avg("repeated_tool_calls"))+
+                         " | "+str(sum(r.get("valid_mcp_calls", 0) for r in ar))+
+                         "/"+str(sum(r["mcp_calls"] for r in ar))+" |")
     lines+=["","Only completed, independently graded and genuinely MCP-using trials support conclusions.",""]
     (o.output/"report.md").write_text("\n".join(lines))
     print("REPORT",o.output/"report.md",flush=True)
@@ -350,6 +383,9 @@ def main():
     for k in ("source","mcp","python","output","node","codex","lsp-bin"):
         p.add_argument("--"+k,required=True,type=Path)
     p.add_argument("--model",default="gpt-5.6-sol")
+    p.add_argument("--mcp-profile",choices=("coding","rename"),default="coding")
+    p.add_argument("--semantic-rename",action="store_true",
+                   help="Enable one-shot semantic rename instructions and auto-review authorization")
     p.add_argument("--effort",default="low")
     p.add_argument("--tsserver",default="")
     p.add_argument("--cases",nargs="+",choices=tuple(TASKS),default=list(TASKS))
@@ -362,6 +398,7 @@ def main():
     p.add_argument("--rescore-only",action="store_true")
     p.add_argument("--plan",action="store_true")
     o=p.parse_args()
+    o.policy=RENAME_POLICY if o.semantic_rename else POLICY
     for k in ("source","mcp","output","node","codex","lsp_bin"):
         setattr(o,k,getattr(o,k).resolve())
     o.python=Path(os.path.abspath(o.python)) # keep virtualenv symlink
@@ -382,8 +419,8 @@ def main():
     if o.plan:return
     o.output.mkdir(exist_ok=True,parents=True)
     ag=o.output/"AGENTS.md"
-    if ag.exists() and ag.read_text()!=POLICY:raise RuntimeError("Policy changed; use fresh output")
-    ag.write_text(POLICY)
+    if ag.exists() and ag.read_text()!=o.policy:raise RuntimeError("Policy changed; use fresh output")
+    ag.write_text(o.policy)
     if o.rescore_only:
         rows=[]
         for c,m,i in planned:

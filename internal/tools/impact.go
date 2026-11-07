@@ -13,10 +13,10 @@ import (
 
 const (
 	defaultImpactDepth = 8
-	maxImpactDepth = 16
+	maxImpactDepth     = 16
 	defaultImpactNodes = 80
-	maxImpactNodes = 200
-	maxImpactEdges = 512
+	maxImpactNodes     = 200
+	maxImpactEdges     = 512
 )
 
 type impactSymbol struct {
@@ -30,31 +30,31 @@ func (s impactSymbol) key() string {
 }
 
 type impactDocument struct {
-	Profile language.Profile
-	Session *session.Session
+	Profile  language.Profile
+	Session  *session.Session
 	Document document.Document
-	Nodes []symbolNode
+	Nodes    []symbolNode
 }
 
 type impactReference struct {
 	Owner impactSymbol
-	Line int
+	Line  int
 }
 
 type impactNode struct {
-	ID string `json:"id"`
-	Path string `json:"path"`
-	Line int `json:"line"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
-	Depth int `json:"depth"`
+	ID    string `json:"id"`
+	Path  string `json:"path"`
+	Line  int    `json:"line"`
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`
+	Depth int    `json:"depth"`
 }
 
 type impactEdge struct {
-	From string `json:"from"`
-	To string `json:"to"`
-	ReferenceLines []int `json:"reference_lines"`
-	ReferenceCount int `json:"reference_count"`
+	From           string `json:"from"`
+	To             string `json:"to"`
+	ReferenceLines []int  `json:"reference_lines"`
+	ReferenceCount int    `json:"reference_count"`
 }
 
 // AnalyzeImpact recursively follows exact LSP symbol references. Each reference
@@ -89,12 +89,24 @@ func (e *Engine) AnalyzeImpact(ctx context.Context, in map[string]any) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	selected, err := impactSymbolOnLine(symbols, line)
+	var selected symbolNode
+	if column := intVal(in, "column"); column > 0 {
+		selected, err = impactSymbolOnPosition(symbols, core.Position{Line: line, Column: column})
+	} else {
+		selected, err = impactSymbolOnLine(symbols, line)
+	}
 	if err != nil {
 		return nil, err
 	}
 	root := impactSymbol{Path: relativeMust(e, doc.Path), Node: selected}
 	initial := impactDocument{Profile: profile, Session: server, Document: doc, Nodes: symbols}
+	return e.analyzeImpactResolved(ctx, root, initial, depth, nodeLimit)
+}
+
+// analyzeImpactResolved accepts an already resolved declaration and document
+// symbol tree, avoiding duplicate documentSymbol requests when a higher-level
+// workflow first resolves a known symbol and then expands its dependencies.
+func (e *Engine) analyzeImpactResolved(ctx context.Context, root impactSymbol, initial impactDocument, depth, nodeLimit int) (map[string]any, error) {
 	docs := map[string]impactDocument{root.Path: initial}
 	load := func(path string) (impactDocument, error) {
 		if cached, ok := docs[path]; ok {
@@ -178,7 +190,7 @@ func (e *Engine) AnalyzeImpact(ctx context.Context, in map[string]any) (map[stri
 		"meta": map[string]any{
 			"complete": complete, "truncated": len(limits) > 0,
 			"limit_reasons": limits,
-			"note": "Static LSP references only: dynamic calls, reflection and unindexed sources may be missed. Edges indicate potential impact, not mandatory edits.",
+			"note":          "Static LSP references only: dynamic calls, reflection and unindexed sources may be missed. Edges indicate potential impact, not mandatory edits.",
 		},
 	}, nil
 }
@@ -189,8 +201,8 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 	fetch func(context.Context, impactSymbol) ([]impactReference, int, error)) ([]impactNode, []impactEdge, []string, int, error) {
 	type work struct {
 		symbol impactSymbol
-		index int
-		depth int
+		index  int
+		depth  int
 	}
 	var nodes []impactNode
 	var edges []impactEdge
@@ -234,7 +246,7 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 				targetID = fmt.Sprintf("n%d", len(nodes))
 			}
 			from := nodes[item.index].ID
-			edgeKey := from+"->"+targetID
+			edgeKey := from + "->" + targetID
 			edgeIndex, alreadyEdge := edgeIndices[edgeKey]
 			if !alreadyEdge && len(edges) >= edgeLimit {
 				reasons["max_edges"] = true
@@ -246,7 +258,7 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 					continue
 				}
 				next = addNode(ref.Owner, item.depth+1)
-				queue = append(queue, work{symbol: ref.Owner, index: next, depth: item.depth+1})
+				queue = append(queue, work{symbol: ref.Owner, index: next, depth: item.depth + 1})
 			}
 			if !alreadyEdge {
 				edgeIndex = len(edges)
@@ -272,6 +284,31 @@ func traverseImpact(ctx context.Context, root impactSymbol, depth, nodeLimit, ed
 	}
 	sort.Strings(limits)
 	return nodes, edges, limits, unmapped, nil
+}
+
+// impactSymbolOnPosition allows a high-level tool to retain the exact LSP
+// selection position for declarations sharing a source line. Never infer an
+// ambiguous node from its surrounding range.
+func impactSymbolOnPosition(nodes []symbolNode, point core.Position) (symbolNode, error) {
+	var matches []symbolNode
+	var visit func([]symbolNode)
+	visit = func(items []symbolNode) {
+		for _, item := range items {
+			if item.SelectionRange.Start == point {
+				matches = append(matches, item)
+			}
+			visit(item.Children)
+		}
+	}
+	visit(nodes)
+	switch len(matches) {
+	case 0:
+		return symbolNode{}, core.NewError(core.SymbolNotFound, "no declaration at the requested line and column")
+	case 1:
+		return matches[0], nil
+	default:
+		return symbolNode{}, core.NewError(core.AmbiguousSymbol, "multiple declarations share the requested selection position")
+	}
 }
 
 // Selecting by a declaration line removes the need for the agent to locate a

@@ -59,7 +59,7 @@ func compactRenamePreview(result map[string]any) map[string]any {
 	sampled := 0
 	for _, file := range files {
 		entry := map[string]any{
-			"path": file.Path,
+			"path":       file.Path,
 			"edit_count": len(file.Edits),
 		}
 		if len(file.Edits) > 0 {
@@ -88,6 +88,34 @@ func compactRenamePreview(result map[string]any) map[string]any {
 	result["sample_edit_count"] = sampled
 	result["full_preview_available"] = "preview_rename(preview_detail=full)"
 	return result
+}
+
+// CompactAppliedRename retains the result needed after a verified write,
+// without echoing every replacement already applied to the filesystem.
+// The full plan remains available through RenameSymbol and preview_rename.
+func CompactAppliedRename(result map[string]any) map[string]any {
+	if applied, _ := result["applied"].(bool); !applied {
+		return result
+	}
+	files, ok := result["files"].([]fileEditPreview)
+	if !ok {
+		return result
+	}
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	summary := map[string]any{
+		"applied":       true,
+		"new_name":      result["new_name"],
+		"file_count":    result["file_count"],
+		"edit_count":    result["edit_count"],
+		"changed_files": paths,
+	}
+	if warnings, present := result["warnings"]; present {
+		summary["warnings"] = warnings
+	}
+	return summary
 }
 
 // RenameSymbol asks the selected language server to compute a semantic rename.

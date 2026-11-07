@@ -35,13 +35,34 @@ func projectWarmSupported(p language.Profile) bool {
 	return p.SessionKey == "typescript-javascript" || p.SessionKey == "python"
 }
 
+// projectPrimeKey identifies a semantic synchronization point in a single
+// language-server generation. Never share a cached result after a restart.
+type projectPrimeKey struct {
+	server     *session.Session
+	generation uint64
+	uri        string
+	position   protocol.Position
+}
+
 // primeProjectSemantics forces project-based TypeScript servers to finish
-// attaching the newly-opened candidate files before a project-wide relation or
-// rename is requested. didOpen alone is asynchronous inside tsserver. A real
-// call-hierarchy round trip proved to be the reliable semantic synchronization
-// point; its result is discarded because the caller will make its own query.
+// attaching newly-opened candidate files before a project-wide relation or
+// rename. didOpen is asynchronous inside tsserver. Once a successful call
+// hierarchy round trip has completed, repeating it for the same target while
+// the session's notified document revision is unchanged is redundant.
+// Any didOpen/didChange (including project candidate warm-up) invalidates it.
 func (e *Engine) primeProjectSemantics(ctx context.Context, p language.Profile, s *session.Session, d document.Document, pos protocol.Position) error {
 	if p.SessionKey != "typescript-javascript" || !s.Capabilities().CallHierarchy {
+		return nil
+	}
+	if e.Docs == nil {
+		return core.NewError(core.IncompleteSearch, "project semantic warm-up needs document state")
+	}
+	revision := e.Docs.Revision(s)
+	key := projectPrimeKey{server: s, generation: s.Generation(), uri: d.URI, position: pos}
+	e.primeMu.Lock()
+	previous, found := e.primed[key]
+	e.primeMu.Unlock()
+	if found && previous == revision {
 		return nil
 	}
 	callCtx, cancel := e.callContext(ctx)
@@ -65,6 +86,16 @@ func (e *Engine) primeProjectSemantics(ctx context.Context, p language.Profile, 
 	cancel()
 	if err != nil {
 		return core.WithCause(core.IncompleteSearch, "project semantic warm-up could not load incoming calls", err)
+	}
+	// Concurrent didOpen/didChange during priming must not be marked as
+	// settled; the following request then performs the synchronization again.
+	if e.Docs.Revision(s) == revision && s.Generation() == key.generation {
+		e.primeMu.Lock()
+		if e.primed == nil || len(e.primed) >= 128 {
+			e.primed = make(map[projectPrimeKey]uint64)
+		}
+		e.primed[key] = revision
+		e.primeMu.Unlock()
 	}
 	return nil
 }

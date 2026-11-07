@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -32,6 +33,8 @@ type Engine struct {
 	DiagnosticsWait time.Duration
 	MaxResults      int
 	warmIndex       warmSourceIndex
+	primeMu         sync.Mutex
+	primed          map[projectPrimeKey]uint64
 }
 
 // New builds an engine with session-local document and symbol stores.
