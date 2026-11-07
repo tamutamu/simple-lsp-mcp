@@ -44,6 +44,11 @@ requested facts from the language server:
 {"path":"src/services/task.ts","symbol_path":"TaskService/list","view":"edit","related":["references","incoming_calls","implementations"],"relation_limit":8}
 \`\`\`
 
+Go receivers may be targeted using either the server-reported flat symbol
+(e.g. \`(*Log).EmitAuditEvent\`) or \`symbol_path="Log/EmitAuditEvent"\`.
+The latter only matches the named receiver and method; it never guesses
+between multiple matching declarations. Anchored paths remain strict.
+
 The response contains the original code plus compact, LSP-resolved references
 (grouped by file), callers and implementations. It reports each unsupported or
 failed relation in \`related_meta.failed\` and each bounded result in
