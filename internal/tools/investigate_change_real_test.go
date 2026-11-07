@@ -88,6 +88,33 @@ func TestRealTypeScriptInvestigateChangeTwoHop(t *testing.T) {
 		t.Fatal(err)
 	}
 	selection := inspect["selection_range"].(core.Range)
+	// Reproduce real Codex input: name and exact source coordinates are
+	// both present. They corroborate one another rather than conflict.
+	batch, err := engine.InvestigateChange(ctx, map[string]any{
+		"targets": []any{
+			map[string]any{"path": "core.ts", "symbol_path": "target",
+				"line": selection.Start.Line, "column": selection.Start.Column},
+			map[string]any{"path": "middle.ts", "symbol_path": "middle"},
+		},
+		"depth": 2, "max_nodes": 20, "detail": "union",
+	})
+	if err != nil {
+		t.Fatalf("valid redundant coordinates rejected: %v", err)
+	}
+	if batch["targets_count"] != 2 {
+		t.Fatalf("batch lost target: %#v", batch)
+	}
+	_, err = engine.InvestigateChange(ctx, map[string]any{
+		"targets": []any{
+			map[string]any{"path": "core.ts", "symbol_path": "target",
+				"line": selection.Start.Line + 1, "column": selection.Start.Column},
+			map[string]any{"path": "middle.ts", "symbol_path": "middle"},
+		},
+		"depth": 2, "max_nodes": 20, "detail": "union",
+	})
+	if err == nil {
+		t.Fatal("stale/wrong coordinates were silently accepted")
+	}
 	graph, err := engine.AnalyzeImpact(ctx, map[string]any{"path": "core.ts", "line": selection.Start.Line,
 		"column": selection.Start.Column, "depth": 2, "max_nodes": 20})
 	if err != nil {

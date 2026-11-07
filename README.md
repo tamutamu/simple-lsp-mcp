@@ -349,6 +349,8 @@ When several exact functions are known, call `inspect_symbol(view="edit", target
 
 In the [2026-11-07 Codex A/B pilot](docs/benchmarks/composite-impact-evaluation-2026-11-07.md), two paired Teleport tasks investigating three functions found 22 affected files with this tool and none of the Codex-only trials completed the three semantic investigations correctly. **Mean fresh input was ~47% lower** with LSP; elapsed time was ~11% higher when including the fresh server startup. These are exploratory results, not a general guarantee. The tool reports truncation and unmapped references instead of claiming exhaustive impact.
 
+A follow-up [six-symbol, three-phase Codex evaluation](docs/benchmarks/codex-longrun-impact-2026-11-08.md) on 4,361 Go sources used one continuous Codex session with a reused MCP connection. In two paired trials, LSP completed **all three phases correctly with three MCP calls**, averaging **55.4% fewer fresh input tokens** and **12.4% less elapsed time** than a Codex-only arm that did **not** fully resolve the semantic impact. This is exploratory evidence; unequal correctness and the LSP-derived reference oracle limit broad claims.
+
 ## MCP tools (23 goal-oriented operations)
 
 Every tool returns structured data. Positions are **one-based**, paths workspace-relative. A target may be a `symbol_id` from another tool, a `symbol_path` such as `UserService/createUser` (optionally scoped with `path`), or a file `path` plus `line` and `column`. Use `search_symbols` / `get_document_symbols` to discover identifiers, then request **only the specific relation needed**. Tool calls are not mandatory.

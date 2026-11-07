@@ -25,8 +25,9 @@ func (e *Engine) InvestigateChange(ctx context.Context, in map[string]any) (map[
 	if raw, present := in["targets"]; present {
 		return e.investigateChangesBatch(ctx, in, raw)
 	}
-	if err := targetOf(in).Validate(); err != nil {
-		return nil, err
+	normalized, positionHint, validateErr := normalizedInvestigationTarget(in)
+	if validateErr != nil {
+		return nil, validateErr
 	}
 	detail := stringVal(in, "detail")
 	if detail == "" {
@@ -75,7 +76,7 @@ func (e *Engine) InvestigateChange(ctx context.Context, in map[string]any) (map[
 	} else {
 		target := make(map[string]any, 7)
 		for _, key := range []string{"symbol_id", "symbol_path", "path", "line", "column", "language"} {
-			if value, ok := in[key]; ok {
+			if value, ok := normalized[key]; ok {
 				target[key] = value
 			}
 		}
@@ -108,11 +109,45 @@ func (e *Engine) InvestigateChange(ctx context.Context, in map[string]any) (map[
 	if resolvedPath == "" || selected.SelectionRange.Start.Line < 1 || selected.SelectionRange.Start.Column < 1 {
 		return nil, core.NewError(core.IncompleteSearch, "LSP did not provide an exact declaration position")
 	}
+	if positionHint.Line > 0 && selected.SelectionRange.Start != positionHint {
+		return nil, core.NewError(core.InvalidArgument,
+			fmt.Sprintf("declaration %s is at %d:%d, not the supplied %d:%d",
+				knownSymbol, selected.SelectionRange.Start.Line, selected.SelectionRange.Start.Column,
+				positionHint.Line, positionHint.Column))
+	}
 	graph, err := e.analyzeImpactResolved(ctx, impactSymbol{Path: resolvedPath, Node: selected}, initial, depth, nodes)
 	if err != nil {
 		return nil, err
 	}
 	return summarizeChangeInvestigation(found, graph, detail)
+}
+
+// normalizedInvestigationTarget allows a coding agent to pass both a known
+// symbol path and its source position. Those coordinates corroborate the
+// symbol's identity, rather than choosing a competing resolution mode.
+// Wrong/stale coordinates are rejected after the LSP resolves the declaration.
+func normalizedInvestigationTarget(in map[string]any) (map[string]any, core.Position, error) {
+	clean := make(map[string]any, len(in))
+	for key, value := range in {
+		clean[key] = value
+	}
+	var hint core.Position
+	_, lineSupplied := in["line"]
+	_, columnSupplied := in["column"]
+	if stringVal(in, "path") != "" && stringVal(in, "symbol_path") != "" &&
+		stringVal(in, "symbol_id") == "" && (lineSupplied || columnSupplied) {
+		line, column := intVal(in, "line"), intVal(in, "column")
+		if !lineSupplied || !columnSupplied || line < 1 || column < 1 {
+			return nil, hint, core.NewError(core.InvalidArgument, "symbol path coordinates must include positive line and column")
+		}
+		hint = core.Position{Line: line, Column: column}
+		delete(clean, "line")
+		delete(clean, "column")
+	}
+	if err := targetOf(clean).Validate(); err != nil {
+		return nil, hint, err
+	}
+	return clean, hint, nil
 }
 
 type investigationDeclaration struct {
@@ -156,10 +191,11 @@ func (e *Engine) investigateChangesBatch(ctx context.Context, in map[string]any,
 				return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("unknown field %s in targets[%d]", key, i))
 			}
 		}
-		if err := targetOf(target).Validate(); err != nil {
+		normalized, _, err := normalizedInvestigationTarget(target)
+		if err != nil {
 			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d]: %v", i, err))
 		}
-		identity, _ := json.Marshal(target)
+		identity, _ := json.Marshal(normalized)
 		if seen[string(identity)] {
 			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("duplicate target at index %d", i))
 		}

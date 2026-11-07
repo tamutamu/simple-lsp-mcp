@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For an explicit cross-file rename with a known symbol, use rename_symbol(apply=true) directly; preview_rename is optional when the target is ambiguous or needs review. Avoid inspect_symbol + grep + manual edits. Use the exact path and symbol_path when known. Confirm application with concise diff checks. For other known functions call inspect_symbol(view=edit) directly; batch 2-8 with targets[]. Use rg for unknown files/literals and LSP references for semantic identity. For formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "For an explicit cross-file rename with a known symbol, use rename_symbol(apply=true) directly; preview_rename is optional when the target is ambiguous or needs review. Avoid inspect_symbol + grep + manual edits. Use the exact path and symbol_path when known. Confirm application with concise diff checks. For cross-file change-impact questions prefer investigate_change(path,symbol_path,depth=2) over ad hoc grep; use targets[] (2-6) with detail=union for multiple declarations. For other known functions call inspect_symbol(view=edit) directly; batch 2-8 with targets[]. Use rg for unknown files/literals and LSP references for semantic identity. For formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -147,7 +147,7 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and completeness. Supply targets[] (2–6) to investigate several declarations in one call; detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and completeness. Supply targets[] (2–6) to investigate several declarations in one call; optional line+column with path+symbol_path corroborates the exact source position and rejects mismatches. detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InvestigateChange(c, i)
 		}},
 
@@ -212,7 +212,7 @@ func investigateInputSchema() map[string]any {
 			"properties":           props("symbol_id", "symbol_path", "path", "line", "column", "language"),
 			"additionalProperties": false,
 		},
-	}, "Batch 2–6 exact LSP targets in one tool call; exclusive with top-level symbol target fields. Use depth, max_nodes and files detail for all.")
+	}, "Batch 2–6 exact LSP targets in one tool call; exclusive with top-level symbol target fields. When symbol_path and path are known, optional line+column corroborates the declaration position. Use depth, max_nodes and detail=union for compact output.")
 
 	fields["depth"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 16}, "LSP reference-hop depth; default 2.")
 	fields["max_nodes"] = describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 200}, "Maximum distinct declarations; default 40.")

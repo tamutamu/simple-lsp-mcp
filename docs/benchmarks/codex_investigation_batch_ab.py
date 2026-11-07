@@ -15,6 +15,7 @@ import subprocess
 import time
 
 from codex_investigation_ab import clone_checkout, git, last_output, parse_json_answer
+from semantic_bench_targets import resolve_go_target
 
 POLICY = """# Read-only multi-symbol change investigation
 Do not edit or generate any repository source files. The workspace-write
@@ -87,7 +88,7 @@ def attempt(o,arm,n,truth):
     env=os.environ.copy()
     env["PATH"]=os.pathsep.join([str(o.node.parent),str(o.lsp_bin),env.get("PATH","")])
     targets=truth["targets"]
-    names="; ".join(f"{t['path']}::{t['symbol_path']} (declaration at approximately line {t['line']})" for t in targets)
+    names="; ".join(f"{t['path']}::{t['symbol_path']} (declaration at line {t['line']}, column {t['column']})" for t in targets)
     prompt=("Investigate all three changes in this large codebase as ONE task: "+names+
         ". For each, identify ALL affected file paths within 2 semantic reference hops, "
         "distinct affected declarations, exact direct reference counts, and whether the "
@@ -162,10 +163,9 @@ def main():
         setattr(o,key,getattr(o,key).resolve())
     if o.output.exists():p.error("output exists")
     truth=json.loads(o.oracle.read_text())
-    # Declarations are always re-resolved inside the LSP tool; these lines
-    # only give the shell/gopls baseline an equally exact starting location.
-    for t,line in zip(truth["targets"],(295,392,509)):
-        t["line"]=line
+    # Exact source-derived declaration positions help BOTH arms and avoid
+    # misleading zero-reference baselines due to wrong gopls coordinates.
+    truth["targets"]=[resolve_go_target(o.source,t) for t in truth["targets"]]
     o.output.mkdir(parents=True)
     (o.output/"context.json").write_text(json.dumps({
         "source_commit":git(["rev-parse","HEAD"],o.source),

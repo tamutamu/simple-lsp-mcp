@@ -106,3 +106,32 @@ func TestInvestigateChangesBatchRejectsMalformedAndDuplicateTargets(t *testing.T
 		}
 	}
 }
+func TestInvestigationAcceptsCorroboratingCoordinatesWithoutChangingIdentity(t *testing.T) {
+	in := map[string]any{"path": "project/service.go", "symbol_path": "Handle",
+		"line": 23, "column": 15}
+	clean, hint, err := normalizedInvestigationTarget(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hint.Line != 23 || hint.Column != 15 {
+		t.Fatalf("wrong hint: %#v", hint)
+	}
+	if _, ok := clean["line"]; ok {
+		t.Fatal("redundant coordinates sent to exclusive target validator")
+	}
+	if _, ok := clean["column"]; ok {
+		t.Fatal("redundant coordinates sent to exclusive target validator")
+	}
+	if _, ok := in["line"]; !ok {
+		t.Fatal("input map mutated")
+	}
+	for _, bad := range []map[string]any{
+		{"path": "project/service.go", "symbol_path": "Handle", "line": 23},
+		{"path": "project/service.go", "symbol_path": "Handle", "line": 23, "column": 0},
+		{"path": "project/service.go", "symbol_path": "Handle", "line": -1, "column": 15},
+	} {
+		if _, _, err := normalizedInvestigationTarget(bad); err == nil {
+			t.Fatalf("accepted invalid corroborating location: %#v", bad)
+		}
+	}
+}
