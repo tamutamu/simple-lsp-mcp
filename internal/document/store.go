@@ -61,18 +61,36 @@ func (s *Store) Sync(ctx context.Context, n Notifier, path, languageID string) (
 // rereading it here doubles disk IO without adding semantic information.
 // The caller transfers ownership of b and must not mutate it after this call.
 func (s *Store) SyncBytes(_ context.Context, n Notifier, path, languageID string, b []byte) (Document, error) {
-	if !utf8.Valid(b) {
-		return Document{}, core.NewError(core.InvalidArgument, "file is not valid UTF-8")
-	}
 	if n == nil || !reflect.TypeOf(n).Comparable() {
 		return Document{}, core.NewError(core.InvalidArgument, "document notifier must have a comparable identity")
 	}
-	hash := fmt.Sprintf("%x", sha256.Sum256(b))
-	uri := fileURI(path)
 	generation := uint64(0)
 	if versioned, ok := n.(interface{ Generation() uint64 }); ok {
 		generation = versioned.Generation()
 	}
+
+	// Project warm-up reuses an immutable source buffer from its bounded
+	// file index. If the exact buffer is already open in the same generation,
+	// it was validated and hashed on the first sync. Avoid validating and
+	// hashing the same bytes for every reference/rename query.
+	// A server restart (new generation) always goes through didOpen below.
+	s.mu.Lock()
+	if state := s.docs[n][path]; state != nil &&
+		state.generation == generation &&
+		state.value.LanguageID == languageID &&
+		len(state.value.Text) == len(b) &&
+		(len(b) == 0 || &state.value.Text[0] == &b[0]) {
+		d := state.value
+		s.mu.Unlock()
+		return d, nil
+	}
+	s.mu.Unlock()
+
+	if !utf8.Valid(b) {
+		return Document{}, core.NewError(core.InvalidArgument, "file is not valid UTF-8")
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256(b))
+	uri := fileURI(path)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
