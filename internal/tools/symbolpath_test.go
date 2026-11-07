@@ -144,7 +144,7 @@ func TestWalkDocumentRejectsPartialHierarchicalResponse(t *testing.T) {
 		Start: protocol.Position{Line: 5}, End: protocol.Position{Line: 5, Character: 1},
 	}}
 	for _, tc := range []struct {
-		name string
+		name    string
 		symbols []protocol.DocumentSymbol
 	}{
 		{"invalid sibling", []protocol.DocumentSymbol{valid, invalid}},
@@ -318,4 +318,50 @@ func mustWalkDocument(text []byte, encoding string, vs []protocol.DocumentSymbol
 		panic(err)
 	}
 	return nodes
+}
+
+// TestGoReceiverQualifiedSymbolPaths reproduces the first failed LSP lookup
+// in a Teleport coding-agent benchmark.
+func TestGoReceiverQualifiedSymbolPaths(t *testing.T) {
+	nodes := []symbolNode{
+		{Name: "(*Log).EmitAuditEvent", SymbolPath: "(*Log).EmitAuditEvent", Segments: []string{"(*Log).EmitAuditEvent"}},
+		{Name: "(Log).Flush", SymbolPath: "(Log).Flush", Segments: []string{"(Log).Flush"}},
+		{Name: "(*Other).EmitAuditEvent", SymbolPath: "(*Other).EmitAuditEvent", Segments: []string{"(*Other).EmitAuditEvent"}},
+	}
+	for _, tc := range []struct {
+		path     string
+		anchored bool
+		want     string
+	}{
+		{"Log/EmitAuditEvent", false, "(*Log).EmitAuditEvent"},
+		{"Log/Flush", false, "(Log).Flush"},
+		{"Other/EmitAuditEvent", false, "(*Other).EmitAuditEvent"},
+		{"(*Log).EmitAuditEvent", true, "(*Log).EmitAuditEvent"},
+		{"Log/EmitAuditEvent", true, ""},
+		{"Log/Missing", false, ""},
+	} {
+		segments, _, err := parseSymbolPath(tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := matchNodes(nodes, segments, tc.anchored)
+		if tc.want == "" {
+			if len(got) != 0 {
+				t.Fatalf("%q matched unexpected node(s): %#v", tc.path, got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0].Name != tc.want {
+			t.Fatalf("%q matched %#v; want %q", tc.path, got, tc.want)
+		}
+	}
+	if found := matchNodes(nodes, []string{"EmitAuditEvent"}, false); len(found) != 2 {
+		t.Fatalf("ambiguous receiver names should stay ambiguous: %#v", found)
+	}
+	nested := symbolNode{Name: "Log", Segments: []string{"Log"},
+		Children: []symbolNode{{Name: "EmitAuditEvent", Segments: []string{"Log", "EmitAuditEvent"}}}}
+	found := matchNodes(append(nodes, nested), []string{"Log", "EmitAuditEvent"}, false)
+	if len(found) != 1 || len(found[0].Segments) != 2 {
+		t.Fatalf("real nested match must outrank receiver fallback: %#v", found)
+	}
 }

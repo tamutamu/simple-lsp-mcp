@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Go receiver-qualified symbol navigation (2026-11-07)
+
+- Accept natural \`Receiver/Method\` symbol paths (e.g. \`Log/EmitAuditEvent\`) when gopls exposes a flat \`(*Log).EmitAuditEvent\` symbol. Preserve exact/anchored lookup and ambiguity safeguards.
+- Add real gopls integration coverage and matching regression tests. This fixes the failed first LSP call observed in the Teleport agent A/B. Functional correctness is tested; agent efficiency impact has not yet been measured.
+
+
 ## Unreleased — opt-in semantic edit context (2026-11-06)
 
 - Extend existing \`inspect_symbol\` with an optional \`related\` list of real LSP facts: references, implementations, declaration/type definition, callers/callees and type hierarchy. **No extra MCP tool** and no extra LSP calls when omitted.

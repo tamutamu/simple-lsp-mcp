@@ -27,7 +27,7 @@ func TestRealLanguageServers(t *testing.T) {
 		name, profile, binary, source, filename, original, changed, setup string
 		args                                                              []string
 	}{
-		{"go", "go", "gopls", "package fixture\nfunc Add(a int, b int) int { return a + b }\nfunc Twice(v int) int { return Add(v, v) }\n", "fixture.go", "a + b", "a - b", "go.mod", nil},
+		{"go", "go", "gopls", "package fixture\nfunc Add(a int, b int) int { return a + b }\nfunc Twice(v int) int { return Add(v, v) }\ntype Log struct{}\nfunc (l *Log) EmitAuditEvent() {}\n", "fixture.go", "a + b", "a - b", "go.mod", nil},
 		{"typescript", "typescript-javascript", "typescript-language-server", "export function Add(a: number, b: number) { return a + b; }\nexport function Twice(v: number) { return Add(v, v); }\n", "fixture.ts", "a + b", "a - b", "tsconfig.json", []string{"--stdio"}},
 		{"python", "python", "pyright-langserver", "def Add(a: int, b: int) -> int:\n    return a + b\n\ndef Twice(v: int) -> int:\n    return Add(v, v)\n", "fixture.py", "a + b", "a - b", "pyrightconfig.json", []string{"--stdio"}},
 	}
@@ -155,6 +155,20 @@ func TestRealLanguageServers(t *testing.T) {
 			}
 			if _, ok := related["related_meta"].(map[string]any); !ok {
 				t.Fatalf("semantic context lacks completeness information: %#v", related)
+			}
+
+			if tc.name == "go" {
+				// gopls exposes flat receiver names; inspect via receiver/method.
+				method, err := engine.InspectSymbol(ctx, map[string]any{
+					"path": tc.filename, "symbol_path": "Log/EmitAuditEvent", "view": "source",
+				})
+				if err != nil {
+					t.Fatalf("real gopls receiver-qualified inspection: %v", err)
+				}
+				code, _ := method["code"].(string)
+				if !strings.Contains(code, "func (l *Log) EmitAuditEvent()") {
+					t.Fatalf("wrong gopls receiver declaration: %#v", method)
+				}
 			}
 
 			listed, err := engine.ListWorkspaceSymbols(ctx, map[string]any{"detail": "full"})

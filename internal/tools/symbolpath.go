@@ -186,17 +186,29 @@ func segmentsEqual(a, b []string) bool {
 }
 
 // suffixMatch reports whether requested is a trailing subsequence of full.
-// qualifiedLeafMatch accepts the human-facing method name when an LSP reports
-// a flat receiver-qualified symbol such as "(*Engine).FindSymbol". Exact or
-// anchored paths still use the server-provided name, and multiple receiver
-// matches remain ambiguous rather than being guessed.
+// qualifiedLeafMatch accepts a human-facing method name when an LSP reports
+// a flat receiver-qualified symbol such as "(*Engine).FindSymbol". Go methods
+// are often requested as "Engine/FindSymbol" although the documentSymbol
+// response has no receiver node. Exact and anchored symbol paths still use
+// the server-provided name, and multiple receiver matches remain ambiguous.
 func qualifiedLeafMatch(full, requested []string) bool {
-	if len(full) != 1 || len(requested) != 1 {
+	if len(full) != 1 || (len(requested) != 1 && len(requested) != 2) {
 		return false
 	}
 	name := full[0]
 	dot := strings.LastIndex(name, ".")
-	return dot >= 0 && dot+1 < len(name) && name[dot+1:] == requested[0]
+	if dot < 0 || dot+1 >= len(name) || name[dot+1:] != requested[len(requested)-1] {
+		return false
+	}
+	if len(requested) == 1 {
+		return true
+	}
+	receiver := name[:dot]
+	if strings.HasPrefix(receiver, "(") && strings.HasSuffix(receiver, ")") {
+		receiver = strings.TrimSuffix(strings.TrimPrefix(receiver, "("), ")")
+	}
+	receiver = strings.TrimPrefix(receiver, "*")
+	return receiver == requested[0]
 }
 
 func suffixMatch(full, requested []string) bool {
