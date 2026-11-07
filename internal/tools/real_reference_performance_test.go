@@ -78,8 +78,8 @@ func BenchmarkRealTypeScriptReferenceWorkflow(b *testing.B) {
 		result, err := engine.Relationship(ctx, "find_references", "textDocument/references", "references", args)
 		if err != nil { b.Fatalf("real find_references: %v", err) }
 		locations, ok := result["locations"].([]core.Location)
-		if !ok || len(locations) != 9 {
-			b.Fatalf("real references count=%d, want 9, result=%#v", len(locations), result)
+		if !ok || len(locations) != 17 {
+			b.Fatalf("real references count=%d, want 17 (declaration + 8 imports + 8 calls), result=%#v", len(locations), result)
 		}
 	}
 	find() // Consume cold LSP startup and prove exact semantic acceptance.
