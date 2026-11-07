@@ -330,8 +330,8 @@ def report(o,rows):
            "Source pinned to "+SHA+".",
            "Dollar costs cannot be inferred from Codex CLI token usage.",
            "",
-           "| Task | Arm | Completed | Accepted | Mean time (s) | Mean input tokens | Mean output tokens | MCP calls |",
-           "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+           "| Task | Arm | Completed | Accepted | Time (s) | Input total | Input cached | Input fresh | Output | Reasoning | Commands | Repeats | MCP valid/attempted |",
+           "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for case in o.cases:
         for mode in ("baseline","mcp"):
             ar=[r for r in rows if r["case"]==case and r["mode"]==mode]
@@ -340,7 +340,11 @@ def report(o,rows):
             lines.append("| "+case+" | "+mode+" | "+str(len(done))+"/"+str(len(ar))+
                          " | "+str(sum(r["accepted"] for r in done))+"/"+str(len(done))+
                          " | "+str(avg("seconds"))+" | "+str(avg("input_tokens"))+
-                         " | "+str(avg("output_tokens"))+" | "+str(sum(r["mcp_calls"] for r in ar))+" |")
+                         " | "+str(avg("cached_tokens"))+" | "+str(avg("uncached_input_tokens"))+
+                         " | "+str(avg("output_tokens"))+" | "+str(avg("reasoning_tokens"))+
+                         " | "+str(avg("command_calls"))+" | "+str(avg("repeated_tool_calls"))+
+                         " | "+str(sum(r.get("valid_mcp_calls", 0) for r in ar))+
+                         "/"+str(sum(r["mcp_calls"] for r in ar))+" |")
     lines+=["","Only completed, independently graded and genuinely MCP-using trials support conclusions.",""]
     (o.output/"report.md").write_text("\n".join(lines))
     print("REPORT",o.output/"report.md",flush=True)
