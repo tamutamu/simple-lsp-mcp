@@ -524,3 +524,37 @@ func BenchmarkProjectWarmLegacyFullScanHit(b *testing.B) {
 	}
 	b.ReportMetric(100, "reads/op")
 }
+
+// BenchmarkProjectWarmIndexRepeatShortName models repeated references for a
+// common short symbol. Nearby identifiers such as "grid" contain the spelling
+// "id" but are *not* valid lexical candidates. This stresses redundant UTF-8
+// boundary checks on unchanged large projects, not LSP response generation.
+// Keep this fixture identical across the before/after worktrees.
+func BenchmarkProjectWarmIndexRepeatShortName(b *testing.B) {
+	root := b.TempDir()
+	ws, err := workspace.Open(root)
+	if err != nil { b.Fatal(err) }
+	p, err := language.FromPath("fixture.ts")
+	if err != nil { b.Fatal(err) }
+	e := &Engine{WS: ws}
+	for i := 0; i < 100; i++ {
+		path := filepath.Join(root, fmt.Sprintf("mod-%03d.ts", i))
+		source := bytes.Repeat([]byte("const grid = 42;\n"), 512)
+		if err := os.WriteFile(path, source, 0o600); err != nil { b.Fatal(err) }
+	}
+	scan := func() warmScanStats {
+		stats, err := e.scanProjectWarmCandidates(context.Background(), p, root, []byte("id"),
+			func(_, _ string, _ language.Profile, _ []byte) error {
+				b.Fatal("grid must not match identifier id")
+				return nil
+			})
+		if err != nil { b.Fatal(err) }
+		if stats.Matches != 0 { b.Fatalf("unexpected matches: %d", stats.Matches) }
+		return stats
+	}
+	scan()
+	b.ResetTimer()
+	var reads int
+	for i := 0; i < b.N; i++ { reads += scan().FilesRead }
+	b.ReportMetric(float64(reads)/float64(b.N), "reads/op")
+}
