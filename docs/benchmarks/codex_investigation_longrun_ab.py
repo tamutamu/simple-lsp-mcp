@@ -51,8 +51,18 @@ def capture(o, arm, trial, truth):
     out.mkdir(parents=True,exist_ok=False)
     work=out/"checkout"
     clone_checkout(o.source,work,POLICY)
+    # Go's global build cache was read-only to Codex workspace sandboxes;
+    # gopls silently returned incomplete reference sets. Give both arms a
+    # writable, workspace-local cache and ignore it without tracked changes.
+    cache=work/".bench-cache"
+    (cache/"tmp").mkdir(parents=True)
+    with (work/".git"/"info"/"exclude").open("a") as exclude:
+        exclude.write("\n.bench-cache/\n")
     env=os.environ.copy()
     env["PATH"]=os.pathsep.join([str(o.node.parent),str(o.lsp_bin),env.get("PATH","")])
+    env["GOCACHE"]=str(cache/"go-build")
+    env["XDG_CACHE_HOME"]=str(cache/"xdg")
+    env["TMPDIR"]=str(cache/"tmp")
     batches=[]
     for phase in truth["phases"]:
         exact=", ".join(
@@ -67,8 +77,10 @@ def capture(o, arm, trial, truth):
             "depth-limited analysis is incomplete. Return JSON as specified in "
             "AGENTS.md. Do not modify code.")
     cmd=[str(o.node),str(o.codex),"exec","--ignore-user-config","--ephemeral",
-         "--json","--skip-git-repo-check","--sandbox","workspace-write",
-         "--cd",str(work),"--model",o.model,"--config",'model_reasoning_effort="'+o.effort+'"']
+         "--json","--skip-git-repo-check","--approve-for-me",
+         "--cd",str(work),"--model",o.model,
+         "--config",'model_reasoning_effort="'+o.effort+'"',
+         "--config","shell_environment_policy.inherit=all"]
     if arm=="mcp":
         cmd.extend(["-c",'mcp_servers.simple-lsp.command="'+str(o.binary)+'"',
             "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'",'
@@ -99,7 +111,7 @@ def capture(o, arm, trial, truth):
             usage=event.get("usage",{})
     total,cached=usage.get("input_tokens"),usage.get("cached_input_tokens")
     fresh=total-cached if isinstance(total,int) and isinstance(cached,int) and 0<=cached<=total else None
-    mcp=[];shell=[];seen_threads=set()
+    mcp=[];shell=[];environment_errors=[];seen_threads=set()
     for event in events:
         if event.get("type")=="thread.started":
             seen_threads.add(event.get("thread_id"))
@@ -110,7 +122,14 @@ def capture(o, arm, trial, truth):
             mcp.append({"tool":item.get("tool"),"status":item.get("status"),
                         "arguments":item.get("arguments")})
         if item.get("type")=="command_execution":
+            output=item.get("aggregated_output") or ""
             shell.append({"command":item.get("command"),"exit_code":item.get("exit_code")})
+            if any(message in output for message in (
+                "go/packages.Load", "initial workspace load failed",
+                "read-only file system", "gopls cannot access its persistent index",
+            )):
+                environment_errors.append({"command":item.get("command"),
+                                           "error_excerpt":output[:600]})
     answer=parse_json_answer(last_output(events))
     responses=answer.get("phases",[])
     if not isinstance(responses,list):
@@ -125,14 +144,16 @@ def capture(o, arm, trial, truth):
         result=score(found[0],{"batch":phase["result"],"targets":phase["targets"]})
         phase_scores.append({"index":phase["index"],**result})
     no_edits=not bool(git(["status","--porcelain"],work))
-    accepted=(code==0 and no_edits and len(responses)==len(truth["phases"]) and
+    accepted=(code==0 and no_edits and not environment_errors and
+             len(responses)==len(truth["phases"]) and
              all(x["all_semantic_facts"] for x in phase_scores))
     row={"arm":arm,"trial":trial,"seconds":elapsed,"exitcode":code,
          "input_total":total,"input_cached":cached,"input_fresh":fresh,
          "output_tokens":usage.get("output_tokens"),
          "reasoning_tokens":usage.get("reasoning_output_tokens"),
          "mcp_calls":mcp,"shell_calls":shell,"thread_ids":sorted(t for t in seen_threads if t),
-         "no_edits":no_edits,"phase_scores":phase_scores,
+         "no_edits":no_edits,"environment_valid":not environment_errors,
+         "environment_errors":environment_errors,"phase_scores":phase_scores,
          "accepted":accepted,"answer":answer}
     (out/"outcome.json").write_text(json.dumps(row,ensure_ascii=False,indent=2))
     print(f"{arm}/{trial}: {elapsed}s, fresh={fresh}, total={total}, "
@@ -165,6 +186,7 @@ def main():
         "binary_sha256":hashlib.sha256(o.binary.read_bytes()).hexdigest(),
         "policy_sha256":hashlib.sha256(POLICY.encode()).hexdigest(),
         "source_files":truth["source_files"],
+        "cache_policy":"per-checkout writable .bench-cache; inherited GOCACHE, XDG_CACHE_HOME and TMPDIR; approve-for-me both arms",
         "expected":truth["phases"]
     },ensure_ascii=False,indent=2))
     rows=[]

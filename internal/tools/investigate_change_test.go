@@ -56,8 +56,8 @@ func TestSummarizeChangeInvestigationGroupsBoundedEvidence(t *testing.T) {
 	if _, present := result["graph"]; present {
 		t.Fatal("default summary leaks full graph")
 	}
-	if metaComplete(result["meta"].(map[string]any)) {
-		t.Fatal("truncated graph claimed complete")
+	if metaComplete(result["meta"].(map[string]any)) || result["incomplete"] != true {
+		t.Fatal("truncated graph claimed complete or omitted simple incomplete flag")
 	}
 	// Marshal through JSON to assert stable, sorted exported presentation.
 	encoded, err := json.Marshal(result["affected_files"])

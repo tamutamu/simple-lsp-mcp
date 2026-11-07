@@ -64,6 +64,9 @@ func TestRealTypeScriptInvestigateChangeTwoHop(t *testing.T) {
 	if result["affected_file_count"] != 2 || result["affected_declarations"] != 2 {
 		t.Fatalf("incorrect transitive impact: %#v", result)
 	}
+	if _, ok := result["incomplete"].(bool); !ok {
+		t.Fatalf("missing explicit incomplete bool: %#v", result)
+	}
 	// A deterministic presentation enables the agent to apply or report this
 	// finding without a second search.
 	paths := map[string]bool{}

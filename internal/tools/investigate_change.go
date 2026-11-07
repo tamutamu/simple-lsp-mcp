@@ -255,6 +255,7 @@ func (e *Engine) investigateChangesBatch(ctx context.Context, in map[string]any,
 				"traversed_reference_count": result["traversed_reference_count"],
 				"unmapped_references":       result["unmapped_references"],
 				"depth":                     result["depth"], "meta": meta,
+				"incomplete": !metaComplete(meta),
 			})
 		} else {
 			results = append(results, result)
@@ -268,7 +269,7 @@ func (e *Engine) investigateChangesBatch(ctx context.Context, in map[string]any,
 	answer := map[string]any{
 		"results": results, "targets_count": len(validated),
 		"affected_files_union": paths, "affected_file_count": len(paths),
-		"meta": map[string]any{"complete": complete, "note": "Each result is a separate bounded LSP impact graph; the path union does not imply a combined dependency graph."},
+		"meta": map[string]any{"complete": complete, "incomplete": !complete, "note": "Each result is a separate bounded LSP impact graph; the path union does not imply a combined dependency graph."},
 	}
 	encoded, err := json.Marshal(answer)
 	if err != nil {
@@ -339,7 +340,7 @@ func summarizeChangeInvestigation(found, graph map[string]any, detail string) (m
 		"affected_declarations":  len(nodes) - 1,
 		"direct_reference_count": direct, "traversed_reference_count": totalReferences,
 		"unmapped_references": graph["unmapped_references"],
-		"depth":               graph["depth"], "meta": meta,
+		"depth":               graph["depth"], "meta": meta, "incomplete": !metaComplete(meta),
 	}
 	if detail == "graph" {
 		result["graph"] = map[string]any{"root": rootID, "nodes": nodes, "edges": edges}

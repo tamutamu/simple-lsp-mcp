@@ -147,7 +147,7 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and completeness. Supply targets[] (2–6) to investigate several declarations in one call; optional line+column with path+symbol_path corroborates the exact source position and rejects mismatches. detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and incomplete=true/false. Supply targets[] (2–6) to investigate several declarations in one call; optional line+column with path+symbol_path corroborates the exact source position and rejects mismatches. detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InvestigateChange(c, i)
 		}},
 
