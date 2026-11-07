@@ -29,6 +29,8 @@ jobs:
           python3 -m unittest discover -s docs/benchmarks -p 'test_analyze_codex_ab.py' -v
           python3 -m unittest discover -s docs/benchmarks -p 'test_claude_trace.py' -v
           python3 -m unittest discover -s docs/benchmarks -p 'test_codex_required_runner.py' -v
+          python3 -m unittest discover -s docs/benchmarks -p 'test_audit_codex_trace.py' -v
+          python3 -m py_compile docs/benchmarks/audit_codex_trace.py
           python3 -m py_compile docs/benchmarks/claude_trace.py docs/benchmarks/run_fastapi_agent_ab.py
           python3 docs/benchmarks/analyze_codex_ab.py \
             --csv docs/benchmarks/codex-fastapi-ab-2026-11-01.csv \
