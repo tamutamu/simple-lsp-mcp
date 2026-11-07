@@ -20,8 +20,6 @@ jobs:
         run: go test ./internal/tools -run '^$' -bench '^BenchmarkInspectSourceLargeFile$' -benchmem -benchtime=10x -count=1
       - name: Compare diagnostic batch source rereads with request-local cache
         run: go test ./internal/tools -run '^$' -bench '^BenchmarkDiagnosticsBatch(LegacyRangeReads|CachedRanges)$' -benchmem -benchtime=5x -count=1
-      - name: Compare repeated cached document sync with redundant hashing
-        run: go test ./internal/document -run '^$' -bench '^BenchmarkWarmRepeatedSync$' -benchmem -benchtime=200x -count=3
       - name: Measure duplicate candidate-file reads in project warm-up
         run: go test ./internal/document -run NoUnitTests -bench BenchmarkWarmCandidateSync -benchmem -benchtime=100x -count=3
       - name: Compare project warm-up negative lookups with full-source scan
@@ -78,6 +76,14 @@ jobs:
         env:
           SIMPLE_LSP_REAL_LSP: '1'
         run: go test ./internal/tools -run '^TestReal(LanguageServers|GoMonorepoSearchesEveryServer|WorkspaceEnumeration|ReactFastAPIMonorepoExample|LSPEditing|TypeScriptRangeFormatting|SemanticRenameAcrossLanguages|AutoDetectedLanguageServers|ImpactMultiHopGo)$' -count=1 -v -timeout=6m
+  warm-sync-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26.x'}
+      - name: Compare unchanged document sync against duplicate SHA256
+        run: go test ./internal/document -run '^$' -bench '^BenchmarkWarmRepeatedSync$' -benchmem -benchtime=200x -count=3
   windows-uri:
     runs-on: windows-latest
     steps:
