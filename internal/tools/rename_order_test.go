@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
+	"github.com/tamutamu/simple-lsp-mcp/internal/core"
 	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 	"github.com/tamutamu/simple-lsp-mcp/internal/workspace"
 )
@@ -66,5 +68,53 @@ func TestRenameSemanticallyEqualWorkspaceEditsIgnoreOrder(t *testing.T) {
 	}
 	if na != 3 || nb != 3 || !reflect.DeepEqual(a, b) {
 		t.Fatalf("equivalent semantic edits were not normalized: %v vs %v", a, b)
+	}
+}
+func TestDominatingRenameSnapshotHandlesAlternatingSupersets(t *testing.T) {
+	one := editPreview{Range: core.Range{Start: core.Position{Line: 2, Column: 3}, End: core.Position{Line: 2, Column: 7}}, NewText: "After"}
+	two := editPreview{Range: core.Range{Start: core.Position{Line: 4, Column: 5}, End: core.Position{Line: 4, Column: 9}}, NewText: "After"}
+	small := renameEditSnapshot{Files: []fileEditPreview{{Path: "app.go", Edits: []editPreview{one}}}, Count: 1}
+	large := renameEditSnapshot{Files: []fileEditPreview{{Path: "app.go", Edits: []editPreview{one, two}}}, Count: 2}
+	got, fluctuated, err := dominatingRenameSnapshot([]renameEditSnapshot{large, small, large, small, large})
+	if err != nil || !fluctuated || !reflect.DeepEqual(got.Files, large.Files) {
+		t.Fatalf("alternating subset incorrectly rejected: %#v, fluctuated=%v, err=%v", got, fluctuated, err)
+	}
+	same, fluctuated, err := dominatingRenameSnapshot([]renameEditSnapshot{large, large, large})
+	if err != nil || fluctuated || !reflect.DeepEqual(same.Files, large.Files) {
+		t.Fatalf("identical plans incorrectly flagged: %#v, fluctuated=%v, err=%v", same, fluctuated, err)
+	}
+	// Equal-size plans with conflicting edits cannot be merged or preferred.
+	incompatible := renameEditSnapshot{Files: []fileEditPreview{{
+		Path: "app.go", Edits: []editPreview{two},
+	}}, Count: 1}
+	if _, _, err := dominatingRenameSnapshot([]renameEditSnapshot{small, incompatible}); err == nil {
+		t.Fatal("incomparable source edits must fail without writing")
+	}
+}
+func TestRenameBatchSkipsOnlyExactPreviouslyEditedDeclarations(t *testing.T) {
+	uri := "file:///workspace/service.go"
+	point := protocol.Position{Line: 9, Character: 14}
+	edit := protocol.TextEdit{Range: protocol.Range{
+		Start: point, End: protocol.Position{Line: 9, Character: 28},
+	}, NewText: "After"}
+	plan := protocol.WorkspaceEdit{Changes: map[string][]protocol.TextEdit{uri: {edit}}}
+	if !renameEditCoversTarget(plan, uri, point) {
+		t.Fatal("declaration already in a semantic edit was not recognized")
+	}
+	if renameEditCoversTarget(plan, uri, protocol.Position{Line: 9, Character: 15}) ||
+		renameEditCoversTarget(plan, "file:///workspace/other.go", point) {
+		t.Fatal("distinct or offset declaration was silently skipped")
+	}
+	document := protocol.TextDocumentEdit{
+		TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{URI: uri},
+		Edits:        []protocol.TextEdit{edit},
+	}
+	raw, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromDocumentChanges := protocol.WorkspaceEdit{DocumentChanges: []json.RawMessage{raw}}
+	if !renameEditCoversTarget(fromDocumentChanges, uri, point) {
+		t.Fatal("LSP documentChanges edit did not cover exact declaration")
 	}
 }

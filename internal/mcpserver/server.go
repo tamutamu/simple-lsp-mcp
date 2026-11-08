@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For a known semantic rename use rename_symbol(apply=true); pass targets[] for separate interfaces. Use preview_rename if uncertain. If unverified_build_tag_files appears, warn that coverage is incomplete. For impact analysis use investigate_change (targets[] and detail=union for multiple symbols). Use inspect_symbol for known functions, rg for literal searches. For formatting use preview_format then format_document(apply=true). Do not invoke every tool or reread returned code. Check diffs and run tests."
+const serverInstructions = "For Go interface rename use preview_rename to find unrenamed_method_candidates. Select only related non-generated methods, then rename_symbol(targets=[...],apply=true). Matching names alone prove nothing. For other renames use rename_symbol(apply=true). Use investigate_change for impact (targets[] detail=union for several), inspect_symbol for code, and rg for text. Use preview_format before format_document. Warn about unverified_build_tag_files. Check diffs and run tests. Do not invoke every tool or reread returned code."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -125,10 +125,10 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		// Exact LSP operations. The agent chooses which relation to inspect.
-		{"rename_symbol", "Semantic rename; apply=true writes. For separate Go interfaces, use 2-6 targets[] to apply all LSP edits atomically. Review unverified_build_tag_files warnings.", renameInputSchema(false), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"rename_symbol", "Semantic rename; apply=true writes. For Go interfaces preview first, then batch confirmed same-name targets[] (2-6). Review coverage warnings.", renameInputSchema(false), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "Read-only semantic rename preview; accepts 2-6 targets[] for an atomic batch.", renameInputSchema(true), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "Read-only rename preview. For Go interfaces lists unrenamed_method_candidates, generated declarations and build-tag gaps; review before batch.", renameInputSchema(true), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {

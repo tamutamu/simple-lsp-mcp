@@ -27,6 +27,7 @@ def main():
     targets=[
         {"path":"api/client/client.go","symbol_path":"Client/EmitAuditEvent"},
         {"path":"api/types/events/api.go","symbol_path":"Emitter/EmitAuditEvent"},
+        {"path":"api/client/auditstreamer.go","symbol_path":"auditStreamer/EmitAuditEvent"},
         {"path":"lib/events/api.go","symbol_path":"IAuditLog/EmitAuditEvent"},
     ]
     client=Client(str(o.binary.resolve()),str(dst),"coding",90)
@@ -44,6 +45,9 @@ def main():
         output={"time_ms":round(ms,2),"response_bytes":size,
              "files":result["file_count"],"edits":result["edit_count"],
              "per_target":result.get("target_edit_counts"),
+             "covered_target_indices":result.get("covered_target_indices",[]),
+             "fluctuating_rename_targets":result.get("fluctuating_rename_targets",0),
+             "unverified_build_tag_files":result.get("unverified_build_tag_files",[]),
              "paths":paths,
              "diff_sha256":hashlib.sha256(diff).hexdigest()}
         o.output.write_text(json.dumps(output,ensure_ascii=False,indent=2))

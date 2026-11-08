@@ -123,7 +123,7 @@ func CompactAppliedRename(result map[string]any) map[string]any {
 	if counts, present := result["target_edit_counts"]; present {
 		summary["target_edit_counts"] = counts
 	}
-	for _, key := range []string{"unverified_build_tag_files", "build_tag_candidates_truncated", "coverage_complete", "unrenamed_method_candidates", "method_discovery_truncated", "method_discovery_parse_errors"} {
+	for _, key := range []string{"unverified_build_tag_files", "build_tag_candidates_truncated", "coverage_complete", "unrenamed_method_candidates", "method_discovery_truncated", "method_discovery_parse_errors", "fluctuating_rename_targets", "rename_plan_fluctuated", "covered_target_indices"} {
 		if value, present := result[key]; present {
 			summary[key] = value
 		}
@@ -135,11 +135,12 @@ func CompactAppliedRename(result map[string]any) map[string]any {
 // It is preview-only unless apply=true. The server never computes replacements
 // itself; it only validates and optionally applies the returned WorkspaceEdit.
 type computedRename struct {
-	edit        protocol.WorkspaceEdit
-	encoding    string
-	sessionKey  string
-	oldName     string
-	preparation map[string]any
+	edit             protocol.WorkspaceEdit
+	encoding         string
+	sessionKey       string
+	oldName          string
+	goPlanFluctuated bool
+	preparation      map[string]any
 }
 
 func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
@@ -178,6 +179,9 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 	}
 	attachBuildTagRenameWarning(result, tagScan)
 	attachSiblingRenameWarning(result, siblingScan)
+	if computed.goPlanFluctuated {
+		appendRenamePlanWarning(result)
+	}
 	if !boolValDefault(in, "apply", false) {
 		return result, nil
 	}
@@ -266,15 +270,18 @@ func (e *Engine) computeRenameEdit(ctx context.Context, in map[string]any) (comp
 	if err != nil {
 		return computedRename{}, classifySemanticRenameError(p.SessionKey, err)
 	}
+	var fluctuated bool
 	if p.SessionKey == "go" {
-		// gopls may return WorkspaceEdits with the same edits in different
-		// orders. Normalize to validated, sorted edits before comparison.
-		// Raw reflect.DeepEqual was spuriously rejecting equivalent plans.
-		_, previous, _, planErr := e.workspaceEditPlan(edit, caps.PositionEncoding)
+		// A gopls response can alternate between a 44-file subset and a
+		// 45-file superset even after reference priming. We never merge
+		// independently produced edits. Instead, compare normalized and
+		// validated plans and select an *actual* LSP response that contains
+		// every edit from every observed snapshot.
+		_, firstFiles, firstCount, planErr := e.workspaceEditPlan(edit, caps.PositionEncoding)
 		if planErr != nil {
 			return computedRename{}, planErr
 		}
-		observed := []int{len(previous)}
+		snapshots := []renameEditSnapshot{{Edit: edit, Files: firstFiles, Count: firstCount}}
 		stable := 0
 		for attempt := 0; attempt < 6; attempt++ {
 			callCtx, cancel := e.callContext(ctx)
@@ -287,30 +294,94 @@ func (e *Engine) computeRenameEdit(ctx context.Context, in map[string]any) (comp
 			if err != nil {
 				return computedRename{}, classifySemanticRenameError(p.SessionKey, err)
 			}
-			_, normalized, _, planErr := e.workspaceEditPlan(next, caps.PositionEncoding)
+			_, normalized, editCount, planErr := e.workspaceEditPlan(next, caps.PositionEncoding)
 			if planErr != nil {
 				return computedRename{}, planErr
 			}
-			observed = append(observed, len(normalized))
-			if reflect.DeepEqual(previous, normalized) {
+			previous := snapshots[len(snapshots)-1]
+			if reflect.DeepEqual(previous.Files, normalized) {
 				stable++
 			} else {
 				stable = 0
 			}
-			previous = normalized
+			snapshots = append(snapshots, renameEditSnapshot{
+				Edit: next, Files: normalized, Count: editCount,
+			})
 			if stable >= 2 {
-				edit = next
 				break
 			}
-			if attempt == 5 {
-				return computedRename{}, core.NewError(core.IncompleteSearch,
-					fmt.Sprintf("gopls semantic rename edits changed across repeated requests (file counts %v); no files were changed", observed))
-			}
 		}
+		chosen, changed, selectErr := dominatingRenameSnapshot(snapshots)
+		if selectErr != nil {
+			return computedRename{}, core.WithCause(core.IncompleteSearch,
+				"gopls rename plans disagreed without a safe validated superset; no files were changed", selectErr)
+		}
+		edit = chosen.Edit
+		fluctuated = changed
 	}
 	return computedRename{edit: edit, encoding: caps.PositionEncoding,
 		sessionKey: p.SessionKey, oldName: warmIdentifierAtPosition(d.Text, pos, caps.PositionEncoding),
-		preparation: preparation}, nil
+		preparation: preparation, goPlanFluctuated: fluctuated}, nil
+}
+
+// renameEditSnapshot contains one validated response from the language
+// server. Choosing an observed superset is safer than synthesizing a union of
+// edits that no individual semantic request ever returned.
+type renameEditSnapshot struct {
+	Edit  protocol.WorkspaceEdit
+	Files []fileEditPreview
+	Count int
+}
+
+// dominatingRenameSnapshot chooses an actual LSP edit response which contains
+// every edit seen in all snapshots. Equal plans with different order are
+// equivalent after workspaceEditPlan normalization. Conflicting or disjoint
+// plans fail closed rather than silently applying a partial rename.
+func dominatingRenameSnapshot(snapshots []renameEditSnapshot) (renameEditSnapshot, bool, error) {
+	if len(snapshots) == 0 {
+		return renameEditSnapshot{}, false, fmt.Errorf("no semantic rename snapshots")
+	}
+	best := 0
+	for i := 1; i < len(snapshots); i++ {
+		if snapshots[i].Count > snapshots[best].Count {
+			best = i
+		}
+	}
+	fluctuated := false
+	for i, snapshot := range snapshots {
+		if !renameEditsSubset(snapshot.Files, snapshots[best].Files) {
+			return renameEditSnapshot{}, false, fmt.Errorf(
+				"snapshot %d (%d edits) is not a subset of largest response (%d edits)",
+				i, snapshot.Count, snapshots[best].Count)
+		}
+		if !reflect.DeepEqual(snapshot.Files, snapshots[best].Files) {
+			fluctuated = true
+		}
+	}
+	return snapshots[best], fluctuated, nil
+}
+
+func renameEditsSubset(smaller, larger []fileEditPreview) bool {
+	index := make(map[string]map[editPreview]bool, len(larger))
+	for _, file := range larger {
+		byEdit := make(map[editPreview]bool, len(file.Edits))
+		for _, edit := range file.Edits {
+			byEdit[edit] = true
+		}
+		index[file.Path] = byEdit
+	}
+	for _, file := range smaller {
+		byEdit, ok := index[file.Path]
+		if !ok {
+			return false
+		}
+		for _, edit := range file.Edits {
+			if !byEdit[edit] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // renameMultipleSymbols gathers independently computed LSP WorkspaceEdits on
@@ -364,20 +435,51 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 	// Resolve and open ALL requested target documents before issuing any rename
 	// request. Go type-checking/index state can otherwise depend on which
 	// interface document was first opened, producing a partial edit set.
+	type resolvedBatchTarget struct {
+		URI      string
+		Position protocol.Position
+		OldName  string
+	}
+	resolved := make([]resolvedBatchTarget, 0, len(validated))
 	for i, target := range validated {
-		if _, _, _, _, err := e.target(ctx, target); err != nil {
+		_, session, doc, pos, err := e.target(ctx, target)
+		if err != nil {
 			return nil, core.WithCause(core.IncompleteSearch,
 				fmt.Sprintf("targets[%d] could not be resolved before rename; no files changed", i), err)
 		}
+		oldName := warmIdentifierAtPosition(doc.Text, pos, session.Capabilities().PositionEncoding)
+		if oldName == "" {
+			return nil, core.NewError(core.InvalidArgument,
+				fmt.Sprintf("targets[%d] did not resolve to a renameable identifier", i))
+		}
+		resolved = append(resolved, resolvedBatchTarget{
+			URI: doc.URI, Position: pos, OldName: oldName,
+		})
 	}
 	combined := protocol.WorkspaceEdit{Changes: map[string][]protocol.TextEdit{}}
 	targetEdits := make([]int, 0, len(items))
 	targetFiles := make([]int, 0, len(items))
 	oldNames := make([]string, 0, len(items))
+	var renamePlanVariations int
+	alreadyCovered := make([]int, 0)
 	var encoding, sessionKey string
 	for i, target := range validated {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if i > 0 && resolved[i].OldName != oldNames[0] {
+			return nil, core.NewError(core.InvalidArgument,
+				"batch rename requires the same original method name for every target; no files changed")
+		}
+		if i > 0 && renameEditCoversTarget(combined, resolved[i].URI, resolved[i].Position) {
+			// An implementation method can already be included in the
+			// preceding interface's semantic edit. Avoid the redundant
+			// gopls request that would reject it as breaking that interface.
+			alreadyCovered = append(alreadyCovered, i)
+			targetEdits = append(targetEdits, 0)
+			targetFiles = append(targetFiles, 0)
+			oldNames = append(oldNames, resolved[i].OldName)
+			continue
 		}
 		part, err := e.computeRenameEdit(ctx, target)
 		if err != nil {
@@ -399,9 +501,16 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 			return nil, core.NewError(core.IncompleteSearch,
 				fmt.Sprintf("targets[%d] returned no semantic edits; no files changed", i))
 		}
+		if part.oldName == "" || (i > 0 && part.oldName != oldNames[0]) {
+			return nil, core.NewError(core.InvalidArgument,
+				"batch rename requires all targets to have the same existing method name; no files changed")
+		}
 		targetEdits = append(targetEdits, partCount)
 		targetFiles = append(targetFiles, len(partFiles))
 		oldNames = append(oldNames, part.oldName)
+		if part.goPlanFluctuated {
+			renamePlanVariations++
+		}
 		for uri, edits := range part.edit.Changes {
 			combined.Changes[uri] = append(combined.Changes[uri], edits...)
 		}
@@ -431,8 +540,15 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 	result := map[string]any{"new_name": name, "targets_count": len(items), "applied": false,
 		"file_count": len(files), "edit_count": count, "files": files,
 		"target_edit_counts": targetEdits, "target_file_counts": targetFiles}
+	if len(alreadyCovered) > 0 {
+		result["covered_target_indices"] = alreadyCovered
+	}
 	attachBuildTagRenameWarning(result, tagScan)
 	attachSiblingRenameWarning(result, siblingScan)
+	if renamePlanVariations > 0 {
+		result["fluctuating_rename_targets"] = renamePlanVariations
+		appendRenamePlanWarning(result)
+	}
 	if !boolValDefault(in, "apply", false) {
 		return result, nil
 	}
@@ -446,6 +562,41 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 		result["warnings"] = append(prior, warnings...)
 	}
 	return result, nil
+}
+
+// renameEditCoversTarget checks whether a previously generated LSP edit
+// already contains an exact declaration position. This is proof that the
+// selected method will be renamed; it is not a guess based on a shared name.
+func renameEditCoversTarget(edit protocol.WorkspaceEdit, uri string, point protocol.Position) bool {
+	contains := func(edits []protocol.TextEdit) bool {
+		for _, change := range edits {
+			if change.Range.Start == point {
+				return true
+			}
+		}
+		return false
+	}
+	if contains(edit.Changes[uri]) {
+		return true
+	}
+	for _, raw := range edit.DocumentChanges {
+		var document protocol.TextDocumentEdit
+		if err := json.Unmarshal(raw, &document); err == nil &&
+			document.TextDocument.URI == uri && contains(document.Edits) {
+			return true
+		}
+	}
+	return false
+}
+
+// A varying response was accepted only because one exact LSP WorkspaceEdit
+// safely contained every other observed edit. Surface this limitation to the
+// agent for follow-up validation rather than claiming comprehensive indexing.
+func appendRenamePlanWarning(result map[string]any) {
+	result["rename_plan_fluctuated"] = true
+	prior, _ := result["warnings"].([]string)
+	result["warnings"] = append(prior,
+		"gopls rename snapshots varied; applied the validated LSP response containing every observed edit. Verify affected files and alternate build configurations.")
 }
 
 // attachSiblingRenameWarning reports other declarations with the same method

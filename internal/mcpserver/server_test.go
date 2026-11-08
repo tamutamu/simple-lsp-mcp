@@ -367,6 +367,28 @@ func TestInvestigateProfileContainsOnlyReadOnlyHighLevelTool(t *testing.T) {
 	}
 }
 
+func TestCodingCatalogGuidesInterfaceRenameDiscovery(t *testing.T) {
+	var previewFound, renameFound bool
+	for _, d := range definitionsForProfile("coding") {
+		switch d.name {
+		case "preview_rename":
+			previewFound = true
+			if !strings.Contains(d.description, "unrenamed_method_candidates") {
+				t.Fatal("Go interface rename preview no longer advertises independent method candidates")
+			}
+		case "rename_symbol":
+			renameFound = true
+			fields := d.schema["properties"].(map[string]any)
+			if _, ok := fields["targets"]; !ok {
+				t.Fatal("coding profile lost atomic multi-interface rename")
+			}
+		}
+	}
+	if !previewFound || !renameFound || !strings.Contains(serverInstructions, "rename_symbol(targets=") {
+		t.Fatal("coding profile cannot guide an agent from preview to one batch rename")
+	}
+}
+
 func TestRenameProfileIsCompactAndSupportsWriteWithApproval(t *testing.T) {
 	rename := definitionsForProfile("rename")
 	if len(rename) != 2 {

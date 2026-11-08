@@ -47,7 +47,7 @@ func (Beta) Emit(value int) int { return value }
 func UseSecondary(p Secondary) int { return p.Emit(1) }
 `)
 	write("third.go", `package rename
-type Independent interface { Emit(bool) bool }
+type Independent interface { Emit(bool) bool; Other(bool) bool }
 `)
 	write("tagged.go", `//go:build experimentaltag
 
@@ -78,14 +78,18 @@ func AlternateOSCaller(p Primary) string { return p.Emit("platform") }
 	targets := []any{
 		map[string]any{"path": "primary.go", "symbol_path": "Primary/Emit"},
 		map[string]any{"path": "secondary.go", "symbol_path": "Secondary/Emit"},
+		map[string]any{"path": "primary.go", "symbol_path": "Alpha/Emit"},
 	}
 	args := map[string]any{"targets": targets, "new_name": "Send"}
 	preview, err := engine.PreviewRename(ctx, args)
 	if err != nil {
 		t.Fatalf("batch preview: %v", err)
 	}
-	if preview["applied"] != false || preview["targets_count"] != 2 {
+	if preview["applied"] != false || preview["targets_count"] != 3 {
 		t.Fatalf("preview unexpectedly wrote/omitted targets: %#v", preview)
+	}
+	if covered, ok := preview["covered_target_indices"].([]int); !ok || len(covered) != 1 || covered[0] != 2 {
+		t.Fatalf("implementation target already covered by interface rename was not skipped: %#v", preview)
 	}
 	if preview["coverage_complete"] != false {
 		t.Fatalf("tagged Go file must make rename coverage explicitly incomplete: %#v", preview)
@@ -121,6 +125,12 @@ func AlternateOSCaller(p Primary) string { return p.Emit("platform") }
 	if _, err := engine.RenameSymbol(ctx, bad); err == nil {
 		t.Fatal("invalid batch target was not rejected")
 	}
+	mixed := map[string]any{"targets": []any{targets[0], map[string]any{
+		"path": "third.go", "symbol_path": "Independent/Other",
+	}}, "new_name": "Send", "apply": true}
+	if _, err := engine.RenameSymbol(ctx, mixed); err == nil {
+		t.Fatal("mixed method names in a batch were silently merged")
+	}
 	afterA, _ := os.ReadFile(filepath.Join(root, "primary.go"))
 	afterB, _ := os.ReadFile(filepath.Join(root, "secondary.go"))
 	if string(afterA) != string(beforeA) || string(afterB) != string(beforeB) {
@@ -131,7 +141,7 @@ func AlternateOSCaller(p Primary) string { return p.Emit("platform") }
 	if err != nil {
 		t.Fatalf("batch apply: %v", err)
 	}
-	if applied["applied"] != true || applied["targets_count"] != 2 {
+	if applied["applied"] != true || applied["targets_count"] != 3 {
 		t.Fatalf("batch not applied: %#v", applied)
 	}
 	if applied["coverage_complete"] != false {
