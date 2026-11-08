@@ -80,6 +80,21 @@ func AlternateOSCaller(p Primary) string { return p.Emit("platform") }
 		map[string]any{"path": "secondary.go", "symbol_path": "Secondary/Emit"},
 		map[string]any{"path": "primary.go", "symbol_path": "Alpha/Emit"},
 	}
+	// An agent often supplies language="go" once for an entire inspection
+	// batch. Accept this shared hint instead of causing an extra tool turn.
+	inspected, err := engine.InspectSymbol(ctx, map[string]any{
+		"targets": []any{
+			map[string]any{"path": "primary.go", "symbol_path": "Primary/Emit"},
+			map[string]any{"path": "secondary.go", "symbol_path": "Secondary/Emit"},
+		},
+		"language": "go", "view": "signature",
+	})
+	if err != nil {
+		t.Fatalf("shared language hint in multi-inspect failed: %v", err)
+	}
+	if results, ok := inspected["results"].([]map[string]any); !ok || len(results) != 2 {
+		t.Fatalf("multi-inspect lost targets: %#v", inspected)
+	}
 	args := map[string]any{"targets": targets, "new_name": "Send"}
 	preview, err := engine.PreviewRename(ctx, args)
 	if err != nil {
@@ -167,6 +182,87 @@ func AlternateOSCaller(p Primary) string { return p.Emit("platform") }
 	}
 	if !strings.Contains(string(unrelated), "Emit(bool)") {
 		t.Fatal("independent unconfirmed interface was renamed without authorization")
+	}
+
+	// A separate workspace is needed to exercise a reversed, naturally
+	// ordered batch because the original fixture has already been changed.
+	// This request combines top-level Primary and explicit targets and also
+	// places Beta's implementation BEFORE its interface. gopls rejects that
+	// concrete rename alone until Secondary is processed.
+	reversedRoot := t.TempDir()
+	for _, path := range []string{"go.mod", "primary.go", "secondary.go", "third.go"} {
+		var source []byte
+		switch path {
+		case "go.mod":
+			source = []byte("module example.org/reorderedrename\n\ngo 1.26\n")
+		case "primary.go":
+			source = beforeA
+		case "secondary.go":
+			source = beforeB
+		case "third.go":
+			source = []byte("package rename\ntype Independent interface { Emit(bool) bool; Other(bool) bool }\n")
+		}
+		if err := os.WriteFile(filepath.Join(reversedRoot, path), source, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reversedWS, err := workspace.Open(reversedRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedEngine := New(reversedWS, config.Runtime{Workspace: reversedRoot, RequestTimeout: 30 * time.Second,
+		MaxResults: 100, Servers: map[string][]config.Server{"go": {{Command: "gopls", Directory: "."}}}})
+	t.Cleanup(func() {
+		c, closeFn := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeFn()
+		reversedEngine.Sessions.Shutdown(c)
+	})
+	naturalBatch := map[string]any{
+		"path": "primary.go", "symbol_path": "Primary/Emit", "language": "go",
+		"targets": []any{
+			map[string]any{"path": "secondary.go", "symbol_path": "Beta/Emit"},
+			map[string]any{"path": "secondary.go", "symbol_path": "Secondary/Emit"},
+		},
+		"new_name": "Send", "apply": false,
+	}
+	previewNatural, err := reversedEngine.PreviewRename(ctx, naturalBatch)
+	if err != nil {
+		t.Fatalf("top-level anchor with reversed implementation/interface failed: %v", err)
+	}
+	if previewNatural["targets_count"] != 3 {
+		t.Fatalf("normalization lost target: %#v", previewNatural)
+	}
+	if covered, ok := previewNatural["covered_target_indices"].([]int); !ok || len(covered) != 1 || covered[0] != 1 {
+		t.Fatalf("concrete implementation not deferred until its interface: %#v", previewNatural)
+	}
+	// Repeating the explicit top-level identity inside targets[] should not
+	// double-rename it or inflate the target count.
+	duplicatedTop := map[string]any{
+		"path": "primary.go", "symbol_path": "Primary/Emit", "language": "go",
+		"targets": []any{
+			map[string]any{"path": "primary.go", "symbol_path": "Primary/Emit"},
+			map[string]any{"path": "secondary.go", "symbol_path": "Beta/Emit"},
+			map[string]any{"path": "secondary.go", "symbol_path": "Secondary/Emit"},
+		},
+		"new_name": "Send",
+	}
+	duplicatesPreview, err := reversedEngine.PreviewRename(ctx, duplicatedTop)
+	if err != nil || duplicatesPreview["targets_count"] != 3 {
+		t.Fatalf("duplicated explicit anchor was not normalized: %#v: %v", duplicatesPreview, err)
+	}
+	naturalBatch["apply"] = true
+	appliedNatural, err := reversedEngine.RenameSymbol(ctx, naturalBatch)
+	if err != nil {
+		t.Fatalf("reordered natural Go rename apply failed: %v", err)
+	}
+	if appliedNatural["applied"] != true {
+		t.Fatalf("natural Go batch not applied: %#v", appliedNatural)
+	}
+	for _, path := range []string{"primary.go", "secondary.go"} {
+		body, err := os.ReadFile(filepath.Join(reversedRoot, path))
+		if err != nil || strings.Contains(string(body), "Emit(") || !strings.Contains(string(body), "Send(") {
+			t.Fatalf("natural batch left old identifier in %s: %s; %v", path, body, err)
+		}
 	}
 	for _, path := range []string{"primary.go", "secondary.go"} {
 		body, err := os.ReadFile(filepath.Join(root, path))

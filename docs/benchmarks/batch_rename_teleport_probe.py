@@ -16,6 +16,8 @@ def main():
     p.add_argument("--binary",type=Path,required=True)
     p.add_argument("--work",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
+    p.add_argument("--natural",action="store_true",
+        help="Use the top-level anchor and reversed interface/implementation order observed in Codex")
     o=p.parse_args()
     source=o.source.resolve(); dst=o.work.resolve()
     if dst.exists():p.error("workdir already exists")
@@ -32,11 +34,18 @@ def main():
     ]
     client=Client(str(o.binary.resolve()),str(dst),"coding",90)
     try:
-        result,ms,size=client.request("tools/call",{
-            "name":"rename_symbol","arguments":{
-                "targets":targets,"new_name":"RecordAuditEvent","apply":True,
+        arguments={"targets":targets,"new_name":"RecordAuditEvent","apply":True}
+        if o.natural:
+            arguments={
+                "path":"lib/events/api.go","symbol_path":"IAuditLog/EmitAuditEvent",
+                "targets":[
+                    {"path":"api/client/auditstreamer.go","symbol_path":"auditStreamer/EmitAuditEvent"},
+                    {"path":"api/client/client.go","symbol_path":"Client/EmitAuditEvent"},
+                    {"path":"api/types/events/api.go","symbol_path":"Emitter/EmitAuditEvent"},
+                ],
+                "new_name":"RecordAuditEvent","apply":True,
             }
-        })
+        result,ms,size=client.request("tools/call",{"name":"rename_symbol","arguments":arguments})
         if result.get("applied") is not True:
             raise RuntimeError("batch edit was not applied")
         diff=checked(["git","diff","--binary"],dst).stdout
@@ -45,6 +54,7 @@ def main():
         output={"time_ms":round(ms,2),"response_bytes":size,
              "files":result["file_count"],"edits":result["edit_count"],
              "per_target":result.get("target_edit_counts"),
+             "natural_order":o.natural,
              "covered_target_indices":result.get("covered_target_indices",[]),
              "fluctuating_rename_targets":result.get("fluctuating_rename_targets",0),
              "unverified_build_tag_files":result.get("unverified_build_tag_files",[]),

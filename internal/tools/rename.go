@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -395,13 +396,45 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 		return nil, core.NewError(core.InvalidArgument, "new_name must be a non-empty string")
 	}
 	items, ok := raw.([]any)
-	if !ok || len(items) < 2 || len(items) > 6 {
-		return nil, core.NewError(core.InvalidArgument, "targets must contain 2 to 6 symbol identities")
+	if !ok {
+		return nil, core.NewError(core.InvalidArgument, "targets must be an array of symbol identities")
 	}
+	// An agent may naturally supply path+symbol_path alongside targets[].
+	// That is an explicit additional target, not a conflicting command.
+	top := make(map[string]any, 6)
+	hasTopIdentity := false
 	for _, field := range []string{"path", "symbol_path", "symbol_id", "line", "column", "language"} {
-		if _, present := in[field]; present {
-			return nil, core.NewError(core.InvalidArgument, "targets cannot be combined with top-level "+field)
+		if value, present := in[field]; present {
+			top[field] = value
+			if field != "language" {
+				hasTopIdentity = true
+			}
 		}
+	}
+	if hasTopIdentity {
+		if err := targetOf(top).Validate(); err != nil {
+			return nil, core.WithCause(core.InvalidArgument, "invalid top-level batch target", err)
+		}
+		// Avoid inventing an extra rename when the top-level identity is
+		// already explicitly present inside the array.
+		duplicate := false
+		for _, rawTarget := range items {
+			if candidate, ok := rawTarget.(map[string]any); ok &&
+				stringVal(candidate, "path") == stringVal(top, "path") &&
+				stringVal(candidate, "symbol_path") == stringVal(top, "symbol_path") &&
+				stringVal(candidate, "symbol_id") == stringVal(top, "symbol_id") &&
+				intVal(candidate, "line") == intVal(top, "line") &&
+				intVal(candidate, "column") == intVal(top, "column") {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			items = append([]any{top}, items...)
+		}
+	}
+	if len(items) < 2 || len(items) > 6 {
+		return nil, core.NewError(core.InvalidArgument, "batch rename needs 2 to 6 distinct target identities")
 	}
 	validated := make([]map[string]any, 0, len(items))
 	seen := map[string]bool{}
@@ -425,9 +458,14 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("duplicate targets[%d]", i))
 		}
 		seen[string(identity)] = true
-		part := make(map[string]any, len(target)+1)
+		part := make(map[string]any, len(target)+2)
 		for k, v := range target {
 			part[k] = v
+		}
+		if _, present := part["language"]; !present {
+			if language := stringVal(in, "language"); language != "" {
+				part["language"] = language
+			}
 		}
 		part["new_name"] = name
 		validated = append(validated, part)
@@ -456,42 +494,63 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 			URI: doc.URI, Position: pos, OldName: oldName,
 		})
 	}
-	combined := protocol.WorkspaceEdit{Changes: map[string][]protocol.TextEdit{}}
-	targetEdits := make([]int, 0, len(items))
-	targetFiles := make([]int, 0, len(items))
-	oldNames := make([]string, 0, len(items))
-	var renamePlanVariations int
-	alreadyCovered := make([]int, 0)
-	var encoding, sessionKey string
-	for i, target := range validated {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if i > 0 && resolved[i].OldName != oldNames[0] {
+	// The entire batch must agree on the original method identifier before
+	// asking gopls for any edits, regardless of the requested input order.
+	for i := 1; i < len(resolved); i++ {
+		if resolved[i].OldName != resolved[0].OldName {
 			return nil, core.NewError(core.InvalidArgument,
 				"batch rename requires the same original method name for every target; no files changed")
 		}
-		if i > 0 && renameEditCoversTarget(combined, resolved[i].URI, resolved[i].Position) {
-			// An implementation method can already be included in the
-			// preceding interface's semantic edit. Avoid the redundant
-			// gopls request that would reject it as breaking that interface.
+	}
+	combined := protocol.WorkspaceEdit{Changes: map[string][]protocol.TextEdit{}}
+	targetEdits := make([]int, len(items))
+	targetFiles := make([]int, len(items))
+	oldNames := []string{resolved[0].OldName}
+	var renamePlanVariations int
+	alreadyCovered := make([]int, 0)
+	deferred := make(map[int]bool)
+	queue := make([]int, len(items))
+	for i := range queue {
+		queue[i] = i
+	}
+	var encoding, sessionKey string
+	havePlan := false
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		i := queue[0]
+		queue = queue[1:]
+		if havePlan && renameEditCoversTarget(combined, resolved[i].URI, resolved[i].Position) {
+			// Exact LSP edit coordinates prove this implementation is already
+			// covered by a prior interface rename. Never issue a redundant
+			// request that would violate Go's interface constraint.
 			alreadyCovered = append(alreadyCovered, i)
-			targetEdits = append(targetEdits, 0)
-			targetFiles = append(targetFiles, 0)
-			oldNames = append(oldNames, resolved[i].OldName)
 			continue
 		}
-		part, err := e.computeRenameEdit(ctx, target)
+		part, err := e.computeRenameEdit(ctx, validated[i])
 		if err != nil {
-			return nil, core.WithCause(core.IncompleteSearch, fmt.Sprintf("targets[%d] rename failed without writing files", i), err)
+			// gopls sometimes rejects a concrete implementation while the
+			// interface it satisfies has not yet been renamed. Defer that
+			// specific request ONCE, process the remaining explicit targets,
+			// then require an exact covered edit or a successful retry.
+			// Other errors and unresolved deferrals fail without writing.
+			if len(queue) > 0 && !deferred[i] &&
+				isGoInterfaceRenameDependencyError(err) {
+				deferred[i] = true
+				queue = append(queue, i)
+				continue
+			}
+			return nil, core.WithCause(core.IncompleteSearch,
+				fmt.Sprintf("targets[%d] rename failed without writing files", i), err)
 		}
-		if i == 0 {
+		if !havePlan {
 			encoding, sessionKey = part.encoding, part.sessionKey
+			havePlan = true
 		} else if encoding != part.encoding || sessionKey != part.sessionKey {
-			return nil, core.NewError(core.InvalidArgument, "batch rename requires one language-server profile and position encoding")
+			return nil, core.NewError(core.InvalidArgument,
+				"batch rename requires one language-server profile and position encoding")
 		}
-		// Every individual request must produce a valid, non-empty edit plan.
-		// Never report success for targets silently omitted by a language server.
 		_, partFiles, partCount, err := e.workspaceEditPlan(part.edit, part.encoding)
 		if err != nil {
 			return nil, core.WithCause(core.IncompleteSearch,
@@ -501,13 +560,12 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 			return nil, core.NewError(core.IncompleteSearch,
 				fmt.Sprintf("targets[%d] returned no semantic edits; no files changed", i))
 		}
-		if part.oldName == "" || (i > 0 && part.oldName != oldNames[0]) {
+		if part.oldName != resolved[0].OldName {
 			return nil, core.NewError(core.InvalidArgument,
-				"batch rename requires all targets to have the same existing method name; no files changed")
+				"batch rename contains different existing method names; no files changed")
 		}
-		targetEdits = append(targetEdits, partCount)
-		targetFiles = append(targetFiles, len(partFiles))
-		oldNames = append(oldNames, part.oldName)
+		targetEdits[i] = partCount
+		targetFiles[i] = len(partFiles)
 		if part.goPlanFluctuated {
 			renamePlanVariations++
 		}
@@ -516,6 +574,7 @@ func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, r
 		}
 		combined.DocumentChanges = append(combined.DocumentChanges, part.edit.DocumentChanges...)
 	}
+	sort.Ints(alreadyCovered)
 	plan, files, count, err := e.workspaceEditPlan(combined, encoding)
 	if err != nil {
 		return nil, err
@@ -634,6 +693,18 @@ func attachBuildTagRenameWarning(result map[string]any, scan renameTagScan) {
 	}
 	result["warnings"] = append([]string{},
 		"Go build-tag variants may contain old identifier usages not covered by this LSP WorkspaceEdit; review unverified_build_tag_files before claiming a complete rename")
+}
+
+// Only the Go interface-assignability failure is retryable by processing
+// another explicitly supplied target first. A generic rename error must never
+// trigger guesswork or hidden file writes.
+func isGoInterfaceRenameDependencyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "renaming this method") &&
+		strings.Contains(message, "no longer assignable to interface")
 }
 
 // classifySemanticRenameError preserves an exact gopls constraint instead of

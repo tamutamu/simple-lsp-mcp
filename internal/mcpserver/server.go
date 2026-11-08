@@ -212,8 +212,8 @@ func renameInputSchema(preview bool) map[string]any {
 	}
 	fields := props(keys...)
 	fields["targets"] = map[string]any{
-		"type": "array", "minItems": 2, "maxItems": 6,
-		"description": "2-6 separate method identities (path+symbol_path), excluding top-level target.",
+		"type": "array", "minItems": 1, "maxItems": 6,
+		"description": "Optional top-level path+symbol_path is included as one of 2-6 same-named targets",
 		"items": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

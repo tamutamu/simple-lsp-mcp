@@ -42,7 +42,7 @@ func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any)
 	if !ok || len(targets) < 1 || len(targets) > 8 {
 		return nil, core.NewError(core.InvalidArgument, "targets must be an array of 1 to 8 semantic targets")
 	}
-	for _, field := range []string{"symbol_id", "symbol_path", "path", "line", "column", "language"} {
+	for _, field := range []string{"symbol_id", "symbol_path", "path", "line", "column"} {
 		if _, exists := in[field]; exists {
 			return nil, core.NewError(core.InvalidArgument, "targets cannot be combined with top-level target "+field)
 		}
@@ -80,6 +80,9 @@ func (e *Engine) inspectBatch(ctx context.Context, in map[string]any, value any)
 		perItem := map[string]any{
 			"view":      stringVal(in, "view"),
 			"max_lines": intVal(in, "max_lines"),
+		}
+		if language := stringVal(in, "language"); language != "" {
+			perItem["language"] = language
 		}
 		for key, value := range target {
 			perItem[key] = value
