@@ -389,6 +389,82 @@ func TestCodingCatalogGuidesInterfaceRenameDiscovery(t *testing.T) {
 	}
 }
 
+func TestRefactorProfileRetainsOnlyFourSemanticWorkflowTools(t *testing.T) {
+	tools := definitionsForProfile("refactor")
+	want := map[string]bool{
+		"inspect_symbol": true, "investigate_change": true,
+		"preview_rename": true, "rename_symbol": true,
+	}
+	if len(tools) != len(want) {
+		t.Fatalf("refactor profile exposed %d tools, want %d", len(tools), len(want))
+	}
+	for _, tool := range tools {
+		if !want[tool.name] {
+			t.Fatalf("refactor profile unexpectedly exposed %q", tool.name)
+		}
+	}
+	if !toolAnnotations("preview_rename").ReadOnlyHint ||
+		!toolAnnotations("investigate_change").ReadOnlyHint ||
+		!*toolAnnotations("rename_symbol").DestructiveHint {
+		t.Fatal("refactor profile lost read/write approval hints")
+	}
+	catalog, err := json.Marshal(renameCatalogForTest(tools))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) > 8*1024 {
+		t.Fatalf("task-specific profile too large: %d bytes", len(catalog))
+	}
+}
+
+func TestRefactorCatalogAvoidsLargeDetailOutputsWithoutChangingOtherProfiles(t *testing.T) {
+	var foundPreview, foundImpact bool
+	for _, tool := range definitionsForProfile("refactor") {
+		properties := tool.schema["properties"].(map[string]any)
+		switch tool.name {
+		case "preview_rename":
+			foundPreview = true
+			if _, ok := properties["preview_detail"]; ok {
+				t.Fatal("refactor profile still invites full multi-file edit payloads")
+			}
+			if !strings.Contains(tool.description, "unrenamed_method_candidates") {
+				t.Fatal("refactor preview must retain independent method discovery")
+			}
+		case "investigate_change":
+			foundImpact = true
+			detail, ok := properties["detail"].(map[string]any)
+			if !ok {
+				t.Fatal("impact detail schema missing")
+			}
+			values := detail["enum"]
+			encoded, _ := json.Marshal(values)
+			if string(encoded) != `["files","union"]` {
+				t.Fatalf("unexpected compact-only detail choices: %s", encoded)
+			}
+		}
+	}
+	if !foundPreview || !foundImpact {
+		t.Fatal("refactor tools missing")
+	}
+	for _, profile := range []string{"coding", "full"} {
+		for _, tool := range definitionsForProfile(profile) {
+			properties := tool.schema["properties"].(map[string]any)
+			if tool.name == "preview_rename" {
+				if _, ok := properties["preview_detail"]; !ok {
+					t.Fatalf("%s lost deliberate full rename inspection", profile)
+				}
+			}
+			if tool.name == "investigate_change" {
+				detail := properties["detail"].(map[string]any)
+				encoded, _ := json.Marshal(detail["enum"])
+				if !strings.Contains(string(encoded), "graph") {
+					t.Fatalf("%s lost exact LSP graph mode", profile)
+				}
+			}
+		}
+	}
+}
+
 func TestRenameProfileIsCompactAndSupportsWriteWithApproval(t *testing.T) {
 	rename := definitionsForProfile("rename")
 	if len(rename) != 2 {

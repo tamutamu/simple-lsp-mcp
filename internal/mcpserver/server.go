@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For Go interface rename use preview_rename to find unrenamed_method_candidates. Select only related non-generated methods, then rename_symbol(targets=[...],apply=true). Matching names alone prove nothing. For other renames use rename_symbol(apply=true). Use investigate_change for impact (targets[] detail=union for several), inspect_symbol for code, and rg for text. Use preview_format before format_document. Warn about unverified_build_tag_files. Check diffs and run tests. Do not invoke every tool or reread returned code."
+const serverInstructions = "For Go interface rename use preview_rename to find unrenamed_method_candidates. Compare candidate signatures; select only related non-generated methods, then rename_symbol(targets=[...],apply=true). Matching names alone prove nothing. For other renames use rename_symbol(apply=true). Use investigate_change for impact (targets[] detail=union for several), inspect_symbol for code, and rg for text. Use preview_format before format_document. Warn about unverified_build_tag_files. Check diffs and run tests. Do not invoke every tool or reread returned code."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -70,6 +70,44 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 // via --tool-profile full. Semantic rename is a routine coding operation.
 func definitionsForProfile(profile string) []definition {
 	all := definitions()
+	if profile == "refactor" {
+		// Narrow task-oriented catalog: exact inspection, change impact,
+		// semantic preview and authorized multi-target rename.
+		allowed := map[string]bool{
+			"inspect_symbol": true, "investigate_change": true,
+			"preview_rename": true, "rename_symbol": true,
+		}
+		out := make([]definition, 0, len(allowed))
+		for _, d := range all {
+			if !allowed[d.name] {
+				continue
+			}
+			switch d.name {
+			case "preview_rename":
+				// Agents planning an edit need affected paths and uncovered
+				// methods, not hundreds of identical replacement ranges.
+				// Full edit previews remain available in coding/full profiles.
+				d.schema = withoutToolSchemaProperty(d.schema, "preview_detail")
+				d.description = "Read-only minimal rename plan: file paths/counts, unrenamed_method_candidates and build-tag gaps; no full edit ranges. Review, then rename_symbol with selected targets[]."
+				originalCall := d.call
+				d.call = func(ctx context.Context, engine *tools.Engine, input map[string]any) (map[string]any, error) {
+					result, err := originalCall(ctx, engine, input)
+					if err != nil {
+						return nil, err
+					}
+					return tools.CompactPlanningRenamePreview(result), nil
+				}
+			case "investigate_change":
+				// Exact graph edges may be tens of KB and are unnecessary
+				// for a bounded change-impact planning result. Preserve
+				// detail=graph in the full and coding profiles.
+				d.schema = withToolSchemaEnum(d.schema, "detail", "files", "union")
+				d.description = "Read-only LSP impact. Use default grouped files and counts; use detail=union for 2-6 targets. Graph detail is available in coding/full."
+			}
+			out = append(out, d)
+		}
+		return out
+	}
 	if profile == "investigate" {
 		// High-level semantic impact discovery without the full tool catalog.
 		out := make([]definition, 0, 1)
@@ -112,6 +150,45 @@ func definitionsForProfile(profile string) []definition {
 		}
 	}
 	return out
+}
+
+// Tool catalog changes are copies. Other profiles continue to expose the
+// complete schema, and the engine itself has no profile-specific behavior.
+func withoutToolSchemaProperty(schema map[string]any, field string) map[string]any {
+	copied := make(map[string]any, len(schema))
+	for k, v := range schema {
+		copied[k] = v
+	}
+	oldProperties, _ := schema["properties"].(map[string]any)
+	properties := make(map[string]any, len(oldProperties))
+	for k, v := range oldProperties {
+		if k != field {
+			properties[k] = v
+		}
+	}
+	copied["properties"] = properties
+	return copied
+}
+
+func withToolSchemaEnum(schema map[string]any, field string, values ...string) map[string]any {
+	copied := make(map[string]any, len(schema))
+	for k, v := range schema {
+		copied[k] = v
+	}
+	oldProperties, _ := schema["properties"].(map[string]any)
+	properties := make(map[string]any, len(oldProperties))
+	for k, v := range oldProperties {
+		properties[k] = v
+	}
+	oldField, _ := properties[field].(map[string]any)
+	fieldCopy := make(map[string]any, len(oldField))
+	for k, v := range oldField {
+		fieldCopy[k] = v
+	}
+	fieldCopy["enum"] = values
+	properties[field] = fieldCopy
+	copied["properties"] = properties
+	return copied
 }
 
 // definition binds MCP metadata to an engine operation.

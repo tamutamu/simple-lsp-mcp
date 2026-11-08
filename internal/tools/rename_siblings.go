@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -20,6 +21,7 @@ type renameSiblingCandidate struct {
 	Path       string `json:"path"`
 	SymbolPath string `json:"symbol_path"`
 	Kind       string `json:"kind"`
+	Signature  string `json:"signature,omitempty"`
 	Generated  bool   `json:"generated,omitempty"`
 }
 
@@ -85,7 +87,7 @@ func (e *Engine) findUnrenamedGoMethods(ctx context.Context, oldName string, edi
 			out.ParseErrors++
 			return nil
 		}
-		add := func(symbolPath, kind string, ident *ast.Ident) {
+		add := func(symbolPath, kind string, ident *ast.Ident, method *ast.FuncType) {
 			if ident == nil || ident.Name != oldName {
 				return
 			}
@@ -99,7 +101,9 @@ func (e *Engine) findUnrenamedGoMethods(ctx context.Context, oldName string, edi
 				}
 			}
 			candidate := renameSiblingCandidate{
-				Path: rel, SymbolPath: symbolPath, Kind: kind, Generated: isGenerated,
+				Path: rel, SymbolPath: symbolPath, Kind: kind,
+				Signature: boundedGoMethodSignature(set, ident.Name, method),
+				Generated: isGenerated,
 			}
 			if len(out.Candidates) == maxRenameSiblingCandidates {
 				out.Truncated = true
@@ -134,7 +138,7 @@ func (e *Engine) findUnrenamedGoMethods(ctx context.Context, oldName string, edi
 							continue
 						}
 						for _, ident := range field.Names {
-							add(spec.Name.Name+"/"+ident.Name, "interface_method", ident)
+							add(spec.Name.Name+"/"+ident.Name, "interface_method", ident, field.Type.(*ast.FuncType))
 						}
 					}
 				}
@@ -144,7 +148,7 @@ func (e *Engine) findUnrenamedGoMethods(ctx context.Context, oldName string, edi
 				}
 				receiver := goReceiverName(node.Recv.List[0].Type)
 				if receiver != "" {
-					add(receiver+"/"+node.Name.Name, "receiver_method", node.Name)
+					add(receiver+"/"+node.Name.Name, "receiver_method", node.Name, node.Type)
 				}
 			}
 		}
@@ -160,6 +164,27 @@ func (e *Engine) findUnrenamedGoMethods(ctx context.Context, oldName string, edi
 		return out.Candidates[i].SymbolPath < out.Candidates[j].SymbolPath
 	})
 	return out, err
+}
+
+// A concise declaration signature lets the agent distinguish independent
+// same-name methods (e.g. audit event vs gRPC handler) without another file
+// read or LSP request. This is Go syntax only: it is not an interface proof.
+func boundedGoMethodSignature(fset *token.FileSet, name string, method *ast.FuncType) string {
+	if method == nil {
+		return ""
+	}
+	var buffer bytes.Buffer
+	if err := format.Node(&buffer, fset, method); err != nil {
+		return ""
+	}
+	tail := strings.TrimPrefix(strings.TrimSpace(buffer.String()), "func")
+	signature := name + tail
+	const maxSignatureRunes = 180
+	runes := []rune(signature)
+	if len(runes) > maxSignatureRunes {
+		return string(runes[:maxSignatureRunes-3]) + "..."
+	}
+	return signature
 }
 
 func goReceiverName(expr ast.Expr) string {

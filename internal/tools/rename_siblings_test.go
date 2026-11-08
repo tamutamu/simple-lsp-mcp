@@ -46,9 +46,9 @@ func TestGoRenameDiscoversOnlyUneditedIndependentDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []renameSiblingCandidate{
-		{Path: "other.go", SymbolPath: "Client/Emit", Kind: "receiver_method"},
-		{Path: "second.go", SymbolPath: "Second/Emit", Kind: "interface_method"},
-		{Path: "generated.go", SymbolPath: "Wire/Emit", Kind: "interface_method", Generated: true},
+		{Path: "other.go", SymbolPath: "Client/Emit", Kind: "receiver_method", Signature: "Emit(n int) int"},
+		{Path: "second.go", SymbolPath: "Second/Emit", Kind: "interface_method", Signature: "Emit(int) int"},
+		{Path: "generated.go", SymbolPath: "Wire/Emit", Kind: "interface_method", Signature: "Emit(int) int", Generated: true},
 	}
 	if !reflect.DeepEqual(result.Candidates, want) {
 		t.Fatalf("unexpected unrenamed candidates: got %#v, want %#v", result.Candidates, want)
@@ -97,6 +97,9 @@ func TestGoRenameCandidatesPreferHandwrittenCodeWhenGeneratedStubsOverflow(t *te
 	}
 	if !result.Truncated || len(result.Candidates) != maxRenameSiblingCandidates {
 		t.Fatalf("should be bounded and explicitly incomplete: %#v", result)
+	}
+	if result.Candidates[0].Signature != "Emit()" {
+		t.Fatalf("signature hint missing from plain Go method: %#v", result.Candidates[0])
 	}
 	if result.Candidates[0].Path != "z_handwritten.go" ||
 		result.Candidates[0].SymbolPath != "Business/Emit" || result.Candidates[0].Generated {

@@ -72,7 +72,7 @@ def attempt(o, arm, n, oracle):
     if arm=="mcp":
         cmd.extend(["-c",'mcp_servers.simple-lsp.command="'+str(o.binary)+'"',
           "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(work)+'",'
-               '"--tool-profile","coding","--result-format","text","--request-timeout","90s"]',
+               '"--tool-profile","'+o.mcp_profile+'","--result-format","text","--request-timeout","90s"]',
           "-c",'mcp_servers.simple-lsp.env.PATH="'+env["PATH"]+'"'])
     cmd.append(prompt)
     started=time.monotonic()
@@ -97,15 +97,26 @@ def attempt(o, arm, n, oracle):
     total,cached=usage.get("input_tokens"),usage.get("cached_input_tokens")
     fresh=total-cached if isinstance(total,int) and isinstance(cached,int) and 0<=cached<=total else None
     tools=[];shell=[];environment_errors=[]
+    mcp_result_bytes=0
+    shell_result_bytes=0
     for event in events:
         if event.get("type")!="item.completed":continue
         item=event.get("item",{})
         if item.get("type")=="mcp_tool_call":
+            reply=item.get("result") or {}
+            payloads=reply.get("content",[]) if isinstance(reply,dict) else []
+            response_bytes=sum(len(c.get("text","").encode("utf-8"))
+                for c in payloads if isinstance(c,dict) and isinstance(c.get("text"),str))
+            mcp_result_bytes+=response_bytes
             tools.append({"tool":item.get("tool"),"status":item.get("status"),
-                "arguments":item.get("arguments"),"error":item.get("error")})
+                "arguments":item.get("arguments"),"error":item.get("error"),
+                "response_bytes":response_bytes})
         if item.get("type")=="command_execution":
             out=item.get("aggregated_output") or ""
-            shell.append({"command":item.get("command"),"exit":item.get("exit_code")})
+            response_bytes=len(out.encode("utf-8"))
+            shell_result_bytes+=response_bytes
+            shell.append({"command":item.get("command"),"exit":item.get("exit_code"),
+                          "response_bytes":response_bytes})
             if any(x in out for x in ("go/packages.Load","read-only file system","initial workspace load failed")):
                 environment_errors.append({"command":item.get("command"),"error_excerpt":out[:400]})
     diff=subprocess.run(["git","diff","--binary"],cwd=work,capture_output=True,check=True).stdout
@@ -122,6 +133,17 @@ def attempt(o, arm, n, oracle):
         "RecordAuditEvent(" in (work/rel).read_text() and
         "EmitAuditEvent(" not in (work/rel).read_text()
         for rel in ("api/types/events/api.go","lib/events/api.go")
+    )
+    # The gRPC service method has the same spelling but is a different
+    # semantic contract. A broad text rename may keep the 49-file count and
+    # still silently damage the generated AuthServiceServer implementation.
+    grpc_source=(work/"lib/auth/grpcserver.go").read_text()
+    unrelated_grpc_method_preserved=(
+        "func (g *GRPCServer) EmitAuditEvent(" in grpc_source and
+        "func (g *GRPCServer) RecordAuditEvent(" not in grpc_source
+    )
+    generated_grpc_untouched=(
+        "api/client/proto/authservice.pb.go" not in touched
     )
     quality_env=env.copy()
     for key in ("GOCACHE","XDG_CACHE_HOME","TMPDIR"):
@@ -145,12 +167,14 @@ def attempt(o, arm, n, oracle):
     substantive_success=(
         exitcode==0 and check.returncode==0 and not environment_errors
         and touched==expected_files and tagged_uses_fixed and interface_converted
+        and unrelated_grpc_method_preserved and generated_grpc_untouched
         and all(v["success"] for v in compile_checks.values())
     )
     row={"arm":arm,"trial":n,"seconds":seconds,"exitcode":exitcode,
        "input_total":total,"input_cached":cached,"input_fresh":fresh,
        "output_tokens":usage.get("output_tokens"),
        "calls_mcp":tools,"calls_shell":shell,
+       "mcp_result_bytes":mcp_result_bytes,"shell_result_bytes":shell_result_bytes,
        "environment_errors":environment_errors,
        "changed_files":changed,"changed_file_count":len(changed),
        "diff_sha256":sha,"oracle_sha256":oracle["sha256"],
@@ -161,6 +185,8 @@ def attempt(o, arm, n, oracle):
        "unexpected_files":sorted(touched-expected_files),
        "tagged_uses_fixed":tagged_uses_fixed,
        "interface_declarations_converted":interface_converted,
+       "unrelated_grpc_method_preserved":unrelated_grpc_method_preserved,
+       "generated_grpc_untouched":generated_grpc_untouched,
        "compile_checks":compile_checks,
        "accepted":substantive_success,
        "answer":answer}
@@ -178,6 +204,7 @@ def main():
     p.add_argument("--effort",default="low")
     p.add_argument("--timeout",type=int,default=300)
     p.add_argument("--repeats",type=int,default=1)
+    p.add_argument("--mcp-profile",choices=("coding","refactor"),default="coding")
     p.add_argument("--batch-result",type=Path,required=True,
         help="independent, semantically validated 48-file batch LSP oracle")
     o=p.parse_args()
@@ -197,8 +224,9 @@ def main():
         "oracle_edit_count":oracle["edit_count"],
         "expected_complete_file_count":len(o.expected_files),
         "expected_complete_files":o.expected_files,
-        "acceptance":"all expected files, no extras, tagged references fixed, interface declarations changed, both module compiles and clean diff",
+        "acceptance":"49 expected files, no extras, tagged references fixed, interface declarations changed, unrelated gRPC method and generated stubs unchanged, both module compiles and clean diff",
         "binary_sha256":hashlib.sha256(o.binary.read_bytes()).hexdigest(),
+        "mcp_profile":o.mcp_profile,
         "policy_sha256":hashlib.sha256(POLICY.encode()).hexdigest(),
     },indent=2))
     allrows=[]

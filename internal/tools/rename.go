@@ -93,6 +93,46 @@ func compactRenamePreview(result map[string]any) map[string]any {
 	return result
 }
 
+// CompactPlanningRenamePreview retains the complete list of affected files,
+// their edit counts, independent method candidates, completeness warnings and
+// other safety facts. The actual source ranges already validated by gopls
+// are omitted because a refactoring agent normally only needs to select
+// related declarations before requesting one atomic write. Full edit ranges
+// are still available in coding/full via preview_detail=full.
+func CompactPlanningRenamePreview(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for k, v := range input {
+		output[k] = v
+	}
+	type fileCount struct {
+		Path      string `json:"path"`
+		EditCount int    `json:"edit_count"`
+	}
+	files := make([]fileCount, 0)
+	switch entries := input["files"].(type) {
+	case []fileEditPreview:
+		files = make([]fileCount, 0, len(entries))
+		for _, item := range entries {
+			files = append(files, fileCount{Path: item.Path, EditCount: len(item.Edits)})
+		}
+	case []map[string]any:
+		files = make([]fileCount, 0, len(entries))
+		for _, item := range entries {
+			path, _ := item["path"].(string)
+			count, _ := item["edit_count"].(int)
+			files = append(files, fileCount{Path: path, EditCount: count})
+		}
+	default:
+		return input
+	}
+	output["files"] = files
+	output["preview_detail"] = "summary"
+	output["preview_samples_omitted"] = true
+	delete(output, "sample_edit_count")
+	delete(output, "full_preview_available")
+	return output
+}
+
 // CompactAppliedRename retains the result needed after a verified write,
 // without echoing every replacement already applied to the filesystem.
 // The full plan remains available through RenameSymbol and preview_rename.

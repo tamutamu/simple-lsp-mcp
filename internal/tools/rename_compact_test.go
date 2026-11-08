@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -50,5 +51,43 @@ func TestGoRenameInterfaceContractErrorIsActionable(t *testing.T) {
 	}
 	if got := classifySemanticRenameError("go", errors.New("ordinary lsp error")); got.Error() != "ordinary lsp error" {
 		t.Fatalf("changed unrelated error: %v", got)
+	}
+}
+func TestCompactPlanningPreviewKeepsCoverageButDropsEditRanges(t *testing.T) {
+	original := map[string]any{
+		"applied": false, "file_count": 2, "edit_count": 3,
+		"files": []map[string]any{
+			{"path": "a.go", "edit_count": 2, "sample_edits": []editPreview{{NewText: "After"}}},
+			{"path": "b.go", "edit_count": 1, "sample_edits": []editPreview{{NewText: "After"}}},
+		},
+		"unrenamed_method_candidates": []renameSiblingCandidate{{Path: "c.go", SymbolPath: "Other/Before"}},
+		"unverified_build_tag_files":  []string{"feature_linux.go"},
+		"coverage_complete":           false,
+		"warnings":                    []string{"do not claim coverage"},
+		"sample_edit_count":           2,
+		"full_preview_available":      "preview_rename(preview_detail=full)",
+	}
+	got := CompactPlanningRenamePreview(original)
+	raw, err := json.Marshal(got["files"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `[{"path":"a.go","edit_count":2},{"path":"b.go","edit_count":1}]` {
+		t.Fatalf("unexpected file-only summary: %s", raw)
+	}
+	if got["coverage_complete"] != false ||
+		!reflect.DeepEqual(got["warnings"], original["warnings"]) ||
+		!reflect.DeepEqual(got["unrenamed_method_candidates"], original["unrenamed_method_candidates"]) ||
+		!reflect.DeepEqual(got["unverified_build_tag_files"], original["unverified_build_tag_files"]) {
+		t.Fatalf("lost safety-critical output: %#v", got)
+	}
+	if _, ok := got["sample_edit_count"]; ok {
+		t.Fatal("unnecessary samples counted")
+	}
+	if _, ok := got["full_preview_available"]; ok {
+		t.Fatal("full preview not on narrow profile")
+	}
+	if _, ok := original["sample_edit_count"]; !ok {
+		t.Fatal("original payload mutated")
 	}
 }
