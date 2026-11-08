@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -115,85 +117,68 @@ func CompactAppliedRename(result map[string]any) map[string]any {
 	if warnings, present := result["warnings"]; present {
 		summary["warnings"] = warnings
 	}
+	if count, present := result["targets_count"]; present {
+		summary["targets_count"] = count
+	}
+	if counts, present := result["target_edit_counts"]; present {
+		summary["target_edit_counts"] = counts
+	}
+	for _, key := range []string{"unverified_build_tag_files", "build_tag_candidates_truncated", "coverage_complete", "unrenamed_method_candidates", "method_discovery_truncated", "method_discovery_parse_errors"} {
+		if value, present := result[key]; present {
+			summary[key] = value
+		}
+	}
 	return summary
 }
 
 // RenameSymbol asks the selected language server to compute a semantic rename.
 // It is preview-only unless apply=true. The server never computes replacements
 // itself; it only validates and optionally applies the returned WorkspaceEdit.
+type computedRename struct {
+	edit        protocol.WorkspaceEdit
+	encoding    string
+	sessionKey  string
+	oldName     string
+	preparation map[string]any
+}
+
 func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[string]any, error) {
-	newName := stringVal(in, "new_name")
-	if strings.TrimSpace(newName) == "" {
-		return nil, core.NewError(core.InvalidArgument, "new_name must be a non-empty string")
+	if raw, hasTargets := in["targets"]; hasTargets {
+		return e.renameMultipleSymbols(ctx, in, raw)
 	}
-	p, s, d, pos, err := e.target(ctx, in)
+	computed, err := e.computeRenameEdit(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	caps := s.Capabilities()
-	if !caps.Rename {
-		return nil, e.unsupported(p, "textDocument/rename")
+	plan, files, count, err := e.workspaceEditPlan(computed.edit, computed.encoding)
+	if err != nil {
+		return nil, err
 	}
-
-	positionParams := map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos}
-	var preparation map[string]any
-	if caps.PrepareRename {
-		callCtx, cancel := e.callContext(ctx)
-		var raw json.RawMessage
-		err := s.Request(callCtx, "textDocument/prepareRename", positionParams, &raw)
-		cancel()
+	if count == 0 {
+		return nil, core.NewError(core.IncompleteSearch, "language server returned no semantic rename edits")
+	}
+	var tagScan renameTagScan
+	if computed.sessionKey == "go" {
+		tagScan, err = e.taggedGoRenameCandidates(ctx, []string{computed.oldName}, files)
 		if err != nil {
-			return nil, err
+			return nil, core.WithCause(core.IncompleteSearch, "could not inspect alternate Go build-tag source before rename", err)
 		}
-		preparation, err = renamePreparation(d.Text, raw, caps.PositionEncoding)
+	}
+	var siblingScan renameSiblingScan
+	if computed.sessionKey == "go" {
+		siblingScan, err = e.findUnrenamedGoMethods(ctx, computed.oldName, files)
 		if err != nil {
-			return nil, err
+			return nil, core.WithCause(core.IncompleteSearch, "could not inspect independent method declarations before rename", err)
 		}
 	}
-
-	// tsserver and Pyright may not include unopened project files in rename
-	// immediately after the first didOpen. Warm only source files that contain
-	// the old symbol spelling; the language server still computes every edit.
-	// The filesystem scan is bounded and fails closed instead of accepting a
-	// potentially partial semantic rename.
-	if p.SessionKey == "typescript-javascript" || p.SessionKey == "python" {
-		// prepareRename is optional in LSP. With only path/line/column,
-		// name-based candidate warm-up previously became a no-op when the
-		// server omitted that capability, risking incomplete cross-file edits.
-		// This spelling only selects files to open; textDocument/rename
-		// remains the sole authority for semantic edit locations.
-		name := e.renameWarmCandidateName(in, d.Text, preparation, pos, caps.PositionEncoding)
-		if name != "" {
-			if err := e.warmProjectSymbolCandidates(ctx, p, s, name); err != nil {
-				return nil, err
-			}
-			if err := e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
-				return nil, err
-			}
-		}
+	result := map[string]any{"new_name": stringVal(in, "new_name"), "applied": false,
+		"file_count": len(files), "edit_count": count, "files": files}
+	if computed.preparation != nil {
+		result["prepare"] = computed.preparation
 	}
-
-	callCtx, cancel := e.callContext(ctx)
-	var edit protocol.WorkspaceEdit
-	err = s.Request(callCtx, "textDocument/rename", map[string]any{
-		"textDocument": protocol.TextDocumentIdentifier{URI: d.URI},
-		"position":     pos,
-		"newName":      newName,
-	}, &edit)
-	cancel()
-	if err != nil {
-		return nil, err
-	}
-	plan, files, editCount, err := e.workspaceEditPlan(edit, caps.PositionEncoding)
-	if err != nil {
-		return nil, err
-	}
-	result := map[string]any{"new_name": newName, "applied": false, "file_count": len(files), "edit_count": editCount, "files": files}
-	if preparation != nil {
-		result["prepare"] = preparation
-	}
-	apply, _ := in["apply"].(bool)
-	if !apply {
+	attachBuildTagRenameWarning(result, tagScan)
+	attachSiblingRenameWarning(result, siblingScan)
+	if !boolValDefault(in, "apply", false) {
 		return result, nil
 	}
 	warnings, err := e.applyWorkspaceEditPlan(ctx, plan)
@@ -202,9 +187,322 @@ func (e *Engine) RenameSymbol(ctx context.Context, in map[string]any) (map[strin
 	}
 	result["applied"] = true
 	if len(warnings) > 0 {
-		result["warnings"] = warnings
+		prior, _ := result["warnings"].([]string)
+		result["warnings"] = append(prior, warnings...)
 	}
 	return result, nil
+}
+
+// computeRenameEdit requests and validates one semantic rename from its LSP,
+// without modifying the filesystem. Keeping it independent of applying edits
+// lets renameMultipleSymbols validate an entire cross-interface change first.
+func (e *Engine) computeRenameEdit(ctx context.Context, in map[string]any) (computedRename, error) {
+	name := stringVal(in, "new_name")
+	if strings.TrimSpace(name) == "" {
+		return computedRename{}, core.NewError(core.InvalidArgument, "new_name must be a non-empty string")
+	}
+	p, s, d, pos, err := e.target(ctx, in)
+	if err != nil {
+		return computedRename{}, err
+	}
+	caps := s.Capabilities()
+	if !caps.Rename {
+		return computedRename{}, e.unsupported(p, "textDocument/rename")
+	}
+	var preparation map[string]any
+	if caps.PrepareRename {
+		callCtx, cancel := e.callContext(ctx)
+		var raw json.RawMessage
+		err = s.Request(callCtx, "textDocument/prepareRename",
+			map[string]any{"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos}, &raw)
+		cancel()
+		if err != nil {
+			return computedRename{}, err
+		}
+		preparation, err = renamePreparation(d.Text, raw, caps.PositionEncoding)
+		if err != nil {
+			return computedRename{}, err
+		}
+	}
+	if p.SessionKey == "typescript-javascript" || p.SessionKey == "python" {
+		// Open only candidate sources, while the language server is still the
+		// sole authority for renaming. Its edit plan may be incomplete until
+		// the opened-project source is primed.
+		identifier := e.renameWarmCandidateName(in, d.Text, preparation, pos, caps.PositionEncoding)
+		if identifier != "" {
+			if err = e.warmProjectSymbolCandidates(ctx, p, s, identifier); err != nil {
+				return computedRename{}, err
+			}
+			if err = e.primeProjectSemantics(ctx, p, s, d, pos); err != nil {
+				return computedRename{}, err
+			}
+		}
+	}
+	if p.SessionKey == "go" && caps.References {
+		// gopls may return a partial rename during its initial background
+		// package loading. Resolve actual semantic references first: this
+		// loads the relevant package graph before requesting edits. On
+		// Teleport this changes a cold 41/44-file result to the complete
+		// 45-file LSP edit plan without arbitrary sleeps.
+		callCtx, cancel := e.callContext(ctx)
+		var refs json.RawMessage
+		err := s.Request(callCtx, "textDocument/references", map[string]any{
+			"textDocument": protocol.TextDocumentIdentifier{URI: d.URI},
+			"position":     pos,
+			"context":      map[string]any{"includeDeclaration": true},
+		}, &refs)
+		cancel()
+		if err != nil {
+			return computedRename{}, core.WithCause(core.IncompleteSearch,
+				"could not initialize gopls semantic references before rename; no files were changed", err)
+		}
+	}
+	callCtx, cancel := e.callContext(ctx)
+	var edit protocol.WorkspaceEdit
+	err = s.Request(callCtx, "textDocument/rename", map[string]any{
+		"textDocument": protocol.TextDocumentIdentifier{URI: d.URI}, "position": pos, "newName": name,
+	}, &edit)
+	cancel()
+	if err != nil {
+		return computedRename{}, classifySemanticRenameError(p.SessionKey, err)
+	}
+	if p.SessionKey == "go" {
+		// gopls may return WorkspaceEdits with the same edits in different
+		// orders. Normalize to validated, sorted edits before comparison.
+		// Raw reflect.DeepEqual was spuriously rejecting equivalent plans.
+		_, previous, _, planErr := e.workspaceEditPlan(edit, caps.PositionEncoding)
+		if planErr != nil {
+			return computedRename{}, planErr
+		}
+		observed := []int{len(previous)}
+		stable := 0
+		for attempt := 0; attempt < 6; attempt++ {
+			callCtx, cancel := e.callContext(ctx)
+			var next protocol.WorkspaceEdit
+			err := s.Request(callCtx, "textDocument/rename", map[string]any{
+				"textDocument": protocol.TextDocumentIdentifier{URI: d.URI},
+				"position":     pos, "newName": name,
+			}, &next)
+			cancel()
+			if err != nil {
+				return computedRename{}, classifySemanticRenameError(p.SessionKey, err)
+			}
+			_, normalized, _, planErr := e.workspaceEditPlan(next, caps.PositionEncoding)
+			if planErr != nil {
+				return computedRename{}, planErr
+			}
+			observed = append(observed, len(normalized))
+			if reflect.DeepEqual(previous, normalized) {
+				stable++
+			} else {
+				stable = 0
+			}
+			previous = normalized
+			if stable >= 2 {
+				edit = next
+				break
+			}
+			if attempt == 5 {
+				return computedRename{}, core.NewError(core.IncompleteSearch,
+					fmt.Sprintf("gopls semantic rename edits changed across repeated requests (file counts %v); no files were changed", observed))
+			}
+		}
+	}
+	return computedRename{edit: edit, encoding: caps.PositionEncoding,
+		sessionKey: p.SessionKey, oldName: warmIdentifierAtPosition(d.Text, pos, caps.PositionEncoding),
+		preparation: preparation}, nil
+}
+
+// renameMultipleSymbols gathers independently computed LSP WorkspaceEdits on
+// the same unchanged source, validates the union (including overlapping edits)
+// and writes all files atomically with the existing rollback machinery.
+// Only explicit, independently identified symbols are included: no lexical
+// match is silently treated as equivalent to another interface method.
+func (e *Engine) renameMultipleSymbols(ctx context.Context, in map[string]any, raw any) (map[string]any, error) {
+	name := stringVal(in, "new_name")
+	if strings.TrimSpace(name) == "" {
+		return nil, core.NewError(core.InvalidArgument, "new_name must be a non-empty string")
+	}
+	items, ok := raw.([]any)
+	if !ok || len(items) < 2 || len(items) > 6 {
+		return nil, core.NewError(core.InvalidArgument, "targets must contain 2 to 6 symbol identities")
+	}
+	for _, field := range []string{"path", "symbol_path", "symbol_id", "line", "column", "language"} {
+		if _, present := in[field]; present {
+			return nil, core.NewError(core.InvalidArgument, "targets cannot be combined with top-level "+field)
+		}
+	}
+	validated := make([]map[string]any, 0, len(items))
+	seen := map[string]bool{}
+	for i, item := range items {
+		target, ok := item.(map[string]any)
+		if !ok {
+			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("targets[%d] must be an object", i))
+		}
+		for key := range target {
+			switch key {
+			case "path", "symbol_path", "symbol_id", "line", "column", "language":
+			default:
+				return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("unknown field %s in targets[%d]", key, i))
+			}
+		}
+		if err := targetOf(target).Validate(); err != nil {
+			return nil, core.WithCause(core.InvalidArgument, fmt.Sprintf("invalid targets[%d]", i), err)
+		}
+		identity, _ := json.Marshal(target)
+		if seen[string(identity)] {
+			return nil, core.NewError(core.InvalidArgument, fmt.Sprintf("duplicate targets[%d]", i))
+		}
+		seen[string(identity)] = true
+		part := make(map[string]any, len(target)+1)
+		for k, v := range target {
+			part[k] = v
+		}
+		part["new_name"] = name
+		validated = append(validated, part)
+	}
+	// Resolve and open ALL requested target documents before issuing any rename
+	// request. Go type-checking/index state can otherwise depend on which
+	// interface document was first opened, producing a partial edit set.
+	for i, target := range validated {
+		if _, _, _, _, err := e.target(ctx, target); err != nil {
+			return nil, core.WithCause(core.IncompleteSearch,
+				fmt.Sprintf("targets[%d] could not be resolved before rename; no files changed", i), err)
+		}
+	}
+	combined := protocol.WorkspaceEdit{Changes: map[string][]protocol.TextEdit{}}
+	targetEdits := make([]int, 0, len(items))
+	targetFiles := make([]int, 0, len(items))
+	oldNames := make([]string, 0, len(items))
+	var encoding, sessionKey string
+	for i, target := range validated {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		part, err := e.computeRenameEdit(ctx, target)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, fmt.Sprintf("targets[%d] rename failed without writing files", i), err)
+		}
+		if i == 0 {
+			encoding, sessionKey = part.encoding, part.sessionKey
+		} else if encoding != part.encoding || sessionKey != part.sessionKey {
+			return nil, core.NewError(core.InvalidArgument, "batch rename requires one language-server profile and position encoding")
+		}
+		// Every individual request must produce a valid, non-empty edit plan.
+		// Never report success for targets silently omitted by a language server.
+		_, partFiles, partCount, err := e.workspaceEditPlan(part.edit, part.encoding)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch,
+				fmt.Sprintf("targets[%d] returned invalid edits; no files changed", i), err)
+		}
+		if partCount == 0 {
+			return nil, core.NewError(core.IncompleteSearch,
+				fmt.Sprintf("targets[%d] returned no semantic edits; no files changed", i))
+		}
+		targetEdits = append(targetEdits, partCount)
+		targetFiles = append(targetFiles, len(partFiles))
+		oldNames = append(oldNames, part.oldName)
+		for uri, edits := range part.edit.Changes {
+			combined.Changes[uri] = append(combined.Changes[uri], edits...)
+		}
+		combined.DocumentChanges = append(combined.DocumentChanges, part.edit.DocumentChanges...)
+	}
+	plan, files, count, err := e.workspaceEditPlan(combined, encoding)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, core.NewError(core.IncompleteSearch, "all targets returned zero rename edits")
+	}
+	var tagScan renameTagScan
+	if sessionKey == "go" {
+		tagScan, err = e.taggedGoRenameCandidates(ctx, oldNames, files)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "could not inspect alternate Go build-tag source before batch rename", err)
+		}
+	}
+	var siblingScan renameSiblingScan
+	if sessionKey == "go" && len(oldNames) > 0 {
+		siblingScan, err = e.findUnrenamedGoMethods(ctx, oldNames[0], files)
+		if err != nil {
+			return nil, core.WithCause(core.IncompleteSearch, "could not inspect independent method declarations before batch rename", err)
+		}
+	}
+	result := map[string]any{"new_name": name, "targets_count": len(items), "applied": false,
+		"file_count": len(files), "edit_count": count, "files": files,
+		"target_edit_counts": targetEdits, "target_file_counts": targetFiles}
+	attachBuildTagRenameWarning(result, tagScan)
+	attachSiblingRenameWarning(result, siblingScan)
+	if !boolValDefault(in, "apply", false) {
+		return result, nil
+	}
+	warnings, err := e.applyWorkspaceEditPlan(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	result["applied"] = true
+	if len(warnings) > 0 {
+		prior, _ := result["warnings"].([]string)
+		result["warnings"] = append(prior, warnings...)
+	}
+	return result, nil
+}
+
+// attachSiblingRenameWarning reports other declarations with the same method
+// spelling that are not part of this LSP edit plan. They may be separate Go
+// interfaces; no semantic equivalence is assumed and no automatic edits occur.
+func attachSiblingRenameWarning(result map[string]any, scan renameSiblingScan) {
+	if len(scan.Candidates) == 0 && !scan.Truncated && scan.ParseErrors == 0 {
+		return
+	}
+	if len(scan.Candidates) > 0 {
+		result["unrenamed_method_candidates"] = scan.Candidates
+	}
+	if scan.Truncated {
+		result["method_discovery_truncated"] = true
+	}
+	if scan.ParseErrors > 0 {
+		result["method_discovery_parse_errors"] = scan.ParseErrors
+	}
+	prior, _ := result["warnings"].([]string)
+	result["warnings"] = append(prior,
+		"Other Go declarations with the old method name were not in this LSP rename edit; review unrenamed_method_candidates before declaring the multi-interface refactor complete. These are syntax-level candidates, not proven dependencies.")
+}
+
+// attachBuildTagRenameWarning reports potentially stale method usages that
+// the active gopls build configuration did not include. The files are lexical
+// candidates only: they MUST be reviewed semantically before any further edit.
+func attachBuildTagRenameWarning(result map[string]any, scan renameTagScan) {
+	if len(scan.Paths) == 0 && !scan.Truncated {
+		return
+	}
+	result["unverified_build_tag_files"] = scan.Paths
+	result["coverage_complete"] = false
+	if scan.Truncated {
+		result["build_tag_candidates_truncated"] = true
+	}
+	result["warnings"] = append([]string{},
+		"Go build-tag variants may contain old identifier usages not covered by this LSP WorkspaceEdit; review unverified_build_tag_files before claiming a complete rename")
+}
+
+// classifySemanticRenameError preserves an exact gopls constraint instead of
+// reporting it as a generic LSP server failure. A concrete method must
+// continue to satisfy its Go interface; retrying with a regex/text
+// replacement would break callers. Guide the agent to the interface
+// declaration for a safe, full-program semantic rename.
+func classifySemanticRenameError(sessionKey string, err error) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if sessionKey == "go" &&
+		strings.Contains(message, "renaming this method") &&
+		strings.Contains(message, "no longer assignable to interface") {
+		return core.WithCause(core.InvalidArgument,
+			"Go rename would break an interface implementation; rename the corresponding interface method instead so gopls can update implementations and callers together",
+			err)
+	}
+	return err
 }
 
 func (e *Engine) renameWarmCandidateName(in map[string]any, text []byte, preparation map[string]any, position protocol.Position, encoding string) string {

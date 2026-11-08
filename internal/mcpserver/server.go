@@ -11,7 +11,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For an explicit cross-file rename with a known symbol, use rename_symbol(apply=true) directly; preview_rename is optional when the target is ambiguous or needs review. Avoid inspect_symbol + grep + manual edits. Use the exact path and symbol_path when known. Confirm application with concise diff checks. For cross-file change-impact questions prefer investigate_change(path,symbol_path,depth=2) over ad hoc grep; use targets[] (2-6) with detail=union for multiple declarations. For other known functions call inspect_symbol(view=edit) directly; batch 2-8 with targets[]. Use rg for unknown files/literals and LSP references for semantic identity. For formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "For a known semantic rename use rename_symbol(apply=true); pass targets[] for separate interfaces. Use preview_rename if uncertain. If unverified_build_tag_files appears, warn that coverage is incomplete. For impact analysis use investigate_change (targets[] and detail=union for multiple symbols). Use inspect_symbol for known functions, rg for literal searches. For formatting use preview_format then format_document(apply=true). Do not invoke every tool or reread returned code. Check diffs and run tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -125,10 +125,10 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		// Exact LSP operations. The agent chooses which relation to inspect.
-		{"rename_symbol", "ONE-CALL SEMANTIC RENAME: for an explicit rename, apply=true updates all LSP-identified references across files. The text response returns only a compact applied summary. Use preview_rename only when review is needed.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"rename_symbol", "Semantic rename; apply=true writes. For separate Go interfaces, use 2-6 targets[] to apply all LSP edits atomically. Review unverified_build_tag_files warnings.", renameInputSchema(false), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: review semantically identified cross-file rename edits before applying. Optional for an explicit, unambiguous rename; rename_symbol(apply=true) can act in one call.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "Read-only semantic rename preview; accepts 2-6 targets[] for an atomic batch.", renameInputSchema(true), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -147,7 +147,7 @@ func definitions() []definition {
 			return e.Diagnostics(c, i)
 		}},
 
-		{"investigate_change", "HIGH-LEVEL READ ONLY: one call resolves path+symbol_path, follows 2 LSP reference hops and reports grouped affected files, counts and incomplete=true/false. Supply targets[] (2–6) to investigate several declarations in one call; optional line+column with path+symbol_path corroborates the exact source position and rejects mismatches. detail=union minimizes context, detail=files includes per-declaration evidence. detail=graph on a single target returns exact edges.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"investigate_change", "Read-only change impact: path+symbol_path; 2 reference hops by default. For 2-6 targets[] use detail=union; single detail=graph returns edges. Reports incomplete flag.", investigateInputSchema(), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InvestigateChange(c, i)
 		}},
 
@@ -198,6 +198,34 @@ func hierarchy(name string) func(context.Context, *tools.Engine, map[string]any)
 }
 
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
+
+// renameInputSchema advertises a compact multi-interface rename without
+// multiplying the number of MCP tools. One interface method may have several
+// semantically separate contracts, so targets must be explicit. The combined
+// LSP edits are validated together before any filesystem changes.
+func renameInputSchema(preview bool) map[string]any {
+	keys := []string{"symbol_id", "symbol_path", "path", "line", "column", "language", "new_name"}
+	if preview {
+		keys = append(keys, "preview_detail")
+	} else {
+		keys = append(keys, "apply")
+	}
+	fields := props(keys...)
+	fields["targets"] = map[string]any{
+		"type": "array", "minItems": 2, "maxItems": 6,
+		"description": "2-6 separate method identities (path+symbol_path), excluding top-level target.",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":        map[string]any{"type": "string"},
+				"symbol_path": map[string]any{"type": "string"},
+			},
+			"required":             []string{"path", "symbol_path"},
+			"additionalProperties": false,
+		},
+	}
+	return objSchema(fields, "new_name")
+}
 
 // investigateInputSchema uses its own detail enum: the generic "detail"
 // parameter applies to document symbols and would advertise invalid choices.

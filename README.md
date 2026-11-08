@@ -334,15 +334,25 @@ By default each response includes the same JSON as both `content` text and `stru
 **This is an opt-in, client-compatibility experiment.** A smaller MCP response is not proof of fewer model input tokens; the client may expose only one representation to the model already. Validate your client's support before adopting it. The [predeclared significance gates](docs/benchmarks/significance-gates-2026-11-01.md) require repeated *graded agent tasks*, not just smaller protocol output.
 
 
-Direct invocation defaults to `--tool-profile full` with **23** operations. `simple-lsp-mcp setup codex` registers the **14-tool `coding` profile** with `--result-format text`; the profile includes read-only source inspection, symbol navigation, read-only `preview_rename`, and the write-capable `rename_symbol(apply=true)` tool. A Codex agent running an explicit cross-file rename can now apply all semantic edits in a **single authorized MCP call**, instead of reading each source and patching manually. This was **not possible** in the former coding profile, which omitted rename entirely. `rename_symbol` remains marked destructive so clients can enforce write approval; `preview_rename` is separately read-only.
+Direct invocation defaults to `--tool-profile full` with **23** operations. `simple-lsp-mcp setup codex` registers the **15-tool `coding` profile** with `--result-format text`; the profile includes read-only source inspection, symbol navigation, read-only `preview_rename`, and the write-capable `rename_symbol(apply=true)` tool. A Codex agent running an explicit cross-file rename can now apply all semantic edits in a **single authorized MCP call**, instead of reading each source and patching manually. This was **not possible** in the former coding profile, which omitted rename entirely. `rename_symbol` remains marked destructive so clients can enforce write approval; `preview_rename` is separately read-only.
 
 For one-purpose refactoring workflows, the direct server option `--tool-profile rename` exposes just the two rename tools, without changing the default configuration. To expose all navigation, formatting and code-action tools to Codex use `simple-lsp-mcp setup codex --apply --tool-profile full`; Claude Code setup retains full by default. Existing registrations must be updated and restarted to obtain the new surface.
 
-Current direct JSON-RPC `tools/list` measurements with text results: **14,222 bytes (coding: 14 tools)** versus **2,364 bytes (rename: 2 tools)**. These are schema bytes, **not** model tokens. In paired Codex rename tasks, the small profile reduced total input tokens in both exploratory trials, but did **not** reliably reduce fresh (non-cached) input. See [semantic rename A/B audit](docs/benchmarks/semantic-rename-codex-2026-11-07.md) for actual times, token accounting, identical Git diff hashes and limitations.
+Earlier (2026-11-07) direct JSON-RPC `tools/list` measurements with text results: **14,222 bytes (coding: 14 tools)** versus **2,364 bytes (rename: 2 tools)**. These are schema bytes, **not** model tokens. In paired Codex rename tasks, the small profile reduced total input tokens in both exploratory trials, but did **not** reliably reduce fresh (non-cached) input. See [semantic rename A/B audit](docs/benchmarks/semantic-rename-codex-2026-11-07.md) for actual times, token accounting, identical Git diff hashes and limitations.
 
 When several exact functions are known, call `inspect_symbol(view="edit", targets=[{"path":"backend/app/api/routes/items.py","symbol_path":"read_items"},{"path":"backend/app/api/routes/users.py","symbol_path":"read_users"}])` for their actual source contexts in one call. Supports 1–8 targets, rejects ambiguous/duplicate results and results above 32 KiB. Single-symbol requests are unchanged. In the direct warm-language-server test, three calls took **12.37 ms** vs **12.75 ms** batched and produced **4,117 B** vs **4,133 B** of data. Thus batching saves client calls, **not** backend latency.
 
 [Measurements and limitations](docs/benchmarks/coding-profile-batch-2026-10-26.md).
+### Atomic semantic rename across Go interfaces
+
+A Go method can implement several **independent interfaces**. Renaming just one declaration can leave other interface contracts or callers broken. Use `rename_symbol(new_name="RecordAuditEvent", targets=[{"path":"lib/events/api.go","symbol_path":"IAuditLog/EmitAuditEvent"},{"path":"api/types/events/api.go","symbol_path":"Emitter/EmitAuditEvent"}], apply=true)`. Each target is resolved by the LSP against unchanged source; the combined edits are checked for overlaps, unsafe paths and stale files **before any write**, with rollback on write failure. `preview_rename` supports the same `targets[]` without modifying files.
+
+For Go, the server preloads semantic references before asking `gopls` for rename edits, and compares **normalized edits** to avoid rejecting identical plans with different edit orders. The result may include `coverage_complete=false` and `unverified_build_tag_files`: source excluded by build constraints or GOOS/GOARCH suffixes is reported for review, **never silently rewritten by string replacement**. Such a result must not be treated as proof of a complete project-wide refactor.
+
+For Go rename previews, the optional `unrenamed_method_candidates` field lists other **syntax-confirmed interface and receiver methods** still bearing the old name. This helps agents discover independently declared interfaces **before** choosing `rename_symbol(targets=[...])`. Generated declarations have `generated: true` and are listed after ordinary code. These names are candidates, not proven semantic dependencies; the tool never changes them without an explicit target.
+
+In a [paired Teleport Codex refactor](docs/benchmarks/codex-teleport-refactor-2026-11-08.md), both arms modified 49 files and passed the scoped compile and diff checks. The LSP arm ran in 137.73 s versus 212.28 s and used 22.9% fewer total input tokens, although **fresh input increased by 8.8%**. Candidate discovery was added **after** that trial, so no agent-level speedup from discovery has been measured yet.
+
 ### High-level change-impact investigation
 
 `investigate_change` combines exact LSP declaration resolution, transitive references (depth configurable), and enclosing-declaration attribution into **one MCP call**. The default `detail=files` groups affected declarations by file, including counts and explicit completeness limits. For longer work, send 2–6 `targets` with `detail=union` to analyze several functions with one call and return a deduplicated file union. The read-only, minimal `--tool-profile investigate` exposes just this tool.
@@ -372,7 +382,7 @@ Every tool returns structured data. Positions are **one-based**, paths workspace
 | `get_supertypes` | Prepare type hierarchy, then direct supertypes |
 | `get_subtypes` | Prepare type hierarchy, then direct subtypes |
 | `get_diagnostics` | Pull/push LSP diagnostics |
-| `rename_symbol` | Preview / apply LSP `textDocument/rename` |
+| `rename_symbol` | LSP semantic rename, with optional 2–6 independent interface targets applied atomically |
 | `format_document` | Preview / apply document or range formatting |
 | `get_code_actions` | List LSP code actions |
 | `apply_code_action` | Apply one selected, validated WorkspaceEdit-backed LSP action |

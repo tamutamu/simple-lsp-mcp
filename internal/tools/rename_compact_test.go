@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -35,5 +37,18 @@ func TestCompactAppliedRenameDoesNotHidePreview(t *testing.T) {
 	preview := map[string]any{"applied": false, "files": []fileEditPreview{{Path: "a.ts"}}}
 	if got := CompactAppliedRename(preview); !reflect.DeepEqual(got, preview) {
 		t.Fatalf("preview data removed: %#v", got)
+	}
+}
+func TestGoRenameInterfaceContractErrorIsActionable(t *testing.T) {
+	original := errors.New("lsp error 0: renaming this method \"EmitAuditEvent\" would make *Log no longer assignable to interface IAuditLog")
+	actual := classifySemanticRenameError("go", original)
+	if !strings.Contains(actual.Error(), "rename the corresponding interface method") {
+		t.Fatalf("interface rename guidance absent: %v", actual)
+	}
+	if got := classifySemanticRenameError("typescript-javascript", original); got != original {
+		t.Fatalf("changed unrelated language error: %v", got)
+	}
+	if got := classifySemanticRenameError("go", errors.New("ordinary lsp error")); got.Error() != "ordinary lsp error" {
+		t.Fatalf("changed unrelated error: %v", got)
 	}
 }
