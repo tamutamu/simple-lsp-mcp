@@ -7,7 +7,7 @@
 
 **A lightweight bridge between coding agents and real language servers.**
 
-`simple-lsp-mcp` exposes **21 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
+`simple-lsp-mcp` exposes **23 MCP tools** in its full profile to Claude Code, Codex, and other MCP clients. It provides LSP symbol definitions, references, implementations, call/type relationships, diagnostics, computed edits and an optional transitive impact investigation. **The agent** decides what to inspect and whether a change is safe; a language server's results are limited by its configured workspace and must not be assumed complete across independent Go modules.
 
 ```text
 find a symbol   → search_symbols / get_document_symbols / list_workspace_symbols
@@ -64,6 +64,12 @@ for multiple source bodies without relation fan-out. This is a design change,
 Connecting MCP is optional, but when connected under this repository's `CLAUDE.md`, use at least one relevant LSP operation before modifying source. For a **known file/function**, call `inspect_symbol(path=..., symbol_path=..., view="edit")` directly, rather than fetching an outline first or rereading the same file. For cross-file renames, call the **read-only** `preview_rename` before any write-capable `rename_symbol(apply=true)` request; this separates safe inspection from tools requiring destructive-operation approval. Large renames (more than 12 edits) return file counts and bounded samples to avoid flooding agent context; use `preview_rename(preview_detail="full")` to review every exact edit when needed. The write-capable `rename_symbol` response remains unchanged. For a name collision, cross-file rename, interface implementation, or caller investigation, prefer the relevant single LSP primitive. For routine edits, `get_document_symbols` supplies a compact file outline, and `inspect_symbol(view="source")` reads the actual relevant implementation without dumping unrelated functions. Use normal editor, grep and tests afterward. Never chain unrelated tools merely to increase tool counts. Reuse `symbol_id` returned by searches or `symbol_path` to target subsequent calls; explicit `path`, `line`, `column` are also supported.
 
 The `/simple-lsp-mcp-setup` skill can append a short **conditional** policy to your project's `CLAUDE.md` or `AGENTS.md` when explicitly requested. The checked-in `CLAUDE.md` for this repository now **requires at least one relevant LSP tool call before source edits when MCP is connected**. For the FastAPI A/B study, that exact conditional policy is shared by both groups; disconnected runs use ordinary tools.
+
+### Scenario-first evaluation: where LSP helps, and where it does not
+
+A [development-ticket-first evaluation matrix](docs/benchmarks/scenario-first-evaluation.md) now maps **16 real development situations** to candidate LSP capabilities, ordinary non-MCP workflows and independently checked outcomes. Its [initial three-scenario Codex pilot](docs/benchmarks/scenario-first-pilot-2026-11-08.md) deliberately **does not require Codex to call LSP**, and records unfavorable results.
+
+The pilot uncovered a serious correctness gap: in a Go multi-module workspace, `textDocument/implementation` returned **2 locations with `complete=true`**, while a separate whole-tree Go AST scan found **24 explicit production method declarations** matching the interface; Codex without MCP found all 24. The original grader incorrectly considered the LSP result to be the whole truth. This is documented rather than hidden. The server now warns `requires_cross_module_review=true` and reports `complete=false` where multiple Go modules may cause incomplete implementation lookup. **The missing implementations are not yet automatically retrieved by the LSP tool.**
 
 ### Evidence: measured on real coding tasks
 

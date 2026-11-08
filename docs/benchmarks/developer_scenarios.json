@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "source_kind": "fixed-git-archive",
+  "scenes": [
+    {
+      "id": "C01-audit-event-implementers",
+      "phase": "investigate",
+      "scene": "監査イベント送信の障害調査。通常送信とストリーミング送信の実装差を調べる",
+      "user_ticket": "監査イベントがストリーミング経由では記録されないという報告があります。api/types/events/api.go の Emitter が定義している EmitAuditEvent を実際に実装している型とメソッドをすべて特定してください。それぞれがどの送信経路を担当するか、同じ名前の無関係なメソッドを混ぜないように説明してください。ソースは変更しません。",
+      "answer_contract": {
+        "findings": [
+          {
+            "path": "repo/relative/path.go",
+            "receiver": "TypeName",
+            "method": "MethodName",
+            "reason": "brief grounded explanation"
+          }
+        ],
+        "limitations": [
+          "any important uncertainty"
+        ]
+      },
+      "expected_findings": [
+        {
+          "path": "api/client/auditstreamer.go",
+          "receiver": "auditStreamer",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "api/client/client.go",
+          "receiver": "Client",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/auth/auth_with_roles.go",
+          "receiver": "ServerWithRoles",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/auth/auth_with_roles.go",
+          "receiver": "streamWithRoles",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/auditlog.go",
+          "receiver": "AuditLog",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/auditlog.go",
+          "receiver": "closedLogger",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/auditwriter.go",
+          "receiver": "AuditWriter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/discard.go",
+          "receiver": "DiscardAuditLog",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/dynamoevents/dynamoevents.go",
+          "receiver": "Log",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "AsyncEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "CallbackStream",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "CheckingEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "CheckingStream",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "DiscardEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "DiscardStream",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "LoggingEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "MultiEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "TeeStream",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/emitter.go",
+          "receiver": "WriterEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/filelog.go",
+          "receiver": "FileLog",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/firestoreevents/firestoreevents.go",
+          "receiver": "Log",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/mock.go",
+          "receiver": "MockEmitter",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/recorder.go",
+          "receiver": "Forwarder",
+          "method": "EmitAuditEvent"
+        },
+        {
+          "path": "lib/events/stream.go",
+          "receiver": "ProtoStream",
+          "method": "EmitAuditEvent"
+        }
+      ],
+      "oracle": "Independent Go AST scan of ALL non-test Go modules, checking signature context.Context + AuditEvent alias and return error. 24 explicit method declarations. Compare nested-module gopls result separately; do NOT take its meta.complete as ground truth.",
+      "primary_lsp": [
+        "textDocument/implementation",
+        "textDocument/definition",
+        "textDocument/hover"
+      ],
+      "standard_baseline": [
+        "rg",
+        "go doc",
+        "go test",
+        "gopls CLI if agent voluntarily uses it"
+      ],
+      "failure_modes": [
+        "similarly named gRPC handlers",
+        "returns an interface declaration as if concrete implementation",
+        "misses the streaming client",
+        "Treating gopls complete=true from nested api/go.mod as whole-repository completeness"
+      ]
+    },
+    {
+      "id": "C02-dynamodb-unused-helpers",
+      "phase": "review",
+      "scene": "保守レビュー。DynamoDB監査ログの未使用メソッド候補を調査し安全性を見積もる",
+      "user_ticket": "DynamoDB監査ログの保守レビューです。lib/events/dynamoevents/dynamoevents.go の中で、不要になった可能性のあるメソッドを探しています。未使用と判断できるメソッド宣言を候補として挙げ、削除してよいと断定できない理由があれば限界も書いてください。推測で削除したりファイルを編集したりしないでください。",
+      "answer_contract": {
+        "findings": [
+          {
+            "path": "repo/relative/path.go",
+            "receiver": "TypeName",
+            "method": "MethodName",
+            "reason": "brief grounded explanation"
+          }
+        ],
+        "limitations": [
+          "why the finding does not prove runtime safety"
+        ]
+      },
+      "expected_findings": [
+        {
+          "path": "lib/events/dynamoevents/dynamoevents.go",
+          "receiver": "Log",
+          "method": "deleteAllItems"
+        },
+        {
+          "path": "lib/events/dynamoevents/dynamoevents.go",
+          "receiver": "Log",
+          "method": "deleteTable"
+        }
+      ],
+      "oracle": "Two definitions confirmed by Go source; 0 production callers, AWS test callers in dynamoevents_test.go at lines 76,85,109. gopls unusedfunc diagnostics omit test dependencies; never treat as proof of safe deletion.",
+      "primary_lsp": [
+        "textDocument/diagnostic",
+        "textDocument/references",
+        "textDocument/documentSymbol"
+      ],
+      "standard_baseline": [
+        "rg",
+        "go vet",
+        "Go AST analysis",
+        "staticcheck if installed"
+      ],
+      "failure_modes": [
+        "claims unused means safe to delete",
+        "reports no diagnostic candidates because go test succeeds",
+        "modifies source",
+        "Equating unusedfunc diagnostic excluding test files with 'safe to delete' or 'unused in all contexts'"
+      ],
+      "quality_mode": "review_facts",
+      "human_review_facts": [
+        "Both helpers are not called from non-test production code",
+        "deleteAllItems is called from dynamoevents_test.go twice, deleteTable once",
+        "Deleting either declaration without changing the AWS tests breaks those tests",
+        "A method's lack of references in regular package loading is not proof it can be safely deleted"
+      ]
+    },
+    {
+      "id": "C03-grpc-user-secrets-authorization",
+      "phase": "incident",
+      "scene": "GetUserで秘密情報を要求したときだけアクセス拒否になる。gRPC入口から認可と取得まで追跡",
+      "user_ticket": "サポート問い合わせです。管理者でないユーザーが自分のユーザー情報を取得できる一方、GetUserリクエストのWithSecretsをtrueにすると拒否されます。lib/auth/grpcserver.go の gRPC GetUser を入口として、認証・認可を担当する具体的なメソッドと、その先のデータ取得の流れを調査してください。本人の通常取得、他人の通常取得、秘密情報付き取得で条件がどう違うか説明してください。変更は行わず、関係する実装メソッドと理由を列挙してください。",
+      "answer_contract": {
+        "findings": [
+          {
+            "path": "repo/relative/path.go",
+            "receiver": "TypeName",
+            "method": "MethodName",
+            "reason": "evidence of responsibility"
+          }
+        ],
+        "limitations": [
+          "uncertain or unverified runtime effects"
+        ]
+      },
+      "expected_findings": [
+        {
+          "path": "lib/auth/grpcserver.go",
+          "receiver": "GRPCServer",
+          "method": "GetUser"
+        },
+        {
+          "path": "lib/auth/auth_with_roles.go",
+          "receiver": "ServerWithRoles",
+          "method": "GetUser"
+        }
+      ],
+      "human_review_facts": [
+        "gRPC layer calls authenticate before ServerWithRoles.GetUser",
+        "WithSecrets=true uses RoleAdmin check and can deny ordinary users",
+        "Without secrets allows currentUserAction for self; for others checks VerbRead",
+        "After checks it delegates to authServer.Identity.GetUser with the secrets flag"
+      ],
+      "oracle": "Independent source review of grpcserver.go:431 and auth_with_roles.go:1226, including branching/authServer.Identity.GetUser. No LSP-derived ground truth.",
+      "primary_lsp": [
+        "textDocument/definition",
+        "callHierarchy/outgoingCalls",
+        "textDocument/hover",
+        "textDocument/documentSymbol"
+      ],
+      "standard_baseline": [
+        "rg",
+        "sed",
+        "Go AST",
+        "gopls CLI if selected"
+      ],
+      "failure_modes": [
+        "treats GetUsers as GetUser",
+        "omits the authorization boundary",
+        "claims non-admin can read secrets",
+        "assumes gRPC layer itself enforces detailed permission"
+      ],
+      "quality_mode": "required_anchors"
+    }
+  ]
+}

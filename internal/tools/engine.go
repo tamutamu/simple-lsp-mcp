@@ -233,7 +233,25 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 			return nil, err
 		}
 	}
-	return map[string]any{"locations": locs, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
+	result := map[string]any{"locations": locs, "meta": core.Meta{Complete: !tr, Truncated: tr}}
+	if name == "find_implementations" && p.SessionKey == "go" {
+		// A single gopls workspace may not index separate Go modules,
+		// particularly an api/go.mod subtree imported into the root module.
+		// An LSP response can be untruncated but still exclude concrete
+		// implementations in sibling modules. Never imply global coverage.
+		modules, scanErr := goModuleBoundaries(ctx, e.WS.Root())
+		if scanErr != nil || len(modules) > 1 {
+			result["meta"] = core.Meta{Complete: false, Truncated: tr}
+			result["requires_cross_module_review"] = true
+			if scanErr != nil {
+				result["warnings"] = []string{"Could not verify Go module boundaries; LSP implementation results are not proven workspace-complete."}
+			} else {
+				result["go_modules"] = modules
+				result["warnings"] = []string{"Multiple Go modules exist. One LSP implementation request may omit methods in other modules; do not treat this list as all implementations."}
+			}
+		}
+	}
+	return result, nil
 }
 
 // locationsAt runs one location-based LSP method against an already-resolved
