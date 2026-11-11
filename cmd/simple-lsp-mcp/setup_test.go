@@ -11,7 +11,7 @@ func TestSetupCommandUsesOfficialCLIAndRejectsUnknownClients(t *testing.T) {
 		expected []string
 	}{
 		{"claude", []string{"mcp", "add", "--scope", "user", "simple-lsp", "--", "/tmp/simple-lsp-mcp"}},
-		{"codex", []string{"mcp", "add", "simple-lsp", "--", "/tmp/simple-lsp-mcp", "--result-format", "text", "--tool-profile", "coding"}},
+		{"codex", []string{"mcp", "add", "simple-lsp", "--", "/tmp/simple-lsp-mcp", "--result-format", "readable", "--tool-profile", "coding"}},
 	} {
 		command, args, err := setupCommand(tc.client, "/tmp/simple-lsp-mcp")
 		if err != nil || command != tc.client || !reflect.DeepEqual(args, tc.expected) {
@@ -27,7 +27,7 @@ func TestSetupCodexFullProfileIsExplicitlyAvailable(t *testing.T) {
 	name, args, err := setupCommandWithProfile("codex", "/tmp/simple-lsp-mcp", true, "full")
 	if err != nil || name != "codex" || !reflect.DeepEqual(args, []string{
 		"mcp", "add", "simple-lsp", "--", "/tmp/simple-lsp-mcp",
-		"--result-format", "text", "--tool-profile", "full", "--auto-install-lsp",
+		"--result-format", "readable", "--tool-profile", "full", "--auto-install-lsp",
 	}) {
 		t.Fatalf("full profile not available: name=%s args=%v err=%v", name, args, err)
 	}

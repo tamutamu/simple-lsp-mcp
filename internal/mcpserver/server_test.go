@@ -1,12 +1,45 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestServerAdvertisesDiscoverableMetadata(t *testing.T) {
+	server := New(nil, "test-version")
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "metadata-test", Version: "1"}, nil)
+	clientSession, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = clientSession.Close()
+		_ = serverSession.Wait()
+	})
+
+	info := clientSession.InitializeResult().ServerInfo
+	if info.Title == "" {
+		t.Fatal("server initialization omitted its human-readable title")
+	}
+	listed, err := clientSession.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Title == "" || tool.Description == "" {
+			t.Fatalf("tool %q omitted discovery metadata: title=%q description=%q", tool.Name, tool.Title, tool.Description)
+		}
+	}
+}
 
 var expectedTools = []string{
 	"rename_symbol", "preview_rename", "format_document", "preview_format", "get_code_actions", "apply_code_action", "get_diagnostics", "analyze_impact",

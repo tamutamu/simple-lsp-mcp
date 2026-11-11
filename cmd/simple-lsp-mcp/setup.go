@@ -36,10 +36,10 @@ func setupCommandWithProfile(client, binary string, autoInstall bool, profile st
 		}
 		args = append(args, "simple-lsp", "--", binary)
 		if client == "codex" {
-			// Codex consumes textual MCP results; avoid transmitting the
-			// same JSON again as structuredContent by default. The server's
-			// full API still supports explicit --result-format both.
-			args = append(args, "--result-format", "text")
+			// Codex consumes textual MCP results. Render source and semantic
+			// relationships directly; fall back to JSON for other tool results.
+			// --result-format both remains available for structured MCP clients.
+			args = append(args, "--result-format", "readable")
 			if profile == "auto" {
 				profile = "coding"
 			}

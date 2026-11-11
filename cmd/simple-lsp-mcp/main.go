@@ -55,8 +55,8 @@ func main() {
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
 	flag.StringVar(&logLevel, "log-level", "info", "debug|info|warn|error")
-	flag.StringVar(&toolProfile, "tool-profile", "full", "MCP tool surface: full (all 21), coding (11 daily navigation/inspection tools)")
-	flag.StringVar(&resultFormat, "result-format", "both", "MCP response: both (text + structured, compatible default) or text (no duplicate structured payload)")
+	flag.StringVar(&toolProfile, "tool-profile", "full", "MCP tool surface: full (all available tools), coding (focused everyday navigation/inspection tools)")
+	flag.StringVar(&resultFormat, "result-format", "both", "MCP response: both (text + structured, compatible default), text (JSON text only), or readable (human-readable source for inspection and semantic relations)")
 	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 180s with managed LSP)")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
 	flag.IntVar(&max, "max-results", 500, "maximum result count")
@@ -73,8 +73,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "invalid --tool-profile: expected full or coding")
 		os.Exit(2)
 	}
-	if resultFormat != "both" && resultFormat != "text" {
-		fmt.Fprintln(os.Stderr, "invalid --result-format: expected both or text")
+	if resultFormat != "both" && resultFormat != "text" && resultFormat != "readable" {
+		fmt.Fprintln(os.Stderr, "invalid --result-format: expected both, text or readable")
 		os.Exit(2)
 	}
 	if root == "" {

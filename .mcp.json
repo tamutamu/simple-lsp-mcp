@@ -3,7 +3,9 @@
     "simple-lsp": {
       "command": "simple-lsp-mcp",
       "args": [
-        "--auto-install-lsp"
+        "--auto-install-lsp",
+        "--result-format",
+        "readable"
       ]
     }
   }

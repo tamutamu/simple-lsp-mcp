@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
@@ -29,10 +30,10 @@ func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
 // A text-only tool must not advertise an output schema requiring
 // structuredContent, per the MCP specification.
 func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Version: version}, &mcp.ServerOptions{Instructions: serverInstructions})
+	s := mcp.NewServer(&mcp.Implementation{Name: "simple-lsp-mcp", Title: "Simple LSP semantic code navigation", Version: version, WebsiteURL: "https://github.com/tamutamu/simple-lsp-mcp"}, &mcp.ServerOptions{Instructions: serverInstructions})
 	for _, d := range definitionsForProfile(profile) {
 		def := d
-		s.AddTool(&mcp.Tool{Name: def.name, Description: def.description, InputSchema: def.schema, OutputSchema: outputSchemaForFormat(resultFormat), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		s.AddTool(&mcp.Tool{Name: def.name, Title: toolTitle(def.name), Description: def.description, InputSchema: def.schema, OutputSchema: outputSchemaForFormat(resultFormat), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var in map[string]any
 			if len(req.Params.Arguments) > 0 {
 				if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
@@ -43,10 +44,25 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 			if err != nil {
 				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
 			}
+			if resultFormat == "readable" {
+				if formatted, ok := renderReadableResult(def.name, in, out); ok {
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: formatted}}}, nil
+				}
+			}
 			return resultWithFormat(out, false, resultFormat), nil
 		})
 	}
 	return s
+}
+
+// toolTitle supplies a human-readable discovery label without changing stable tool names.
+func toolTitle(name string) string {
+	words := strings.Split(name, "_")
+	if len(words) == 0 || words[0] == "" {
+		return name
+	}
+	words[0] = strings.ToUpper(words[0][:1]) + words[0][1:]
+	return strings.Join(words, " ")
 }
 
 func toolAnnotations(name string) *mcp.ToolAnnotations {
@@ -261,21 +277,20 @@ func result(v map[string]any, isError bool) *mcp.CallToolResult {
 	return resultWithFormat(v, isError, "both")
 }
 
-// Omit structuredContent only for the explicitly selected text format.
-// Clients still receive the full, machine-readable JSON in content[0].
-// This avoids duplicating tool results over the MCP wire for compatible
-// clients, without altering the default protocol surface.
+// Only the compatible default includes structuredContent. Text and readable
+// modes return one text block; readable falls back to JSON here when a result
+// cannot be rendered safely.
 func resultWithFormat(v map[string]any, isError bool, format string) *mcp.CallToolResult {
 	b, _ := json.Marshal(v)
 	out := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, IsError: isError}
-	if format != "text" {
+	if format == "both" {
 		out.StructuredContent = v
 	}
 	return out
 }
 
 func outputSchemaForFormat(format string) any {
-	if format == "text" {
+	if format != "both" {
 		return nil
 	}
 	return objectSchema()
