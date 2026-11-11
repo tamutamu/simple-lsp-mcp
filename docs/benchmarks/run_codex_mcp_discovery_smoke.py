@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mcp", default=shutil.which("simple-lsp-mcp"))
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--result-format", choices=("both", "text", "readable"), default="readable")
+    parser.add_argument("--inventory-output", type=Path, help="Optional nonsecret MCP metadata inventory JSON")
     return parser.parse_args()
 
 
@@ -169,6 +170,11 @@ def main() -> int:
             if not (server_info.get("title") or "").strip():
                 raise AssertionError("simple-lsp server has no human-readable title")
             tools = server["tools"]
+            if args.inventory_output is not None:
+                args.inventory_output.write_text(
+                    json.dumps({"server": server_info, "tools": tools}, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
             if len(tools) < 20:
                 raise AssertionError(f"public MCP tool catalog unexpectedly shrank: {len(tools)}")
             if "get_document_symbols" not in tools:
@@ -208,6 +214,21 @@ def main() -> int:
                     + rendered[:1200]
                 )
 
+            invalid = app.request(
+                "mcpServer/tool/call",
+                {
+                    "threadId": thread,
+                    "server": "simple-lsp",
+                    "tool": "preview_rename",
+                    "arguments": {"path": "internal/mcpserver/server.go", "symbol_path": "NewWithOptions"},
+                },
+            )
+            if not invalid.get("isError"):
+                raise AssertionError("rename without required new_name was not rejected")
+            invalid_text = json.dumps(invalid, ensure_ascii=False)
+            if "new_name" not in invalid_text or "error" not in invalid_text:
+                raise AssertionError(f"invalid rename did not return an informative error: {invalid_text[:800]}")
+
             if args.result_format == "readable":
                 inspected = app.request(
                     "mcpServer/tool/call",
@@ -236,6 +257,7 @@ def main() -> int:
                         "server": server_info,
                         "advertised_tool_count": len(tools),
                         "result_format": args.result_format,
+                        "invalid_rename_rejected": True,
                         "advertised_tool": "get_document_symbols",
                         "tool_title": title,
                         "description": description,

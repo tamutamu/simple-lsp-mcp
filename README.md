@@ -7,6 +7,8 @@
 
 **A lightweight bridge between coding agents and real language servers.**
 
+The [22-tool live MCP contract snapshot](docs/mcp-tool-contracts-2026-11-11.md) records the actual advertised inputs and safety hints of the current release candidate. It is not a substitute for per-tool end-to-end acceptance tests.
+
 `simple-lsp-mcp` exposes **22 focused LSP tools** to Claude Code, Codex, and other MCP clients. It supplies authoritative symbol definitions, references, implementations, call/type relationships, diagnostics, and LSP-computed edits. **The agent** decides what to inspect and whether a change is safe; the MCP does not synthesize an impact graph, rerun its own Git analysis, or dictate a development workflow.
 
 ```text

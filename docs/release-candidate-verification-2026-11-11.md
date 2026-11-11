@@ -65,3 +65,7 @@ The prior 60 attempts and zero-MCP observations above remain valid for that *opt
 - Claude Code executable `2.1.220` is installed, but **the authenticated Claude Code model integration is blocked**: the CLI reported `Failed to authenticate: OAuth session expired and could not be refreshed`. The real Claude agent call cannot be declared complete on this host until its owner reauthenticates. The direct MCP protocol itself is working.
 
 **Still NOT a final release:** This is two independently repeated Go tasks, not the 20+ heterogeneous tasks and full 56-task evidence required by the release criteria. The model-usage policy matters; do not rebrand conditional semantic-use guidance as unprompted free selection. Do not tag or publish an official release until the remaining gates are fulfilled. No CI files were changed, and the pre-existing original worktree remains intact.
+
+### MCP contract snapshot
+
+The 22 live MCP tool schemas, annotated read/write hints, titles and descriptions were captured from the candidate's actual Codex app-server session in [`docs/mcp-tool-contracts-2026-11-11.json`](mcp-tool-contracts-2026-11-11.json) and summarized in [`docs/mcp-tool-contracts-2026-11-11.md`](mcp-tool-contracts-2026-11-11.md). The direct smoke also verified that `preview_rename` with missing `new_name` is rejected with an MCP error. This documents the actual published input surface; the per-tool error/result combination matrix is **not** yet exhaustively certified.
