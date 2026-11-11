@@ -1,0 +1,13 @@
+task_id,task,repeat,arm,accepted,turn,work_seconds,prewarm_seconds,noncached_input_tokens,mcp_calls,successful_mcp_calls,mcp_tools,baseline_hash
+T43,semantic-rename,1,baseline,true,completed,157.533,0.0,25146,0,0,,70394f61295e64ae2e846fbf6bf332690deaa05b
+T43,semantic-rename,1,mcp,true,completed,70.971,0.337,45515,2,2,preview_rename;rename_symbol,70394f61295e64ae2e846fbf6bf332690deaa05b
+T43,semantic-rename,2,baseline,true,completed,137.638,0.0,17083,0,0,,a1feca8f2298921775a22871f54450a015db584b
+T43,semantic-rename,2,mcp,true,completed,86.081,0.333,24505,2,2,preview_rename;rename_symbol,a1feca8f2298921775a22871f54450a015db584b
+T43,semantic-rename,3,baseline,true,completed,101.77,0.0,35482,0,0,,ea75186f2f238013f13a55d03f59f512d598a630
+T43,semantic-rename,3,mcp,true,completed,108.866,0.651,29552,2,2,preview_rename;rename_symbol,ea75186f2f238013f13a55d03f59f512d598a630
+T35,compiler-type-fix,1,baseline,true,completed,53.92,0.0,25247,0,0,,52a6162c3e8ff5257428b38a18b3252d93dd4c23
+T35,compiler-type-fix,1,mcp,true,completed,62.031,0.873,21392,0,0,,52a6162c3e8ff5257428b38a18b3252d93dd4c23
+T35,compiler-type-fix,2,baseline,true,completed,61.155,0.0,12422,0,0,,bf195bda27047c622f000a212c404ec928f2f63f
+T35,compiler-type-fix,2,mcp,true,completed,61.312,0.62,29666,0,0,,bf195bda27047c622f000a212c404ec928f2f63f
+T35,compiler-type-fix,3,baseline,true,completed,60.525,0.0,20860,0,0,,d532283d4b3c518024db7f5e14851c48cff2ff06
+T35,compiler-type-fix,3,mcp,true,completed,79.049,0.751,15390,0,0,,d532283d4b3c518024db7f5e14851c48cff2ff06

@@ -45,3 +45,23 @@ Trace-derived audit: `python3 docs/benchmarks/audit_product_ab.py .scratch/produ
 ## Remaining release blockers
 
 The 56-task inventory in `product-shipping-backlog.md` is not complete. In particular, a complete fresh, independently graded multi-language agent A/B (T33–T47), comprehensive task-by-task objective evidence, Claude Code and Codex distribution acceptance, and versioned publication (T53–T56) remain unverified. A candidate branch is not a GitHub release. Do not tag, merge, or publish this build as production-complete until the evidence exists. Existing user changes and unrelated CI must remain untouched.
+
+## 2026-11-11 evening continuation — genuine agent-use evidence
+
+The prior 60 attempts and zero-MCP observations above remain valid for that *optional-selection* dataset. They must not be confused with the later, separate **task-conditional production-instruction** study. The paired study with a relevant semantic-use guide (identical text in both arms) is published in [`docs/benchmarks/product-ab-go-2026-11-11.md`](benchmarks/product-ab-go-2026-11-11.md):
+
+- **T43, cross-file semantic rename:** 3/3 accepted solutions in *both* arms; six real, successful MCP invocations in the treatment (`preview_rename` and `rename_symbol` each used once per repetition). Average 132.314 s baseline versus 88.639 s MCP, i.e. 33.0% less measured task time. However non-cached input token totals increased 28.1%; one of three repetitions was slower with MCP.
+- **T35, simple Go compiler type error:** 3/3 accepted in both arms, zero MCP calls; average 58.533 s baseline versus 67.464 s MCP-available. The time difference cannot be attributed to actually using LSP. This is a negative-control task, not proof of LSP slowdown.
+- Every A/B pair started from the same frozen initial Git commit. MCP was warmed on an unrelated Go file **before** the measured coding turn (warm-up duration 0.33–0.87 s recorded separately), avoiding repeated language-server startup charges for each trial. The scripts include independent Go test/vet/diff checks and a fail-closed event-trace audit. Twelve source snapshots, outcome JSON files and traces are retained under the candidate's `.scratch/`; the reproducible runner and non-secret result CSV are in `docs/benchmarks/`.
+- A *separate exploratory* 1-pair rename study saw baseline miss two test-string updates and fail a real gopls test, while treatment passed. It was not pooled into the prespecified 3 repetitions.
+- A new portable run harness was smoke-tested on T33: both arms completed and independently passed. This is harness verification, **not** additional evidence of LSP effectiveness; the MCP arm made zero calls.
+- Final quality checks: `SIMPLE_LSP_REAL_LSP=1 go test -race ./... -count=1 -timeout=8m` **passed** across all packages, followed by `go vet ./...`, the Python A/B audit unit tests and `git diff --check` (all passed).
+
+### Staged distribution (not published)
+
+- Candidate staged version: `0.11.0-rc.20261111`, built with explicit version ldflags (local testing only). SHA-256 of the staged Linux binary: `7666e31dde9b60976c23bd8aad138084903d6e9477b45fb7f989d6353bacdb41`.
+- Both `setup codex` and `setup claude` commands generated plausible **preview-only** registration instructions without overwriting existing registrations. Codex setup uses `--result-format readable` and the `coding` profile.
+- Codex app-server **direct** discovery and MCP invocation passed against the staged binary (22 advertised tools, readable `inspect_symbol`). A separate authenticated Codex agent also successfully invoked `get_document_symbols`, and T43 produced six additional genuine agent-initiated tool calls.
+- Claude Code executable `2.1.220` is installed, but **the authenticated Claude Code model integration is blocked**: the CLI reported `Failed to authenticate: OAuth session expired and could not be refreshed`. The real Claude agent call cannot be declared complete on this host until its owner reauthenticates. The direct MCP protocol itself is working.
+
+**Still NOT a final release:** This is two independently repeated Go tasks, not the 20+ heterogeneous tasks and full 56-task evidence required by the release criteria. The model-usage policy matters; do not rebrand conditional semantic-use guidance as unprompted free selection. Do not tag or publish an official release until the remaining gates are fulfilled. No CI files were changed, and the pre-existing original worktree remains intact.

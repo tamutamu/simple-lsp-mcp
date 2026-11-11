@@ -12,6 +12,36 @@ import json
 from pathlib import Path
 
 
+def useful_completed_mcp_call(item: dict) -> bool:
+    """Reject transport successes that contain no usable semantic result."""
+    if item.get("status") != "completed":
+        return False
+    result = item.get("result")
+    if not isinstance(result, dict) or result.get("isError"):
+        return False
+    content = result.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        payload = part.get("text")
+        if not isinstance(payload, str) or not payload.strip():
+            continue
+        if payload.strip() in ("{}", "[]", "null", ""):  # no usable evidence
+            continue
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            return True  # LSP Markdown/source is directly usable
+        if isinstance(data, dict) and (data.get("error") or data.get("isError")):
+            continue
+        if data in (None, {}, []):
+            continue
+        return True
+    return False
+
+
 def audit_trial(base: Path, trial: dict) -> dict:
     task, repetition, arm = trial["id"], trial["rep"], trial["arm"]
     paths = list(base.glob(f"{task}-*-rep{repetition}/{arm}-trace.jsonl"))
@@ -28,7 +58,7 @@ def audit_trial(base: Path, trial: dict) -> dict:
     calls = [((e.get("params") or {}).get("item") or {}) for e in events
              if e.get("method") == "item/completed"
              and ((e.get("params") or {}).get("item") or {}).get("type") == "mcpToolCall"]
-    completed_calls = sum(i.get("status") == "completed" and not (i.get("result") or {}).get("isError") for i in calls)
+    completed_calls = sum(useful_completed_mcp_call(i) for i in calls)
     rate_limited = any((e.get("params") or {}).get("error", {}).get("codexErrorInfo") == "usageLimitExceeded"
                        for e in events if e.get("method") == "error")
     valid = statuses == ["completed"] and not rate_limited

@@ -388,6 +388,8 @@ Run `go test ./...` and `go test -race ./...` before contributing. CI also runs 
 
 For a concrete mixed-language proof, see [`examples/react-fastapi-monorepo`](examples/react-fastapi-monorepo/). One `simple-lsp-mcp` engine opens a React/TypeScript + FastAPI/Python monorepo, routes files to separate real LSP servers, lists symbols from both languages in one workspace traversal, and allows separate reference and call-hierarchy lookups. The fixture also exercises per-LSP `env`, `settings`, and `initialization_options`. CI runs this example so the claim cannot silently drift away from the implementation.
 
+See the [2026-11-11 Go A/B study](docs/benchmarks/product-ab-go-2026-11-11.md) for independently graded 3-repeat semantic rename and simple compiler-fix contrasts. The rename task showed real MCP use and a time benefit; the compiler task did not call MCP. The study is **too narrow for a general productivity claim**.
+
 See [`docs/evidence.md`](docs/evidence.md) for exactly what is proven today and what still needs agent-level benchmarking. These tests verify semantic navigation and LSP-computed edits; they do **not** yet prove that an AI agent completes tasks faster or more accurately. No such claim is made without real agent-task results.
 
 ## Server options

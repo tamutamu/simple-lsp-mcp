@@ -4,10 +4,24 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from audit_product_ab import audit
+from audit_product_ab import audit, useful_completed_mcp_call
 
 
 class AuditTests(unittest.TestCase):
+    def test_mcp_success_needs_usable_semantic_response(self):
+        good={"status":"completed", "result":{"content":[{"type":"text","text":"NewWithOptions"}], "isError": False}}
+        self.assertTrue(useful_completed_mcp_call(good))
+        for item in (
+            {"status":"completed","result":{"content":[]}},
+            {"status":"completed","result":{"content":[{"text":""}]}},
+            {"status":"completed","result":{"content":[{"text":"{}"}]}},
+            {"status":"completed","result":{"content":[{"text":"{\"error\":{\"code\":\"NO_SYMBOL\"}}"}]}},
+            {"status":"completed","result":{"isError":True, "content":[{"text":"some error"}]}},
+            {"status":"failed","result":{"content":[{"text":"useful"}]}},
+        ):
+            with self.subTest(item=item):
+                self.assertFalse(useful_completed_mcp_call(item))
+
     def test_quota_even_if_source_grader_passed(self):
         with tempfile.TemporaryDirectory() as root:
             base = Path(root)
