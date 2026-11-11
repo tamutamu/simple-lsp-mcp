@@ -106,7 +106,7 @@ def visible_orders(orders: list[Order], owner: str, is_admin: bool = False) -> l
 def has_description(order: Order) -> bool:
     return order.description is not None and bool(order.description.strip())
 ''',
- "backend/benchdomain/reporting.py":'''from .orders import has_description, visible_orders
+ "backend/benchdomain/reporting.py":'''from .orders import visible_orders
 from .pricing import invoice
 from .types import Invoice, Order
 def owner_invoice(orders: list[Order], owner: str, is_admin: bool = False) -> Invoice:

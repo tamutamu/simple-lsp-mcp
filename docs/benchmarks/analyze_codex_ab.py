@@ -38,7 +38,8 @@ def parse_bool(v):
 
 
 def read_paired(path, study, treatment="mcp"):
-    rows = list(csv.DictReader(Path(path).open(encoding="utf-8", newline="")))
+    with Path(path).open(encoding="utf-8", newline="") as source:
+        rows = list(csv.DictReader(source))
     pairs = defaultdict(dict)
     for row in rows:
         if study and row.get("study") != study:

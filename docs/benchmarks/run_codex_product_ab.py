@@ -8,6 +8,7 @@ Run: PRODUCT_AB_CODEX_HOME=... PRODUCT_AB_MCP=... python docs/benchmarks/run_cod
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -35,6 +36,7 @@ PROFILE=os.environ.get("PRODUCT_AB_PROFILE", "full")
 GO=os.environ.get("PRODUCT_AB_GO") or shutil.which("go") or ""
 TSC=os.environ.get("PRODUCT_AB_TSC") or shutil.which("tsc") or ""
 VENVPY=os.environ.get("PRODUCT_AB_PYTHON") or sys.executable
+PYRIGHT=os.environ.get("PRODUCT_AB_PYRIGHT") or shutil.which("pyright") or ""
 BASE=Path(os.environ.get("PRODUCT_AB_OUTPUT", str(ROOT/".scratch/product-ab-evaluation"))).resolve()
 FROZEN=BASE/"frozen-sources"
 CODEX_HOME=Path(os.environ.get("PRODUCT_AB_CODEX_HOME", "")).expanduser().resolve() if os.environ.get("PRODUCT_AB_CODEX_HOME") else None
@@ -118,6 +120,17 @@ def make_baseline(case:dict, trial:Path):
  if case["seed"]=="py":
   for rel,contents in catalog.PY_BASE.items():
    p=trial/rel;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(contents)
+ # Check the uncontaminated task fixture before injecting a deliberate bug.
+ # A pre-existing type error would invalidate the experiment and could cause
+ # a correct task fix to fail independent type checking.
+ if case["seed"]=="py":
+  preflight=run_command([PYRIGHT,"-p","backend/pyrightconfig.bench.json"],trial,90)
+  if preflight.returncode:
+   raise RuntimeError("clean Python fixture fails Pyright before fault injection: "+preflight.stdout[-1200:]+preflight.stderr[-500:])
+ elif case["seed"]=="ts":
+  preflight=run_command([NODE,TSC,"-p","frontend/tsconfig.bench.json"],trial,90)
+  if preflight.returncode:
+   raise RuntimeError("clean TypeScript fixture fails tsc before fault injection: "+preflight.stdout[-1200:]+preflight.stderr[-500:])
  for op in case.get("edits",[]):
   rel,before,after=op.split("|",2)
   path=trial/rel
@@ -295,6 +308,42 @@ def execute_agent(case:dict, trial:Path, arm:str, directory:Path, baseline_hash:
    "initial_snapshot":case["seed"],"model":"gpt-5.6-sol","effort":"low", "prewarm_seconds":round(prewarm_seconds,3), "cache_warm_seconds":cache_warm_seconds, "cache_warm_exit":cache_warm_exit})
  return result
 
+def snapshot_sha256(root:Path)->str:
+ """Hash frozen source paths and bytes in stable order; no timestamps or inode data."""
+ digest=hashlib.sha256()
+ for file in sorted(p for p in root.rglob("*") if p.is_file() or p.is_symlink()):
+  rel=file.relative_to(root).as_posix().encode("utf-8")
+  digest.update(len(rel).to_bytes(4,"big"))
+  digest.update(rel)
+  if file.is_symlink():
+   # Hash the link itself, not arbitrary files outside the frozen checkout.
+   digest.update(b"symlink:")
+   digest.update(os.readlink(file).encode("utf-8"))
+  else:
+   digest.update(b"file:")
+   digest.update(hashlib.sha256(file.read_bytes()).digest())
+ return digest.hexdigest()
+
+
+def binary_sha256(path:str)->str:
+ return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def changed_files(work:Path)->list[str]:
+ """Include tracked, staged and untracked changes; ignore generated caches.
+
+ A read-only agent must not pass a grader by writing an untracked source
+ file. Conversely, __pycache__ artifacts from ordinary Python execution
+ are not code modifications.
+ """
+ tracked=run_command(["git","diff","--name-only","HEAD","--"],work)
+ untracked=run_command(["git","ls-files","--others","--exclude-standard"],work)
+ if tracked.returncode or untracked.returncode:
+  raise RuntimeError("unable to check benchmark worktree for changes")
+ ignored={"__pycache__",".pytest_cache",".mypy_cache",".ruff_cache",".pyrightcache",".bench-go-cache",".bench-temp","node_modules"}
+ return sorted({item for item in tracked.stdout.splitlines()+untracked.stdout.splitlines()
+  if item and not set(Path(item).parts)&ignored and not item.endswith((".pyc",".pyo"))})
+
 def grading(case:dict,work:Path,final:str)->dict:
  checks=[]
  def check(label,command,timeout=90,env=None):
@@ -308,14 +357,21 @@ def grading(case:dict,work:Path,final:str)->dict:
   okay=p.returncode==0
   checks.append({"name":label,"ok":okay,"exit":p.returncode,"stdout_tail":p.stdout[-600:],"stderr_tail":p.stderr[-400:]})
   return okay
- changed=run_command(["git","diff","--name-only"],work).stdout.splitlines()
- check("diff_clean",["git","diff","--check"],15)
+ changed=changed_files(work)
+ # Compare HEAD with the whole working tree, including staged edits.
+ check("diff_clean",["git","diff","--check","HEAD","--"],15)
  if case.get("read_only"):
   checks.append({"name":"read_only","ok":len(changed)==0,"changed":changed})
+  # Exact implementation anchors are checked independently of agent tools.
+  # Prior generic substrings (e.g. "internal/mcpserver/") falsely accepted
+  # answers that did not identify the formatter or actual affected files.
   conditions={
-   "T33":["internal/tools/engine.go","Relationship","internal/mcpserver/"],
-   "T34":["internal/tools","tools.New"],
-   "T44":["visible_orders","owner_invoice","!="],
+   "T33":["internal/tools/engine.go","Relationship",
+          "internal/tools/helpers.go","target",
+          "internal/mcpserver/readable_relations.go","renderAgentRelation",
+          "textDocument/references"],
+   "T34":["cmd/simple-lsp-mcp/doctor.go","cmd/simple-lsp-mcp/main.go","tools.New"],
+   "T44":["backend/benchdomain/orders.py","visible_orders","owner_invoice","!="],
   }
   needles=conditions[case["id"]]
   checks.append({"name":"answer_evidence","ok":all(x.lower() in final.lower() for x in needles),
@@ -329,6 +385,7 @@ def grading(case:dict,work:Path,final:str)->dict:
    check("node_tests",[NODE,"--test","frontend/src/bench/billing.test.mjs"],35)
   if case["seed"]=="py":
    check("python_tests",[VENVPY,"-m","unittest","discover","-s","backend/tests/benchdomain","-p","test_*.py"],30,{"PYTHONPATH":str((work/"backend").resolve())})
+   check("python_pyright",[PYRIGHT,"-p","backend/pyrightconfig.bench.json"],90)
   source_checks={
    "T35":("internal/tools/engine.go","MaxResults:      cfg.MaxResults,"),
    "T36":("internal/tools/rename.go",'result["applied"] = true'),
@@ -426,10 +483,26 @@ def main():
   copy_project(catalog.FASTAPI,FROZEN/"fastapi")
  if any(c["seed"]=="ts" for c in cases) and (not NODE or not TSC):
   parser.error("TypeScript cases require node and tsc (PRODUCT_AB_NODE/PRODUCT_AB_TSC)")
+ if any(c["seed"]=="py" for c in cases) and not PYRIGHT:
+  parser.error("Python cases require Pyright (PRODUCT_AB_PYRIGHT)")
+ frozen_hashes={
+  name:snapshot_sha256(FROZEN/name)
+  for name in ("go","fastapi") if (FROZEN/name).is_dir()
+ }
  (BASE/"manifest.json").write_text(json.dumps({"cases":[{k:v for k,v in item.items() if k not in ("edits",)} for item in cases],
   "repetitions":args.repetitions,"model":"gpt-5.6-sol","effort":"low",
   "common_policy":COMMON_AGENTS,"policy":policy,"tool_profile":PROFILE,"cache_policy":cache_policy,"arms":["baseline","mcp"],
   "codex_binary":CODEX,"mcp_binary":MCP,"source_root":str(ROOT),
+  "python_typechecker":PYRIGHT if any(c["seed"]=="py" for c in cases) else None,
+  "baseline_fixture_preflight": "strict Pyright for Python, tsc for TypeScript, before fault injection",
+  "frozen_source_sha256":frozen_hashes,
+  "mcp_executable_sha256":binary_sha256(MCP),
+  "source_commit":run_command(["git","rev-parse","HEAD"],ROOT).stdout.strip(),
+  "go_version":run_command([GO,"version"],ROOT).stdout.strip(),
+  "node_version":run_command([NODE,"--version"],ROOT).stdout.strip() if NODE else None,
+  "tsc_version":run_command([NODE,TSC,"--version"],ROOT).stdout.strip() if NODE and TSC else None,
+  "pyright_version":run_command([PYRIGHT,"--version"],ROOT).stdout.strip() if PYRIGHT else None,
+  "python_version":sys.version.split()[0],
   "codex_version":run_command([CODEX,"--version"],ROOT).stdout.strip()},ensure_ascii=False,indent=2)+"\n")
  summaries=[]
  for case in cases:
