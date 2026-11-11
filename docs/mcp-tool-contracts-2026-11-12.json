@@ -1,0 +1,1445 @@
+{
+  "source": "Codex app-server MCP catalog for 0.11.1-candidate on 2026-11-12",
+  "server": {
+    "name": "simple-lsp-mcp",
+    "title": "Simple LSP semantic code navigation",
+    "version": "0.11.1-candidate",
+    "description": null,
+    "icons": null,
+    "websiteUrl": "https://github.com/tamutamu/simple-lsp-mcp"
+  },
+  "tools": {
+    "analyze_impact": {
+      "name": "analyze_impact",
+      "title": "Analyze impact",
+      "description": "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.",
+      "inputSchema": {
+        "properties": {
+          "depth": {
+            "description": "1=direct, 2=next hop; default 8, maximum 16.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_nodes": {
+            "description": "Maximum graph nodes; default 80, maximum 200.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "apply_code_action": {
+      "name": "apply_code_action",
+      "title": "Apply code action",
+      "description": "Apply the selected action_id only when it resolves to the same WorkspaceEdit-backed action; commands are not executed.",
+      "inputSchema": {
+        "properties": {
+          "action_id": {
+            "description": "action_id returned by get_code_actions.",
+            "type": "string"
+          },
+          "code_action_kinds": {
+            "description": "Requested code-action kinds.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_column": {
+            "description": "One-based range end column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_line": {
+            "description": "One-based range end line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "column",
+          "action_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    "find_implementations": {
+      "name": "find_implementations",
+      "title": "Find implementations",
+      "description": "LSP: implementation locations for a target.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "relation_view": {
+            "description": "locations (default): exact LSP positions; lines: also include a bounded source line at every result.",
+            "enum": [
+              "locations",
+              "lines"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "find_references": {
+      "name": "find_references",
+      "title": "Find references",
+      "description": "Exact LSP references to a declaration. relation_view=lines includes source text; exclude_test_files=true narrows to non-test files (opt-in), retaining the excluded count and filter scope. For production-only callers prefer no declaration, no test files.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "exclude_test_files": {
+            "description": "Opt-in: omit _test.go, test_*.py, *.test.ts/js and other known test paths from exact LSP references. Results report excluded_count; default false.",
+            "type": "boolean"
+          },
+          "include_declaration": {
+            "description": "Include declaration among references.",
+            "type": "boolean"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "relation_view": {
+            "description": "locations (default): exact LSP positions; lines: also include a bounded source line at every result.",
+            "enum": [
+              "locations",
+              "lines"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "format_document": {
+      "name": "format_document",
+      "title": "Format document",
+      "description": "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.",
+      "inputSchema": {
+        "properties": {
+          "apply": {
+            "description": "Apply validated edits; preview tools default false.",
+            "type": "boolean"
+          },
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_column": {
+            "description": "One-based range end column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_line": {
+            "description": "One-based range end line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "insert_final_newline": {
+            "description": "Formatting insertFinalNewline.",
+            "type": "boolean"
+          },
+          "insert_spaces": {
+            "description": "Formatting insertSpaces; default true.",
+            "type": "boolean"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "tab_size": {
+            "description": "Formatting tab size; default 4.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "trim_final_newlines": {
+            "description": "Formatting trimFinalNewlines.",
+            "type": "boolean"
+          },
+          "trim_trailing_whitespace": {
+            "description": "Formatting trimTrailingWhitespace.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_code_actions": {
+      "name": "get_code_actions",
+      "title": "Get code actions",
+      "description": "List LSP code actions without writing; use the returned action_id with apply_code_action.",
+      "inputSchema": {
+        "properties": {
+          "code_action_kinds": {
+            "description": "Requested code-action kinds.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_column": {
+            "description": "One-based range end column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_line": {
+            "description": "One-based range end line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_declaration": {
+      "name": "get_declaration",
+      "title": "Get declaration",
+      "description": "LSP: declaration locations for a target.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "relation_view": {
+            "description": "locations (default): exact LSP positions; lines: also include a bounded source line at every result.",
+            "enum": [
+              "locations",
+              "lines"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_definition": {
+      "name": "get_definition",
+      "title": "Get definition",
+      "description": "LSP: definition locations for a target.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "relation_view": {
+            "description": "locations (default): exact LSP positions; lines: also include a bounded source line at every result.",
+            "enum": [
+              "locations",
+              "lines"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_diagnostics": {
+      "name": "get_diagnostics",
+      "title": "Get diagnostics",
+      "description": "For type errors, get warmed LSP diagnostics for a file with exact lines, compiler message, and completeness; fix from evidence then verify with tests. Always pass path for current diagnostics: an unscoped request returns incomplete status, not a clean bill of health.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "severities": {
+            "description": "Allowed diagnostic severities.",
+            "items": {
+              "enum": [
+                "error",
+                "warning",
+                "information",
+                "hint"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_document_symbols": {
+      "name": "get_document_symbols",
+      "title": "Get document symbols",
+      "description": "Discover names and structure in an unfamiliar file. Skip this before inspect_symbol when the function name is already known.",
+      "inputSchema": {
+        "properties": {
+          "detail": {
+            "description": "compact (default), outline or full LSP details.",
+            "enum": [
+              "compact",
+              "outline",
+              "full"
+            ],
+            "type": "string"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_hover": {
+      "name": "get_hover",
+      "title": "Get hover",
+      "description": "Get LSP hover/type information for an exact target.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_incoming_calls": {
+      "name": "get_incoming_calls",
+      "title": "Get incoming calls",
+      "description": "LSP: direct callers.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_outgoing_calls": {
+      "name": "get_outgoing_calls",
+      "title": "Get outgoing calls",
+      "description": "LSP: direct callees.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_subtypes": {
+      "name": "get_subtypes",
+      "title": "Get subtypes",
+      "description": "LSP: direct subtypes.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_supertypes": {
+      "name": "get_supertypes",
+      "title": "Get supertypes",
+      "description": "LSP: direct supertypes.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "get_type_definition": {
+      "name": "get_type_definition",
+      "title": "Get type definition",
+      "description": "LSP: type-definition locations for a target.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "relation_view": {
+            "description": "locations (default): exact LSP positions; lines: also include a bounded source line at every result.",
+            "enum": [
+              "locations",
+              "lines"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "inspect_symbol": {
+      "name": "inspect_symbol",
+      "title": "Inspect symbol",
+      "description": "Inspect one exact declaration or batch verified targets[]. related[] returns only bounded context (maximum 20 per relation), never an exhaustive reference list. For all usages call find_references instead. If name is unknown, discover get_document_symbols(path) first; do not guess.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_lines": {
+            "description": "Source lines, default 120, max 500.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "related": {
+            "description": "Optional bounded context ONLY, maximum 20 per kind; truncated results in related_meta. For complete refs use find_references.",
+            "items": {
+              "enum": [
+                "references",
+                "implementations",
+                "type_definition",
+                "declaration",
+                "incoming_calls",
+                "outgoing_calls",
+                "supertypes",
+                "subtypes"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "relation_limit": {
+            "description": "Per-relation cap 1–20, default 8; for exhaustive usages use find_references.",
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          },
+          "targets": {
+            "description": "Batch 1–8, shared view; no top-level target.",
+            "items": {
+              "properties": {
+                "column": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "symbol_id": {
+                  "type": "string"
+                },
+                "symbol_path": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "view": {
+            "description": "source/default, edit/context, signature/header or location/range.",
+            "enum": [
+              "source",
+              "signature",
+              "location",
+              "edit"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "list_workspace_symbols": {
+      "name": "list_workspace_symbols",
+      "title": "List workspace symbols",
+      "description": "Enumerate compact symbol identities page by page; follow next_cursor until absent. detail=full adds complete ranges.",
+      "inputSchema": {
+        "properties": {
+          "cursor": {
+            "description": "next_cursor from a prior workspace-symbol page.",
+            "type": "string"
+          },
+          "detail": {
+            "description": "compact (default), outline or full LSP details.",
+            "enum": [
+              "compact",
+              "outline",
+              "full"
+            ],
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Allowed symbol kinds.",
+            "items": {
+              "enum": [
+                "file",
+                "module",
+                "namespace",
+                "package",
+                "class",
+                "method",
+                "property",
+                "field",
+                "constructor",
+                "enum",
+                "interface",
+                "function",
+                "variable",
+                "constant",
+                "string",
+                "number",
+                "boolean",
+                "array",
+                "object",
+                "key",
+                "null",
+                "enum_member",
+                "struct",
+                "event",
+                "operator",
+                "type_parameter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "preview_format": {
+      "name": "preview_format",
+      "title": "Preview format",
+      "description": "READ ONLY: preview exact LSP document/range formatting edits, without writing files or requiring approval.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_column": {
+            "description": "One-based range end column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_line": {
+            "description": "One-based range end line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "insert_final_newline": {
+            "description": "Formatting insertFinalNewline.",
+            "type": "boolean"
+          },
+          "insert_spaces": {
+            "description": "Formatting insertSpaces; default true.",
+            "type": "boolean"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "tab_size": {
+            "description": "Formatting tab size; default 4.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "trim_final_newlines": {
+            "description": "Formatting trimFinalNewlines.",
+            "type": "boolean"
+          },
+          "trim_trailing_whitespace": {
+            "description": "Formatting trimTrailingWhitespace.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "preview_rename": {
+      "name": "preview_rename",
+      "title": "Preview rename",
+      "description": "READ ONLY: preview semantic rename. Default summary lists all affected files and edit counts; preview_detail=full is only needed for exact edit review. Apply separately with rename_symbol.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "new_name": {
+            "description": "New LSP rename name.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "preview_detail": {
+            "description": "Rename preview size: summary (default; sample when more than 12 edits), full (every validated edit).",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    "rename_symbol": {
+      "name": "rename_symbol",
+      "title": "Rename symbol",
+      "description": "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.",
+      "inputSchema": {
+        "properties": {
+          "apply": {
+            "description": "Apply validated edits; preview tools default false.",
+            "type": "boolean"
+          },
+          "column": {
+            "description": "One-based column.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "line": {
+            "description": "One-based line.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "new_name": {
+            "description": "New LSP rename name.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Workspace-relative file path.",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Previously returned symbol_id.",
+            "type": "string"
+          },
+          "symbol_path": {
+            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    "search_symbols": {
+      "name": "search_symbols",
+      "title": "Search symbols",
+      "description": "Find semantically identified declarations; return only name/kind/path/line/handle by default, detail=full for exact ranges.",
+      "inputSchema": {
+        "properties": {
+          "detail": {
+            "description": "compact (default), outline or full LSP details.",
+            "enum": [
+              "compact",
+              "outline",
+              "full"
+            ],
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Allowed symbol kinds.",
+            "items": {
+              "enum": [
+                "file",
+                "module",
+                "namespace",
+                "package",
+                "class",
+                "method",
+                "property",
+                "field",
+                "constructor",
+                "enum",
+                "interface",
+                "function",
+                "variable",
+                "constant",
+                "string",
+                "number",
+                "boolean",
+                "array",
+                "object",
+                "key",
+                "null",
+                "enum_member",
+                "struct",
+                "event",
+                "operator",
+                "type_parameter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "language": {
+            "description": "Language; target tools infer it when possible.",
+            "enum": [
+              "python",
+              "typescript",
+              "typescriptreact",
+              "javascript",
+              "javascriptreact",
+              "go",
+              "html",
+              "css"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Non-empty symbol query.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "language"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  }
+}

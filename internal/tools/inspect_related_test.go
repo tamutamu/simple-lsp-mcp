@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"github.com/tamutamu/simple-lsp-mcp/internal/core"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,9 @@ func TestInspectRelationsRejectInvalidRequests(t *testing.T) {
 		if _, err := engine.InspectSymbol(context.Background(), in); err == nil {
 			t.Fatalf("case %d unexpectedly accepted: %#v", i, in)
 		}
+	}
+	if _, _, err := parseInspectRelations(map[string]any{"related": []any{"references"}, "relation_limit": 200}); err == nil || !strings.Contains(err.Error(), "use find_references") {
+		t.Fatalf("oversized related request should explain exhaustive alternative: %v", err)
 	}
 	names, limit, err := parseInspectRelations(map[string]any{"related": []any{"references", "incoming_calls"}})
 	if err != nil || limit != 8 || len(names) != 2 {

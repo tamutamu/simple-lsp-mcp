@@ -40,7 +40,7 @@ func parseInspectRelations(in map[string]any) ([]string, int, error) {
 		limit = intVal(in, "relation_limit")
 	}
 	if limit < 1 || limit > maxInspectRelationLimit {
-		return nil, 0, core.NewError(core.InvalidArgument, "relation_limit must be between 1 and 20")
+		return nil, 0, core.NewError(core.InvalidArgument, "relation_limit must be between 1 and 20 (bounded context only); for exhaustive references use find_references with limit instead")
 	}
 	raw, present := in["related"]
 	if !present {

@@ -31,6 +31,17 @@ func renderAgentRelation(name string, data map[string]any) (string, bool) {
 
 	var out strings.Builder
 	fmt.Fprintf(&out, "## %s — %d result(s)\n", name, len(items))
+	if rawFilters, present := data["filters"]; present {
+		filters, ok := rawFilters.(map[string]any)
+		if !ok || len(filters) != 2 || filters["exclude_test_files"] != true {
+			return "", false
+		}
+		excluded, ok := filters["excluded_count"].(int)
+		if !ok || excluded < 0 {
+			return "", false
+		}
+		fmt.Fprintf(&out, "Scope: test files excluded (%d references omitted by request).\n", excluded)
+	}
 	if meta, ok := normalizedMap(data["meta"]); ok && meta["truncated"] == true {
 		out.WriteString("Results truncated by limit; request a higher limit if more are needed.\n")
 	}
@@ -41,6 +52,37 @@ func renderAgentRelation(name string, data map[string]any) (string, bool) {
 			return "", false
 		}
 		line, column := sourceItemPosition(item)
+		if name == "find_references" {
+			if preview, ok := item["preview"].(string); ok && preview != "" &&
+				item["source"] == nil && item["source_range"] == nil &&
+				item["source_unavailable"] == nil && item["source_omitted"] == nil &&
+				item["source_reused"] == nil {
+				// Keep all identities and locations, but avoid repeating headings
+				// and "Matching line" labels for each LSP reference.
+				if line < 1 || column < 1 {
+					return "", false
+				}
+				for key := range item {
+					switch key {
+					case "path", "range", "preview", "symbol_id", "symbol_name", "container_name":
+					default:
+						return "", false
+					}
+				}
+				fmt.Fprintf(&out, "%s:%d:%d %s", path, line, column, strings.TrimRight(preview, "\r\n"))
+				if handle, ok := item["symbol_id"].(string); ok && handle != "" {
+					fmt.Fprintf(&out, " [symbol_id=%s]", handle)
+				}
+				if symbolName, ok := item["symbol_name"].(string); ok && symbolName != "" {
+					fmt.Fprintf(&out, " [symbol=%s]", symbolName)
+				}
+				if container, ok := item["container_name"].(string); ok && container != "" {
+					fmt.Fprintf(&out, " [container=%s]", container)
+				}
+				out.WriteByte('\n')
+				continue
+			}
+		}
 		switch {
 		case line > 0 && column > 0:
 			fmt.Fprintf(&out, "\n### %s:%d:%d", path, line, column)

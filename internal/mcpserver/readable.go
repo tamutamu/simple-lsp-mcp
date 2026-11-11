@@ -25,6 +25,8 @@ func renderReadableResult(name string, input, data map[string]any) (string, bool
 		}
 	}
 	switch name {
+	case "get_document_symbols":
+		return renderReadableDocumentOutline(input, data)
 	case "inspect_symbol":
 		view, _ := input["view"].(string)
 		if view == "location" || view == "signature" {
@@ -67,13 +69,22 @@ func renderAgentSource(data map[string]any) (string, bool) {
 		if i > 0 {
 			out.WriteByte('\n')
 		}
-		line := 0
+		line, endLine := 0, 0
 		if r, ok := item["range"].(core.Range); ok {
-			line = r.Start.Line
+			line, endLine = r.Start.Line, r.End.Line
 		}
 		fmt.Fprintf(&out, "### %s:%d — %s (%s)\n", path, line, name, kind)
+		if line > 0 && endLine >= line {
+			fmt.Fprintf(&out, "Declaration: %s:%d-%d (from LSP; source may include context).\n", path, line, endLine)
+		}
+		if codeStart, ok := item["code_start_line"].(int); ok && codeStart > 0 {
+			fmt.Fprintf(&out, "Source snippet starts at %s:%d.\n", path, codeStart)
+		}
 		if handle, ok := item["symbol_id"].(string); ok && handle != "" {
 			fmt.Fprintf(&out, "Symbol handle: %s\n", handle)
+		}
+		if actual, ok := item["view"].(string); ok && actual == "edit" {
+			out.WriteString("Use the declaration source below for the current snapshot; avoid fetching overlapping file text unless context is missing or the file was edited.\n")
 		}
 		for _, section := range []struct{ key, label string }{
 			{"imports", "Relevant imports"},

@@ -194,6 +194,17 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if view != "" && view != "locations" && view != "lines" {
 		return nil, core.NewError(core.InvalidArgument, "relation_view must be locations or lines")
 	}
+	excludeTests := false
+	if value, present := in["exclude_test_files"]; present {
+		if name != "find_references" {
+			return nil, core.NewError(core.InvalidArgument, "exclude_test_files is only valid for find_references")
+		}
+		flag, ok := value.(bool)
+		if !ok {
+			return nil, core.NewError(core.InvalidArgument, "exclude_test_files must be a boolean")
+		}
+		excludeTests = flag
+	}
 	p, s, d, pos, err := e.target(ctx, in)
 	if err != nil {
 		return nil, err
@@ -217,6 +228,12 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if err != nil {
 		return nil, err
 	}
+	var filters map[string]any
+	if excludeTests {
+		before := len(locs)
+		locs = excludeTestReferenceLocations(locs)
+		filters = map[string]any{"exclude_test_files": true, "excluded_count": before - len(locs)}
+	}
 	limit, err := e.limit(in)
 	if err != nil {
 		return nil, err
@@ -230,7 +247,11 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 			return nil, err
 		}
 	}
-	return map[string]any{"locations": locs, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
+	out := map[string]any{"locations": locs, "meta": core.Meta{Complete: !tr, Truncated: tr}}
+	if filters != nil {
+		out["filters"] = filters
+	}
+	return out, nil
 }
 
 // locationsAt runs one location-based LSP method against an already-resolved

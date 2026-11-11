@@ -49,7 +49,7 @@ func TestReadableSemanticRelationShowsLinesAndSource(t *testing.T) {
 		}},
 		"meta": core.Meta{Complete: true},
 	})
-	if !ok || !strings.Contains(lineText, "pkg/service.go:9:3") || !strings.Contains(lineText, "Matching line:   load()") {
+	if !ok || !strings.Contains(lineText, "pkg/service.go:9:3   load()") {
 		t.Fatalf("line relation was not rendered:\n%s", lineText)
 	}
 
@@ -62,6 +62,24 @@ func TestReadableSemanticRelationShowsLinesAndSource(t *testing.T) {
 	})
 	if !ok || !strings.Contains(sourceText, "func load() int {\n\treturn 42") {
 		t.Fatalf("source relation was not rendered:\n%s", sourceText)
+	}
+}
+
+func TestReadableFilteredReferencesDisclosesScopeAndPreservesPositions(t *testing.T) {
+	item := core.Location{
+		Path:    "cmd/app/main.go",
+		Range:   core.Range{Start: core.Position{Line: 42, Column: 17}, End: core.Position{Line: 42, Column: 20}},
+		Preview: "  engine := tools.New(ws,cfg)", SymbolID: "id-123",
+	}
+	result, ok := renderReadableResult("find_references", map[string]any{"relation_view": "lines"}, map[string]any{
+		"locations": []core.Location{item},
+		"filters":   map[string]any{"exclude_test_files": true, "excluded_count": 14},
+		"meta":      core.Meta{Complete: true},
+	})
+	for _, v := range []string{"test files excluded (14 references omitted", "cmd/app/main.go:42:17", "engine := tools.New", "symbol_id=id-123"} {
+		if !ok || !strings.Contains(result, v) {
+			t.Fatalf("lost %q in %s", v, result)
+		}
 	}
 }
 

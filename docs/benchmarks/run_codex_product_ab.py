@@ -76,6 +76,21 @@ TYPE_DIAGNOSTICS_AGENTS=COMMON_AGENTS.replace(
     "Avoid repeated diagnostic reads or tool calls that add no new information."
 )
 assert TYPE_DIAGNOSTICS_AGENTS != COMMON_AGENTS
+SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
+    "\nChoose the cheapest reliable evidence. When a task explicitly asks for"
+    " a literal Go selector such as tools.New(...), search that exact"
+    " spelling with ordinary code search first; LSP is only needed when"
+    " aliases, ambiguous symbols, or indirect uses make semantics necessary."
+    " For genuine semantic callers, use simple-lsp"
+    " find_references(path=...,symbol_path=...,relation_view=lines) if"
+    " connected. If only production callers matter, set"
+    " exclude_test_files=true and include_declaration=false; the filter"
+    " scope is disclosed. Do not use inspect_symbol(related=references)"
+    " for exhaustive results: it caps each relation at 20. Reuse complete"
+    " results instead of rereading unchanged source. With no LSP,"
+    " use ordinary tools. There is no LSP call quota.\n"
+)
+
 ENV=os.environ.copy()
 if CODEX_HOME is not None:
  ENV["CODEX_HOME"]=str(CODEX_HOME)
@@ -376,7 +391,7 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
- parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics"), default="semantic-rename")
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references"), default="semantic-rename")
  parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
@@ -386,7 +401,11 @@ def main():
  if args.repetitions<1 or args.timeout<30:
   parser.error("repetitions must be >=1 and timeout >=30")
  global COMMON_AGENTS
- COMMON_AGENTS = TYPE_DIAGNOSTICS_AGENTS if args.policy == "type-diagnostics" else COMMON_AGENTS
+ COMMON_AGENTS = (
+  TYPE_DIAGNOSTICS_AGENTS if args.policy == "type-diagnostics"
+  else SEMANTIC_REFERENCES_AGENTS if args.policy == "semantic-references"
+  else COMMON_AGENTS
+ )
  if PROFILE not in ("full", "coding"):
   parser.error("PRODUCT_AB_PROFILE must be full or coding")
  policy=args.policy

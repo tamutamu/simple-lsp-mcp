@@ -1,0 +1,9 @@
+scenario,arm,passed,seconds,noncached_input_tokens,mcp_calls,interpretation
+first_semantic_tool,baseline,true,21.629,9845,0,"one semantic reference call, 43 locations"
+first_semantic_tool,mcp,true,19.454,14764,1,"one semantic reference call, 43 locations"
+invalid_composite_tool,baseline,true,22.751,9080,0,inspect_symbol failed at relation_limit=200; partial at 20
+invalid_composite_tool,mcp,true,63.501,21550,2,inspect_symbol failed at relation_limit=200; partial at 20
+published_filter_all_requested,baseline,true,21.04,10555,0,find_references called with exclude_test_files=false
+published_filter_all_requested,mcp,true,25.202,26125,1,find_references called with exclude_test_files=false
+literal_aware_choice,baseline,true,14.153,8540,0,LSP appropriately not called for explicit selector
+literal_aware_choice,mcp,true,16.162,9477,0,LSP appropriately not called for explicit selector

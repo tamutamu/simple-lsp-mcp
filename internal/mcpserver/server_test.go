@@ -174,6 +174,29 @@ func TestWorkspaceListingRemainsIndependentOfSearch(t *testing.T) {
 	t.Fatal("workspace listing removed")
 }
 
+func TestFindReferencesPublishesValidTestFileFilterSchema(t *testing.T) {
+	for _, profile := range []string{"full", "coding"} {
+		found := false
+		for _, d := range definitionsForProfile(profile) {
+			if d.name != "find_references" {
+				continue
+			}
+			found = true
+			props, ok := d.schema["properties"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s: invalid properties", profile)
+			}
+			field, ok := props["exclude_test_files"].(map[string]any)
+			if !ok || field["type"] != "boolean" {
+				t.Fatalf("%s: missing boolean test filter: %#v", profile, props["exclude_test_files"])
+			}
+		}
+		if !found {
+			t.Fatalf("%s: find_references missing", profile)
+		}
+	}
+}
+
 func TestDirectTargetToolsRetainSymbolHandlesAndPaths(t *testing.T) {
 	for _, name := range []string{"get_definition", "find_references", "find_implementations", "get_type_definition", "get_declaration", "get_incoming_calls", "get_outgoing_calls", "get_supertypes", "get_subtypes", "get_hover", "inspect_symbol", "rename_symbol", "preview_rename"} {
 		found := false
@@ -209,7 +232,7 @@ func TestSimpleServerInstructions(t *testing.T) {
 			t.Fatalf("mandatory/composite instruction remains: %s", deleted)
 		}
 	}
-	for _, wanted := range []string{"Do not invoke every tool", "preview_rename", "preview_format", "inspect_symbol", "tests"} {
+	for _, wanted := range []string{"Do not invoke every tool", "preview_rename", "preview_format", "inspect_symbol", "find_references", "bounded to 20", "tests"} {
 		if !strings.Contains(serverInstructions, wanted) {
 			t.Fatalf("instructions missing %q", wanted)
 		}

@@ -12,7 +12,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For known functions call inspect_symbol(view=edit, path, symbol_path) directly; if names are unknown get_document_symbols first or reread the same code. Use targets[] for 2-8 functions. For type errors use get_diagnostics(path) when LSP is warm; always pass path; use rg for literals; use references for exact semantic identity. For rename, inspect preview_rename summary; request full only if exact edits require review, then rename_symbol(apply=true); for formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "Known symbol: inspect_symbol(view=edit,path,symbol_path) directly. Unknown: get_document_symbols(path), reuse exact symbol_id; do not guess. Batch only verified targets. For exhaustive references use find_references (production-only: exclude_test_files=true); inspect_symbol(related) is bounded to 20 per kind, not exhaustive. For type errors get_diagnostics(path); for exact literals rg is cheaper. For rename preview_rename then authorized rename_symbol(apply=true); for format preview_format then format_document(apply=true). Reuse source until edited; avoid duplicate reads. Do not invoke every tool. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -176,13 +176,13 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Read an exact existing LSP symbol and optional related[] facts; targets[] batches. If the declaration name is unknown, discover it with get_document_symbols(path) first, rather than guessing a symbol_path.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets", "related", "relation_limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Inspect one exact declaration or batch verified targets[]. related[] returns only bounded context (maximum 20 per relation), never an exhaustive reference list. For all usages call find_references instead. If name is unknown, discover get_document_symbols(path) first; do not guess.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets", "related", "relation_limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 
 		// Ask for one exact semantic relationship at a time.
 		{"get_definition", "LSP: definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "LSP: reference locations for a target.", objSchema(targetProps("include_declaration", "relation_view")), relation("find_references", "textDocument/references", "references")},
+		{"find_references", "Exact LSP references to a declaration. relation_view=lines includes source text; exclude_test_files=true narrows to non-test files (opt-in), retaining the excluded count and filter scope. For production-only callers prefer no declaration, no test files.", objSchema(targetProps("include_declaration", "relation_view", "exclude_test_files")), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "LSP: implementation locations for a target.", objSchema(targetProps("relation_view")), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
@@ -234,12 +234,13 @@ func allProperties() map[string]any {
 		"kinds":               describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":          describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
+		"exclude_test_files":  describe(map[string]any{"type": "boolean"}, "Opt-in: omit _test.go, test_*.py, *.test.ts/js and other known test paths from exact LSP references. Results report excluded_count; default false."),
 		"detail":              describe(enumStringSchema("compact", "outline", "full"), "compact (default), outline or full LSP details."),
 		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
 		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
 		"max_lines":           describe(positiveIntegerSchema(), "Source lines, default 120, max 500."),
-		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "LSP facts; failures in related_meta."),
-		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Per-relation cap, default 8."),
+		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Optional bounded context ONLY, maximum 20 per kind; truncated results in related_meta. For complete refs use find_references."),
+		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Per-relation cap 1–20, default 8; for exhaustive usages use find_references."),
 		"targets": describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 8,
 			"items": map[string]any{"type": "object", "properties": map[string]any{
 				"path": stringSchema(), "symbol_id": stringSchema(),

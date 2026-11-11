@@ -248,7 +248,18 @@ def main() -> int:
                         "coding profile did not reject diagnostics without an explicit path"
                     )
 
+            outline_content = result.get("content") or []
+            outline = outline_content[0].get("text", "") if outline_content else ""
             if args.result_format == "readable":
+                if (
+                    "LSP outline " not in outline
+                    or "NewWithOptions" not in outline
+                    or "symbol_id=" not in outline
+                    or "inspect_symbol(symbol_id=" not in outline
+                ):
+                    raise AssertionError(
+                        f"readable outline lost its actionable LSP identities: {outline[:1300]}"
+                    )
                 inspected = app.request(
                     "mcpServer/tool/call",
                     {
@@ -276,6 +287,7 @@ def main() -> int:
                         "server": server_info,
                         "advertised_tool_count": len(tools),
                         "result_format": args.result_format,
+                        "outline_response_bytes": len(outline.encode("utf-8")),
                         "tool_profile": args.tool_profile,
                         "catalog_json_bytes": len(json.dumps(tools, ensure_ascii=False, separators=(",",":")).encode()),
                         "invalid_rename_rejected": True,
