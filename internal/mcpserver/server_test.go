@@ -329,17 +329,76 @@ func TestEnumeratedInputsUseJSONSchemaEnums(t *testing.T) {
 	}
 }
 
+func TestCodingDiagnosticsRejectMissingPathBeforeLSPCall(t *testing.T) {
+	for _, in := range []map[string]any{{}, {"language": "go"}, {"path": "  "}, {"path": 42}} {
+		if err := validateToolProfileArguments("coding", "get_diagnostics", in); err == nil {
+			t.Fatalf("pathless diagnostics should fail before LSP: %#v", in)
+		}
+		if err := validateToolProfileArguments("full", "get_diagnostics", in); err != nil {
+			t.Fatalf("full profile backward compatibility was changed: %v", err)
+		}
+	}
+	if err := validateToolProfileArguments("coding", "get_diagnostics", map[string]any{"path": "pkg/main.go"}); err != nil {
+		t.Fatalf("valid coding diagnostics wrongly rejected: %v", err)
+	}
+}
+
+func TestCodingDiagnosticsRequirePathButFullAPIStaysCompatible(t *testing.T) {
+	for _, tt := range []struct {
+		profile  string
+		required bool
+	}{
+		{"coding", true}, {"full", false},
+	} {
+		found := false
+		for _, d := range definitionsForProfile(tt.profile) {
+			if d.name != "get_diagnostics" {
+				continue
+			}
+			found = true
+			req, _ := d.schema["required"].([]string)
+			hasPath := false
+			for _, key := range req {
+				if key == "path" {
+					hasPath = true
+				}
+			}
+			if hasPath != tt.required {
+				t.Fatalf("%s get_diagnostics required=%v, want path required=%v", tt.profile, req, tt.required)
+			}
+		}
+		if !found {
+			t.Fatalf("no diagnostics in %s profile", tt.profile)
+		}
+	}
+}
+
 func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	full := definitionsForProfile("full")
 	coding := definitionsForProfile("coding")
-	if len(full) != 22 || len(coding) != 12 {
+	if len(full) != 22 || len(coding) != 14 {
 		t.Fatalf("unexpected catalog sizes full=%d coding=%d", len(full), len(coding))
 	}
 	for _, d := range coding {
 		switch d.name {
-		case "rename_symbol", "format_document", "get_code_actions", "apply_code_action":
-			t.Fatalf("writing tool exposed in opt-in read/navigation profile: %s", d.name)
+		case "format_document", "get_code_actions", "apply_code_action":
+			t.Fatalf("unneeded tool exposed in focused coding profile: %s", d.name)
 		}
+	}
+	for _, required := range []string{"preview_rename", "rename_symbol"} {
+		found := false
+		for _, d := range coding {
+			if d.name == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("default Codex profile cannot perform semantic rename: %s", required)
+		}
+	}
+	if !toolAnnotations("preview_rename").ReadOnlyHint || !*toolAnnotations("rename_symbol").DestructiveHint {
+		t.Fatal("rename safety annotations missing in coding profile")
 	}
 	catalog := make([]*mcp.Tool, 0, len(coding))
 	for _, d := range coding {
@@ -349,7 +408,7 @@ func TestCodingProfileSubsetAndCatalogSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) >= 12*1024 {
+	if len(data) >= 18*1024 {
 		t.Fatalf("coding catalog still too large: %d bytes", len(data))
 	}
 }

@@ -34,8 +34,18 @@ def useful_completed_mcp_call(item: dict) -> bool:
             data = json.loads(payload)
         except json.JSONDecodeError:
             return True  # LSP Markdown/source is directly usable
-        if isinstance(data, dict) and (data.get("error") or data.get("isError")):
-            continue
+        if isinstance(data, dict):
+            if data.get("error") or data.get("isError"):
+                continue
+            meta=data.get("meta")
+            # A syntactically successful call is not useful evidence when
+            # the LSP explicitly reports that it has not checked the scope.
+            if isinstance(meta, dict) and meta.get("complete") is False:
+                continue
+            if isinstance(meta, dict) and meta.get("truncated") is True:
+                continue
+            if set(data) == {"meta"}:
+                continue
         if data in (None, {}, []):
             continue
         return True

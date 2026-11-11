@@ -33,6 +33,10 @@ func renderReadableResult(name string, input, data map[string]any) (string, bool
 		return renderAgentSource(data)
 	case "get_hover":
 		return renderAgentHover(data)
+	case "get_diagnostics":
+		return renderReadableDiagnostics(input, data)
+	case "preview_rename", "rename_symbol":
+		return renderReadableRename(name, input, data)
 	default:
 		view, _ := input["relation_view"].(string)
 		if view == "lines" || view == "source" {

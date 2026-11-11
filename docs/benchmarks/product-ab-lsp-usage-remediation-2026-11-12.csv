@@ -1,0 +1,13 @@
+task,rep,arm,passed,seconds,noncached_input_tokens,mcp_calls,prewarm_seconds,cache_warm_seconds,mcp_tools
+T43,1,baseline,true,132.936,23074,0,0.0,,
+T43,1,mcp,true,108.967,26933,2,0.61,,preview_rename;rename_symbol
+T43,2,mcp,true,85.717,20169,2,0.7,,preview_rename;rename_symbol
+T43,2,baseline,true,143.219,16982,0,0.0,,
+T43,3,baseline,true,177.245,31952,0,0.0,,
+T43,3,mcp,true,82.408,19890,2,0.709,,preview_rename;rename_symbol
+T35,1,baseline,true,62.045,25092,0,0.0,17.199,
+T35,1,mcp,true,61.653,13203,0,0.67,16.864,
+T35,2,mcp,true,62.665,23447,1,0.647,16.525,get_diagnostics
+T35,2,baseline,true,54.822,19453,0,0.0,16.526,
+T35,3,baseline,true,66.187,25299,0,0.0,16.651,
+T35,3,mcp,true,56.347,21909,1,0.629,16.713,get_diagnostics

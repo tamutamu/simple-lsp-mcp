@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mcp", default=shutil.which("simple-lsp-mcp"))
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--result-format", choices=("both", "text", "readable"), default="readable")
+    parser.add_argument("--tool-profile", choices=("full", "coding"), default="full")
     parser.add_argument("--inventory-output", type=Path, help="Optional nonsecret MCP metadata inventory JSON")
     return parser.parse_args()
 
@@ -121,7 +122,7 @@ def main() -> int:
         "-c",
         (
             "mcp_servers.simple-lsp.args="
-            f'["--workspace","{workspace}","--tool-profile","full",'
+            f'["--workspace","{workspace}","--tool-profile","{args.tool_profile}",'
             f'"--result-format","{args.result_format}"]'
         ),
     ]
@@ -175,8 +176,11 @@ def main() -> int:
                     json.dumps({"server": server_info, "tools": tools}, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8",
                 )
-            if len(tools) < 20:
-                raise AssertionError(f"public MCP tool catalog unexpectedly shrank: {len(tools)}")
+            expected_count = {"full":22, "coding":14}[args.tool_profile]
+            if len(tools) != expected_count:
+                raise AssertionError(f"{args.tool_profile} MCP catalog expected {expected_count}, found {len(tools)}")
+            if "preview_rename" not in tools or "rename_symbol" not in tools:
+                raise AssertionError(f"rename pair absent from {args.tool_profile} catalog")
             if "get_document_symbols" not in tools:
                 raise AssertionError(
                     f"get_document_symbols not advertised; tools={sorted(tools)}"
@@ -229,6 +233,21 @@ def main() -> int:
             if "new_name" not in invalid_text or "error" not in invalid_text:
                 raise AssertionError(f"invalid rename did not return an informative error: {invalid_text[:800]}")
 
+            if args.tool_profile == "coding":
+                bad_diagnostics = app.request(
+                    "mcpServer/tool/call",
+                    {
+                        "threadId": thread,
+                        "server": "simple-lsp",
+                        "tool": "get_diagnostics",
+                        "arguments": {"language": "go"},
+                    },
+                )
+                if not bad_diagnostics.get("isError"):
+                    raise AssertionError(
+                        "coding profile did not reject diagnostics without an explicit path"
+                    )
+
             if args.result_format == "readable":
                 inspected = app.request(
                     "mcpServer/tool/call",
@@ -257,7 +276,10 @@ def main() -> int:
                         "server": server_info,
                         "advertised_tool_count": len(tools),
                         "result_format": args.result_format,
+                        "tool_profile": args.tool_profile,
+                        "catalog_json_bytes": len(json.dumps(tools, ensure_ascii=False, separators=(",",":")).encode()),
                         "invalid_rename_rejected": True,
+                        "unscoped_diagnostics_rejected": args.tool_profile == "coding",
                         "advertised_tool": "get_document_symbols",
                         "tool_title": title,
                         "description": description,

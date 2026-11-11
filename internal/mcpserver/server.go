@@ -12,15 +12,15 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "For known functions, call inspect_symbol(view=edit, path, symbol_path) directly; do not fetch an outline first or reread the same code. Use targets[] for 2-8 functions. Use rg for unknown files/literals; use references for exact semantic identity. For renames use preview_rename then rename_symbol(apply=true); for formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
+const serverInstructions = "For known functions call inspect_symbol(view=edit, path, symbol_path) directly; if names are unknown get_document_symbols first or reread the same code. Use targets[] for 2-8 functions. For type errors use get_diagnostics(path) when LSP is warm; always pass path; use rg for literals; use references for exact semantic identity. For rename, inspect preview_rename summary; request full only if exact edits require review, then rename_symbol(apply=true); for formatting use preview_format then format_document(apply=true). Authorize writes only. Do not invoke every tool or reread returned code. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
 }
 
 // NewWithProfile preserves the full API by default. The opt-in "coding"
-// profile avoids sending irrelevant refactor/format/type-hierarchy schemas
-// on everyday search/read/edit jobs. The omitted tools remain in "full".
+// profile exposes frequent navigation and semantic rename operations, while
+// omitting uncommon format, code-action, and type-hierarchy schemas. The omitted tools remain in "full".
 func NewWithProfile(engine *tools.Engine, version, profile string) *mcp.Server {
 	return NewWithOptions(engine, version, profile, "both")
 }
@@ -40,6 +40,9 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 					return resultWithFormat(map[string]any{"error": map[string]any{"code": core.InvalidArgument, "message": "invalid tool arguments"}}, true, resultFormat), nil
 				}
 			}
+			if err := validateToolProfileArguments(profile, def.name, in); err != nil {
+				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
+			}
 			out, err := def.call(ctx, engine, in)
 			if err != nil {
 				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
@@ -53,6 +56,19 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 		})
 	}
 	return s
+}
+
+// validateToolProfileArguments checks profile-specific promises even when the
+// MCP client does not enforce JSON Schema's required fields itself.
+func validateToolProfileArguments(profile, name string, in map[string]any) error {
+	if profile == "coding" && name == "get_diagnostics" {
+		path, _ := in["path"].(string)
+		if strings.TrimSpace(path) == "" {
+			return core.NewError(core.InvalidArgument,
+				"get_diagnostics requires path in the coding profile; specify a known workspace-relative source file")
+		}
+	}
+	return nil
 }
 
 // toolTitle supplies a human-readable discovery label without changing stable tool names.
@@ -91,12 +107,21 @@ func definitionsForProfile(profile string) []definition {
 		"get_diagnostics": true, "get_incoming_calls": true,
 		"get_outgoing_calls": true,
 		"analyze_impact":     true,
+		"preview_rename":     true,
+		"rename_symbol":      true,
 	}
 	out := make([]definition, 0, len(allowed))
 	for _, d := range all {
-		if allowed[d.name] {
-			out = append(out, d)
+		if !allowed[d.name] {
+			continue
 		}
+		if d.name == "get_diagnostics" {
+			// The lean agent profile requires a concrete file. An omitted
+			// path produces only an explicitly incomplete status, not a
+			// useful workspace diagnostic; prevent an unnecessary RPC.
+			d.schema = objSchema(props("path", "language", "severities", "limit"), "path")
+		}
+		out = append(out, d)
 	}
 	return out
 }
@@ -115,7 +140,7 @@ func definitions() []definition {
 		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview LSP rename. Large edit lists are summarized by file; pass preview_detail=full for every exact edit before applying.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: preview semantic rename. Default summary lists all affected files and edit counts; preview_detail=full is only needed for exact edit review. Apply separately with rename_symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -130,7 +155,7 @@ func definitions() []definition {
 		{"apply_code_action", "Apply the selected action_id only when it resolves to the same WorkspaceEdit-backed action; commands are not executed.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "code_action_kinds", "action_id"), "path", "line", "column", "action_id"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.ApplyCodeAction(c, i)
 		}},
-		{"get_diagnostics", "Get LSP diagnostics for a file, or cached diagnostics when path is omitted.", objSchema(props("path", "language", "severities", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"get_diagnostics", "For type errors, get warmed LSP diagnostics for a file with exact lines, compiler message, and completeness; fix from evidence then verify with tests. Always pass path for current diagnostics: an unscoped request returns incomplete status, not a clean bill of health.", objSchema(props("path", "language", "severities", "limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Diagnostics(c, i)
 		}},
 
@@ -151,7 +176,7 @@ func definitions() []definition {
 		{"get_hover", "Get LSP hover/type information for an exact target.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.Hover(c, i)
 		}},
-		{"inspect_symbol", "Read one exact LSP symbol and optional related[] facts; targets[] batches without relations.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets", "related", "relation_limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"inspect_symbol", "Read an exact existing LSP symbol and optional related[] facts; targets[] batches. If the declaration name is unknown, discover it with get_document_symbols(path) first, rather than guessing a symbol_path.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "view", "max_lines", "targets", "related", "relation_limit")), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.InspectSymbol(c, i)
 		}},
 

@@ -2,9 +2,11 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -98,5 +100,21 @@ func BenchmarkDiagnosticsBatchCachedRanges(b *testing.B) {
 		if err != nil || len(got) != len(diagnostics) {
 			b.Fatalf("diagnostics=%d err=%v", len(got), err)
 		}
+	}
+}
+
+func TestUnscopedDiagnosticsExplicitlyWarnIncomplete(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(ws, config.Runtime{MaxResults: 10})
+	got, err := engine.Diagnostics(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, ok := got["meta"].(core.Meta)
+	if !ok || meta.Complete || len(meta.Warnings) == 0 || !strings.Contains(meta.Warnings[0], "specify path") {
+		t.Fatalf("unscoped diagnostics must not appear clean: %#v", got)
 	}
 }

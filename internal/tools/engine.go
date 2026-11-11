@@ -355,6 +355,9 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 			}
 		}
 	} else {
+		// An unscoped diagnostic request cannot prove that the workspace is
+		// error-free. Surface the remedy explicitly rather than returning a
+		// misleading null/empty diagnostic list with no explanation.
 		complete = false
 	}
 	ds = filterDiagnostics(ds, in)
@@ -362,5 +365,9 @@ func (e *Engine) Diagnostics(ctx context.Context, in map[string]any) (map[string
 	if tr {
 		ds = ds[:limit]
 	}
-	return map[string]any{"diagnostics": ds, "meta": core.Meta{Complete: complete && !tr, Truncated: tr}}, nil
+	meta := core.Meta{Complete: complete && !tr, Truncated: tr}
+	if path == "" {
+		meta.Warnings = []string{"specify path to query current file diagnostics; an unscoped request cannot establish a clean result"}
+	}
+	return map[string]any{"diagnostics": ds, "meta": meta}, nil
 }

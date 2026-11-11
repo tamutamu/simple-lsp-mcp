@@ -31,6 +31,7 @@ catalog.validate()
 NODE=os.environ.get("PRODUCT_AB_NODE") or shutil.which("node") or ""
 CODEX=os.environ.get("PRODUCT_AB_CODEX") or shutil.which("codex") or ""
 MCP=os.environ.get("PRODUCT_AB_MCP") or shutil.which("simple-lsp-mcp") or ""
+PROFILE=os.environ.get("PRODUCT_AB_PROFILE", "full")
 GO=os.environ.get("PRODUCT_AB_GO") or shutil.which("go") or ""
 TSC=os.environ.get("PRODUCT_AB_TSC") or shutil.which("tsc") or ""
 VENVPY=os.environ.get("PRODUCT_AB_PYTHON") or sys.executable
@@ -55,6 +56,26 @@ not a blanket requirement for an LSP call or a tool-count target.
 Do not change CI, deployment, unrelated formatting, build configuration or
 tests to silence a genuine defect. Do not install dependencies. No network use.
 """
+TYPE_DIAGNOSTICS_AGENTS=COMMON_AGENTS.replace(
+    "When the task is a cross-file rename of a declaration whose spelling collides\n"
+    "with unrelated declarations, and the `simple-lsp` MCP is connected, use its\n"
+    "read-only `preview_rename` to identify the precise edit set before making\n"
+    "changes; then use `rename_symbol(apply=true)` if safe and available, or a\n"
+    "normal editor if that is safer. The LSP computes semantic identity; ordinary\n"
+    "text matching cannot distinguish declarations with the same name. When the\n"
+    "MCP is not connected, proceed normally with search, editing, tests and Git.\n"
+    "For literal text, obvious compiler errors and unrelated tasks, do not invoke\n"
+    "an LSP without a concrete semantic question. This is task-conditional guidance,\n"
+    "not a blanket requirement for an LSP call or a tool-count target.",
+    "When fixing a Go type error in a known source file, warmed LSP diagnostics\n"
+    "can provide exact compiler mismatch messages and positions immediately.\n"
+    "If simple-lsp is connected and no equivalent diagnostic was yet obtained,\n"
+    "prefer get_diagnostics(path=...) over a full preliminary build to locate\n"
+    "the error; then inspect and edit only the affected code. Run real tests\n"
+    "after the edit. With no LSP, use the ordinary compiler and code tools.\n"
+    "Avoid repeated diagnostic reads or tool calls that add no new information."
+)
+assert TYPE_DIAGNOSTICS_AGENTS != COMMON_AGENTS
 ENV=os.environ.copy()
 if CODEX_HOME is not None:
  ENV["CODEX_HOME"]=str(CODEX_HOME)
@@ -97,6 +118,33 @@ def make_baseline(case:dict, trial:Path):
   if proc.returncode:raise RuntimeError("cannot freeze baseline: "+proc.stderr[:700])
  return run_command(["git","rev-parse","HEAD"],trial).stdout.strip()
 
+def agent_workspace_environment(case:dict, work:Path, warm_cache:bool)->tuple[dict,float,int]:
+ """Use a sandbox-writable, prewarmed Go cache with independent A/B copies.
+ A missing/intentional compile error is recorded, never called a success.
+ """
+ if not warm_cache:
+  return ENV,0.0,0
+ env=ENV.copy()
+ cache=work/".bench-go-cache"
+ temp=work/".bench-temp"
+ cache.mkdir()
+ temp.mkdir()
+ env["GOCACHE"]=str(cache)
+ env["TMPDIR"]=str(temp)
+ # The cache must not alter Git's acceptance diff or pollute literal rg searches.
+ with (work/".git/info/exclude").open("a") as ignore:
+  ignore.write("\n.bench-go-cache/\n.bench-temp/\n")
+ if case["seed"]!="go":
+  return env,0.0,0
+ start=time.monotonic()
+ try:
+  result=subprocess.run([GO,"test","./...","-run","^$"],cwd=work,env=env,capture_output=True,text=True,timeout=160)
+  status=result.returncode
+ except subprocess.TimeoutExpired:
+  status=124
+ return env,round(time.monotonic()-start,3),status
+
+
 def read_events(trace:Path)->list[dict]:
  result=[]
  if trace.exists():
@@ -131,16 +179,17 @@ def event_metrics(events:list[dict])->dict:
   "rg_calls":sum("rg " in x["command"] or "grep " in x["command"] for x in cmd),
   "read_calls":sum("sed " in x["command"] or "cat " in x["command"] or "head " in x["command"] for x in cmd)}
 
-def execute_agent(case:dict, trial:Path, arm:str, directory:Path, baseline_hash:str, timeout:int)->dict:
+def execute_agent(case:dict, trial:Path, arm:str, directory:Path, baseline_hash:str, timeout:int, warm_cache:bool)->dict:
  log=directory/(arm+"-trace.jsonl")
  errfile=directory/(arm+"-server-stderr.txt")
  command=([NODE,CODEX] if CODEX.endswith(".js") else [CODEX])+["app-server","--stdio","-c","sandbox_workspace_write.network_access=false"]
  if arm=="mcp":
   command+=["-c",'mcp_servers.simple-lsp.command="'+MCP+'"',
-    "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(trial)+'","--tool-profile","full","--result-format","readable"]']
+    "-c",'mcp_servers.simple-lsp.args=["--workspace","'+str(trial)+'","--tool-profile","'+PROFILE+'","--result-format","readable"]']
+ agent_env,cache_warm_seconds,cache_warm_exit=agent_workspace_environment(case,trial,warm_cache)
  started=time.monotonic()
  with log.open("w") as trace,errfile.open("w") as errs:
-  proc=subprocess.Popen(command,cwd=trial,env=ENV,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errs,bufsize=0)
+  proc=subprocess.Popen(command,cwd=trial,env=agent_env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errs,bufsize=0)
   rid=0
   def send(method,params=None,notification=False):
    nonlocal rid
@@ -228,7 +277,7 @@ def execute_agent(case:dict, trial:Path, arm:str, directory:Path, baseline_hash:
  result=event_metrics(events)
  result.update({"status":status,"work_seconds":duration,"wall_seconds":round(time.monotonic()-started,3),
    "baseline_hash":baseline_hash,"arm":arm,"case_id":case["id"],
-   "initial_snapshot":case["seed"],"model":"gpt-5.6-sol","effort":"low", "prewarm_seconds":round(prewarm_seconds,3)})
+   "initial_snapshot":case["seed"],"model":"gpt-5.6-sol","effort":"low", "prewarm_seconds":round(prewarm_seconds,3), "cache_warm_seconds":cache_warm_seconds, "cache_warm_exit":cache_warm_exit})
  return result
 
 def grading(case:dict,work:Path,final:str)->dict:
@@ -327,6 +376,8 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics"), default="semantic-rename")
+ parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
   parser.error("set PRODUCT_AB_CODEX, PRODUCT_AB_MCP and PRODUCT_AB_GO or install binaries on PATH")
@@ -334,6 +385,12 @@ def main():
   parser.error("set PRODUCT_AB_CODEX_HOME to an authenticated, isolated Codex home (with no unrelated MCP servers)")
  if args.repetitions<1 or args.timeout<30:
   parser.error("repetitions must be >=1 and timeout >=30")
+ global COMMON_AGENTS
+ COMMON_AGENTS = TYPE_DIAGNOSTICS_AGENTS if args.policy == "type-diagnostics" else COMMON_AGENTS
+ if PROFILE not in ("full", "coding"):
+  parser.error("PRODUCT_AB_PROFILE must be full or coding")
+ policy=args.policy
+ cache_policy=args.cache_policy
  args=argparse.Namespace(cases=args.cases,repetitions=args.repetitions,timeout=args.timeout)
  case_ids={x["id"] for x in catalog.CASES} if args.cases=="all" else set(args.cases.split(","))
  cases=[x for x in catalog.CASES if x["id"] in case_ids]
@@ -352,7 +409,7 @@ def main():
   parser.error("TypeScript cases require node and tsc (PRODUCT_AB_NODE/PRODUCT_AB_TSC)")
  (BASE/"manifest.json").write_text(json.dumps({"cases":[{k:v for k,v in item.items() if k not in ("edits",)} for item in cases],
   "repetitions":args.repetitions,"model":"gpt-5.6-sol","effort":"low",
-  "common_policy":COMMON_AGENTS,"arms":["baseline","mcp"],
+  "common_policy":COMMON_AGENTS,"policy":policy,"tool_profile":PROFILE,"cache_policy":cache_policy,"arms":["baseline","mcp"],
   "codex_binary":CODEX,"mcp_binary":MCP,"source_root":str(ROOT),
   "codex_version":run_command([CODEX,"--version"],ROOT).stdout.strip()},ensure_ascii=False,indent=2)+"\n")
  summaries=[]
@@ -370,7 +427,7 @@ def main():
      shutil.copytree(seed,work)
      assert run_command(["git","rev-parse","HEAD"],work).stdout.strip()==fingerprint
      assert not run_command(["git","status","--porcelain"],work).stdout.strip()
-     r=execute_agent(case,work,arm,trial,fingerprint,args.timeout)
+     r=execute_agent(case,work,arm,trial,fingerprint,args.timeout,cache_policy=="warm-workspace")
      grade=grading(case,work,r["final_answer"])
      r["grade"]=grade
      if r.get("status")!="completed":
