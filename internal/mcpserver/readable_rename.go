@@ -135,7 +135,7 @@ func renderReadableRename(name string, input, data map[string]any) (string, bool
 		fmt.Fprintf(&out, "LSP prepareRename context: %s\n", v.Prepare)
 	}
 	if summary {
-		out.WriteString("For exact edit ranges, explicitly request preview_rename(preview_detail=full). Apply only when the file scope is correct and writes are authorized.\n")
+		out.WriteString("All affected file paths and edit counts are listed. If the scope is correct and changes are authorized, apply with rename_symbol(apply=true); request preview_detail=full only when individual edit ranges must be audited.\n")
 	}
 	return out.String(), true
 }

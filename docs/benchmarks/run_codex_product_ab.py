@@ -47,9 +47,10 @@ tests. The same rules apply whether a semantic LSP connector is present or not.
 Use tools to get only the evidence needed for the task, not for quotas.
 When the task is a cross-file rename of a declaration whose spelling collides
 with unrelated declarations, and the `simple-lsp` MCP is connected, use its
-read-only `preview_rename` to identify the precise edit set before making
-changes; then use `rename_symbol(apply=true)` if safe and available, or a
-normal editor if that is safer. The LSP computes semantic identity; ordinary
+read-only `preview_rename` DEFAULT SUMMARY for every affected file and
+edit count; request full only if exact individual edits need inspection.
+Then use `rename_symbol(apply=true)` if safe and available, or a normal editor
+if that is safer. The LSP computes semantic identity; ordinary
 text matching cannot distinguish declarations with the same name. When the
 MCP is not connected, proceed normally with search, editing, tests and Git.
 For literal text, obvious compiler errors and unrelated tasks, do not invoke
@@ -58,24 +59,14 @@ not a blanket requirement for an LSP call or a tool-count target.
 Do not change CI, deployment, unrelated formatting, build configuration or
 tests to silence a genuine defect. Do not install dependencies. No network use.
 """
-TYPE_DIAGNOSTICS_AGENTS=COMMON_AGENTS.replace(
-    "When the task is a cross-file rename of a declaration whose spelling collides\n"
-    "with unrelated declarations, and the `simple-lsp` MCP is connected, use its\n"
-    "read-only `preview_rename` to identify the precise edit set before making\n"
-    "changes; then use `rename_symbol(apply=true)` if safe and available, or a\n"
-    "normal editor if that is safer. The LSP computes semantic identity; ordinary\n"
-    "text matching cannot distinguish declarations with the same name. When the\n"
-    "MCP is not connected, proceed normally with search, editing, tests and Git.\n"
-    "For literal text, obvious compiler errors and unrelated tasks, do not invoke\n"
-    "an LSP without a concrete semantic question. This is task-conditional guidance,\n"
-    "not a blanket requirement for an LSP call or a tool-count target.",
-    "When fixing a Go type error in a known source file, warmed LSP diagnostics\n"
-    "can provide exact compiler mismatch messages and positions immediately.\n"
-    "If simple-lsp is connected and no equivalent diagnostic was yet obtained,\n"
-    "prefer get_diagnostics(path=...) over a full preliminary build to locate\n"
-    "the error; then inspect and edit only the affected code. Run real tests\n"
-    "after the edit. With no LSP, use the ordinary compiler and code tools.\n"
-    "Avoid repeated diagnostic reads or tool calls that add no new information."
+TYPE_DIAGNOSTICS_AGENTS = COMMON_AGENTS + (
+    "\nWhen fixing a Go type error in a known source file, warmed LSP diagnostics"
+    " can provide exact compiler mismatch messages and positions immediately."
+    " If simple-lsp is connected and no equivalent diagnostic was yet obtained,"
+    " prefer get_diagnostics(path=...) over a full preliminary build to locate"
+    " the error; then inspect and edit only the affected code. Run real tests"
+    " after the edit. With no LSP, use the ordinary compiler and code tools."
+    " Avoid repeated diagnostic reads or tool calls that add no new information."
 )
 assert TYPE_DIAGNOSTICS_AGENTS != COMMON_AGENTS
 SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
@@ -428,9 +419,21 @@ def grading(case:dict,work:Path,final:str)->dict:
   target,marker=source_checks[case["id"]]
   checks.append({"name":"expected_contract","ok":marker in (work/target).read_text()})
   if case["id"]=="T43":
-   check("rename_new_calls",["rg","-q",r"\btools\.NewEngine\(","cmd","internal"])
-   result=run_command(["rg","-n",r"\btools\.New\(","cmd","internal"],work)
-   checks.append({"name":"no_old_constructor_call","ok":result.returncode==1,"output":result.stdout[:300]})
+   # Parse actual Go call expressions, not text. A string literal in
+   # readable_test.go deliberately contains "tools.New(ws,cfg)" and caused
+   # a correctly renamed implementation to be marked as a failure.
+   analyzer=ROOT/"docs/benchmarks/go_constructor_usage.go"
+   result=run_command([GO,"run",str(analyzer),str(work.resolve())],ROOT,90)
+   try:
+    calls=json.loads(result.stdout) if result.returncode==0 else {}
+   except (json.JSONDecodeError,TypeError):
+    calls={}
+   old_calls=calls.get("old_calls") or []
+   new_calls=calls.get("new_calls") or []
+   checks.append({"name":"rename_real_new_calls","ok":result.returncode==0 and bool(new_calls),
+                  "call_sites":new_calls,"error":result.stderr[-800:]})
+   checks.append({"name":"no_old_constructor_call","ok":result.returncode==0 and not old_calls,
+                  "call_sites":old_calls,"error":result.stderr[-800:]})
   if case["id"]=="T47":
    checks.append({"name":"runtime_contract","ok":'result["applied"] = true' in (work/"internal/tools/rename.go").read_text()})
   if case["id"]=="T40":

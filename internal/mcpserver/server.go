@@ -12,7 +12,7 @@ import (
 )
 
 // New exposes precise LSP navigation and edits to coding agents.
-const serverInstructions = "Known symbol: inspect_symbol(view=edit,path,symbol_path) directly. Unknown: get_document_symbols(path), reuse exact symbol_id; do not guess. Batch only verified targets. For exhaustive references use find_references (production-only: exclude_test_files=true); inspect_symbol(related) is bounded to 20 per kind, not exhaustive. For type errors get_diagnostics(path); for exact literals rg is cheaper. For rename preview_rename then authorized rename_symbol(apply=true); for format preview_format then format_document(apply=true). Reuse source until edited; avoid duplicate reads. Do not invoke every tool. Run actual tests."
+const serverInstructions = "Known symbol: inspect_symbol(view=edit,path,symbol_path) directly. Unknown: get_document_symbols(path), reuse exact symbol_id; do not guess. Batch only verified targets. For exhaustive references use find_references (production-only: exclude_test_files=true); inspect_symbol(related) is bounded to 20 per kind, not exhaustive. For type errors get_diagnostics(path); for exact literals rg is cheaper. Rename: preview_rename summary; full for audit only; then rename_symbol(apply=true); for format preview_format then format_document(apply=true). Reuse source until edited; avoid duplicate reads. Do not invoke every tool. Run actual tests."
 
 func New(engine *tools.Engine, version string) *mcp.Server {
 	return NewWithProfile(engine, version, "full")
@@ -145,7 +145,7 @@ func definitions() []definition {
 		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview semantic rename. Default summary lists all affected files and edit counts; preview_detail=full is only needed for exact edit review. Apply separately with rename_symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: preview semantic rename. Omit preview_detail to get ALL affected file paths and counts plus samples. Request full only to inspect every edit, not to confirm file scope. Apply separately with rename_symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {

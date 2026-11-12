@@ -1,0 +1,97 @@
+{
+  "goal": 100,
+  "counted_cycles": 1,
+  "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
+  "workspace_branch": "agent/simple-lsp-release-20261111",
+  "constraints": {
+    "no_ci_changes": true,
+    "original_checkout_untouched": true,
+    "never_force_mcp_calls_for_quota": true,
+    "no_parallel_trials": true,
+    "use_task_model_and_environment_parity": true,
+    "preserve_failed_and_limit_exceeded_evidence": true
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "task": "T43-go-semantic-rename",
+      "language": "Go",
+      "before_run": "agent-effect-100-cycle-pilot-20261112",
+      "before_baseline": {
+        "reported_original_pass": false,
+        "actual_pass_independently_regraded": true,
+        "seconds": 137.932,
+        "noncached_input_tokens": 21405,
+        "total_input_tokens": 544797,
+        "mcp_actual_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": []
+      },
+      "before_mcp": {
+        "reported_original_pass": false,
+        "actual_pass_independently_regraded": true,
+        "seconds": 71.002,
+        "noncached_input_tokens": 24182,
+        "total_input_tokens": 466806,
+        "mcp_actual_calls": 2,
+        "mcp_tools": [
+          "preview_rename",
+          "rename_symbol"
+        ],
+        "mcp_response_bytes": [
+          5451,
+          962
+        ]
+      },
+      "found_problems": [
+        "The grader counted tools.New(...) inside a quoted test fixture string as a real constructor invocation, producing false failures in both arms.",
+        "The connected agent unnecessarily requested preview_rename(preview_detail=full) with 5451 bytes while file-scope summary would suffice."
+      ],
+      "corrections": [
+        "Replace the source-substring grader with a Go AST parser that inspects real imported selector call expressions, with regression checks for quoted examples.",
+        "Clarify LSP preview scope and the default summary in tool descriptions and agent work rules; allow full only when individual edit ranges are needed.",
+        "Replace fragile TYPE_DIAGNOSTICS_AGENTS string replacement, which broke after edits, with additive guidance."
+      ],
+      "after_run": "agent-effect-100-cycle-pilot2-20261112",
+      "after_baseline": {
+        "reported_original_pass": true,
+        "actual_pass_independently_regraded": true,
+        "seconds": 102.52,
+        "noncached_input_tokens": 20666,
+        "total_input_tokens": 445242,
+        "mcp_actual_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": []
+      },
+      "after_mcp": {
+        "reported_original_pass": true,
+        "actual_pass_independently_regraded": true,
+        "seconds": 66.895,
+        "noncached_input_tokens": 20403,
+        "total_input_tokens": 286899,
+        "mcp_actual_calls": 2,
+        "mcp_tools": [
+          "preview_rename",
+          "rename_symbol"
+        ],
+        "mcp_response_bytes": [
+          1808,
+          962
+        ]
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 102.52,
+        "mcp_seconds": 66.895,
+        "mcp_time_change_percent": -34.75,
+        "mcp_actual_tool_calls": 2,
+        "preview_response_bytes_before": 5451,
+        "preview_response_bytes_after": 1808,
+        "note": "Separate stochastic A/B pairs. Tool-preview size difference is directly observed; time or token differences between runs are not causal proof of the repair."
+      },
+      "evidence_note": "Raw traces, results and corrected-grade JSON remain in isolated .scratch directories, not published because paths and assistant logs can contain sensitive context.",
+      "counted": true
+    }
+  ]
+}

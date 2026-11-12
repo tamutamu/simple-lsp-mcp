@@ -73,6 +73,34 @@ class FixturePreflightTests(unittest.TestCase):
             self.assertNotEqual(failed.returncode, 0, "type error not detected")
             self.assertIn("billing.ts", failed.stdout)
 
+    @unittest.skipUnless(shutil.which("go"), "Go required for AST inspection")
+    def test_semantic_rename_grader_does_not_count_string_literals(self):
+        with tempfile.TemporaryDirectory(prefix="constructor-ast-") as tmp:
+            root=Path(tmp)
+            (root/"cmd").mkdir()
+            (root/"internal").mkdir()
+            fixture=root/"cmd/main.go"
+            fixture.write_text('''package main
+import tools "github.com/tamutamu/simple-lsp-mcp/internal/tools"
+const example = "tools.New(foo, bar)"
+func main() { tools.NewEngine(nil, nil) }
+''')
+            program=HERE/"go_constructor_usage.go"
+            cmd=[shutil.which("go"),"run",str(program),str(root)]
+            first=subprocess.run(cmd,cwd=HERE,text=True,capture_output=True,timeout=90)
+            self.assertEqual(first.returncode,0,first.stderr)
+            import json
+            values=json.loads(first.stdout)
+            self.assertEqual(values.get("old_calls"),None)
+            self.assertEqual(len(values.get("new_calls") or []),1)
+            fixture.write_text(fixture.read_text().replace(
+                "tools.NewEngine(nil, nil)","tools.New(nil, nil)"))
+            second=subprocess.run(cmd,cwd=HERE,text=True,capture_output=True,timeout=90)
+            self.assertEqual(second.returncode,0,second.stderr)
+            values=json.loads(second.stdout)
+            self.assertEqual(len(values.get("old_calls") or []),1)
+            self.assertEqual(values.get("new_calls"),None)
+
     def test_frozen_snapshot_hash_is_deterministic_and_content_sensitive(self):
         with tempfile.TemporaryDirectory(prefix="ab-hash-") as tmp:
             left, right = Path(tmp) / "left", Path(tmp) / "right"
