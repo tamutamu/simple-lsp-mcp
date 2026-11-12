@@ -1,6 +1,6 @@
 {
   "goal": 200,
-  "counted_cycles": 7,
+  "counted_cycles": 8,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count. Each accepted cycle must pass docs/benchmarks/audit_agent_effect_cycles.py against original Codex trace and graded results, including token/cache accounting, all 4 A/B trials, same model and seed per pair, successful model-initiated LSP use after correction, and full grade checks. Savings must not be claimed on cached-token cumulative counts alone.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -618,6 +618,107 @@
         "note": "One stochastic post-correction A/B pair; tool-payload reduction is directly measured against identical LSP data. Do not infer equal billing cost from total tokens, nor attribute all timing changes to the new view."
       },
       "evidence_note": "Raw traces preserved in isolated .scratch; independently inspected by docs/benchmarks/audit_agent_effect_cycles.py.",
+      "counted": true
+    },
+    {
+      "cycle": 8,
+      "task": "S02-go-exhaustive-semantic-constructor-impact-file-view",
+      "language": "Go",
+      "before_run": "agent-effect-200-s02-files-before-20261113",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 28.251,
+        "noncached_input_tokens": 11100,
+        "cached_input_tokens": 83840,
+        "total_input_tokens": 94940,
+        "output_tokens": 1037,
+        "model_usage_updates": 5,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": [],
+        "shell_calls": 3
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 18.603,
+        "noncached_input_tokens": 16650,
+        "cached_input_tokens": 70656,
+        "total_input_tokens": 87306,
+        "output_tokens": 672,
+        "model_usage_updates": 4,
+        "model_lsp_calls": 1,
+        "mcp_tools": [
+          "find_references"
+        ],
+        "mcp_response_bytes": [
+          5178
+        ],
+        "shell_calls": 1
+      },
+      "found_problems": [
+        "The pre-change connected Codex agent requested find_references relation_view=locations for a file-only impact task; the MCP response was 5178 bytes of repeated ranges and file names for 16 distinct files.",
+        "A per-hit result limit can silently hide distinct impacted files when a single file has many reference hits. A file-only query must limit unique paths rather than raw LSP hits."
+      ],
+      "corrections": [
+        "Implement reference_view=files for find_references with sorted unique paths, a file-based limit, complete/truncated metadata, and the original reference_count and filter metadata.",
+        "Expose a restricted file-view MCP schema and task-conditional agent instructions for exact path-only impact analysis; preserve position/source variants.",
+        "Add pure regression cases for unique file limits, real gopls reference resolution and test filtering, MCP argument validation, and profile catalog bounds. Verify race-enabled Go tests and go vet."
+      ],
+      "direct_reproduction": {
+        "before_model_tool_response_bytes": 5178,
+        "after_first_file_only_tool_response_bytes": 700,
+        "first_tool_response_reduction_percent": 86.48,
+        "before_exact_file_count": 16,
+        "after_exact_file_count": 16,
+        "after_agent_requested_unnecessary_second_lines_call": true,
+        "after_total_mcp_response_bytes": 5036,
+        "note": "First tool response reduction is directly observed. The after agent made an unnecessary second lines call, so total MCP payload and noncached model cost do not improve in the same proportion."
+      },
+      "after_run": "agent-effect-200-s02-files-after-20261113",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 27.819,
+        "noncached_input_tokens": 13174,
+        "cached_input_tokens": 82304,
+        "total_input_tokens": 95478,
+        "output_tokens": 972,
+        "model_usage_updates": 5,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": [],
+        "shell_calls": 3
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 16.861,
+        "noncached_input_tokens": 14159,
+        "cached_input_tokens": 70784,
+        "total_input_tokens": 84943,
+        "output_tokens": 461,
+        "model_usage_updates": 4,
+        "model_lsp_calls": 2,
+        "mcp_tools": [
+          "find_references",
+          "find_references"
+        ],
+        "mcp_response_bytes": [
+          700,
+          4336
+        ],
+        "shell_calls": 0
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 27.819,
+        "mcp_seconds": 16.861,
+        "time_change_percent": -39.39,
+        "noncached_input_token_change_percent": 7.48,
+        "total_input_token_change_percent": -11.03,
+        "mcp_actual_tool_calls": 2,
+        "note": "Both answers passed independent exact 16-file grading; the model used the new file view, but also unnecessarily requested line context. One stochastic pair is not proof of a causal speed improvement. Fresh input increased relative to baseline."
+      },
+      "evidence_note": "All four Codex results, original event traces, manifests, independent exact file-list grades and token usage are retained under the named isolated .scratch directories. Raw traces are not published.",
       "counted": true
     }
   ],

@@ -195,6 +195,15 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if view != "" && view != "locations" && view != "lines" {
 		return nil, core.NewError(core.InvalidArgument, "relation_view must be locations or lines")
 	}
+	referenceView := stringVal(in, "reference_view")
+	if referenceView != "" {
+		if name != "find_references" || referenceView != "files" {
+			return nil, core.NewError(core.InvalidArgument, "reference_view=files is only valid for find_references")
+		}
+		if view == "lines" {
+			return nil, core.NewError(core.InvalidArgument, "reference_view=files cannot be combined with relation_view=lines")
+		}
+	}
 	excludeTests := false
 	if value, present := in["exclude_test_files"]; present {
 		if name != "find_references" {
@@ -239,6 +248,21 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 	if err != nil {
 		return nil, err
 	}
+	if referenceView == "files" {
+		// The cap applies to unique file paths, not individual references.
+		// Otherwise 500 references in the first file would silently hide
+		// later affected files even when the caller only asks for file scope.
+		filePaths, truncated := uniqueReferenceFilePaths(locs, limit)
+		out := map[string]any{
+			"files":           filePaths,
+			"reference_count": len(locs),
+			"meta":            core.Meta{Complete: !truncated, Truncated: truncated},
+		}
+		if filters != nil {
+			out["filters"] = filters
+		}
+		return out, nil
+	}
 	tr := len(locs) > limit
 	if tr {
 		locs = locs[:limit]
@@ -253,6 +277,25 @@ func (e *Engine) Relationship(ctx context.Context, name, method, cap string, in 
 		out["filters"] = filters
 	}
 	return out, nil
+}
+
+// uniqueReferenceFilePaths returns all distinct normalized reference paths
+// deterministically. The limit applies to unique files, not reference hits.
+func uniqueReferenceFilePaths(locs []core.Location, limit int) ([]string, bool) {
+	unique := make(map[string]struct{}, len(locs))
+	for _, loc := range locs {
+		unique[loc.Path] = struct{}{}
+	}
+	files := make([]string, 0, len(unique))
+	for path := range unique {
+		files = append(files, path)
+	}
+	sort.Strings(files)
+	truncated := len(files) > limit
+	if truncated {
+		files = files[:limit]
+	}
+	return files, truncated
 }
 
 // locationsAt runs one location-based LSP method against an already-resolved

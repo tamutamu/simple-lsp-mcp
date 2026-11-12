@@ -60,6 +60,49 @@ func TestRealGoReferenceFilterKeepsProductionReferences(t *testing.T) {
 	}
 	raw := unfiltered["locations"].([]core.Location)
 	got := filtered["locations"].([]core.Location)
+
+	// The file-only response must preserve real reference semantics and
+	// report completeness independent of how many hits occur in each file.
+	fileInput := map[string]any{
+		"path": "app.go", "symbol_path": "/Add",
+		"reference_view": "files", "include_declaration": false, "limit": 1,
+	}
+	fileResult, err := engine.Relationship(ctx, "find_references", "textDocument/references", "references", fileInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, ok := fileResult["files"].([]string)
+	if !ok || len(files) != 1 || files[0] != "app.go" {
+		t.Fatalf("reference file limit must act on unique paths: %+v", fileResult)
+	}
+	if fileResult["meta"].(core.Meta).Complete {
+		t.Fatal("file-only result of two unique paths with limit=1 must report incomplete")
+	}
+	fileInput["limit"] = 10
+	fileResult, err = engine.Relationship(ctx, "find_references", "textDocument/references", "references", fileInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, ok = fileResult["files"].([]string)
+	if !ok || len(files) != 2 || files[0] != "app.go" || files[1] != "app_test.go" {
+		t.Fatalf("file-only result lost exact source paths: %+v", fileResult)
+	}
+	if !fileResult["meta"].(core.Meta).Complete || fileResult["reference_count"].(int) != len(raw) {
+		t.Fatalf("file-only result must retain complete counts: %+v", fileResult)
+	}
+	fileInput["exclude_test_files"] = true
+	fileResult, err = engine.Relationship(ctx, "find_references", "textDocument/references", "references", fileInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, ok = fileResult["files"].([]string)
+	if !ok || len(files) != 1 || files[0] != "app.go" {
+		t.Fatalf("filtered file-only result retained test paths: %+v", fileResult)
+	}
+	if fileResult["filters"] == nil {
+		t.Fatal("filtered file-only result lost explicit filter metadata")
+	}
+
 	for _, loc := range got {
 		if loc.Path != "app.go" || loc.Range.Start.Line != 3 {
 			t.Fatalf("filtered result included unrelated or test reference: %#v", got)

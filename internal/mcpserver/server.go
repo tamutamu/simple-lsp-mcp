@@ -187,7 +187,7 @@ func definitions() []definition {
 
 		// Ask for one exact semantic relationship at a time.
 		{"get_definition", "LSP: definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "Exact LSP references. If path and symbol_path are known, call directly, without preview_rename or inspect_symbol. Use relation_view=locations for path-only impact; lines adds source text. exclude_test_files=true opts out of test hits, reporting excluded_count.", objSchema(targetProps("include_declaration", "relation_view", "exclude_test_files")), relation("find_references", "textDocument/references", "references")},
+		{"find_references", "Exact LSP references. Known path+symbol_path: call directly. reference_view=files returns unique paths; relation_view=lines returns source text. exclude_test_files=true omits test hits (reported).", objSchema(targetProps("include_declaration", "relation_view", "reference_view", "exclude_test_files")), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "LSP: implementation locations for a target.", objSchema(targetProps("relation_view")), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
@@ -244,6 +244,7 @@ func allProperties() map[string]any {
 		"detail":              describe(enumStringSchema("compact", "outline", "full"), "compact (default), outline or full LSP details."),
 		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
 		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
+		"reference_view":      describe(enumStringSchema("files"), "Unique referenced files only; cap counts files, not individual hits."),
 		"hierarchy_view":      describe(enumStringSchema("full", "name_path"), "name_path: compact exact name and file; full (default): ranges and handles."),
 		"max_lines":           describe(positiveIntegerSchema(), "Source lines, default 120, max 500."),
 		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Max 20 per kind. For all refs: find_references."),

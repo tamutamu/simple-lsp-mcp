@@ -501,3 +501,24 @@ func TestCompactCallHierarchyAdvertisesOnlyExplicitOptIn(t *testing.T) {
 		}
 	}
 }
+
+func TestFileOnlyReferencesSchemaDoesNotAffectOtherRelations(t *testing.T) {
+	for _, profile := range []string{"full", "coding"} {
+		for _, def := range definitionsForProfile(profile) {
+			_, exposed := def.schema["properties"].(map[string]any)["reference_view"]
+			if def.name == "find_references" {
+				if !exposed {
+					t.Fatalf("%s: find_references must expose file-only reference view", profile)
+				}
+				if err := validateToolArguments(def.schema, map[string]any{"reference_view": "files"}); err != nil {
+					t.Fatalf("%s: file view rejected: %v", profile, err)
+				}
+				if err := validateToolArguments(def.schema, map[string]any{"reference_view": "unsafe"}); err == nil {
+					t.Fatalf("%s: unsupported file view accepted", profile)
+				}
+			} else if exposed {
+				t.Fatalf("%s: unrelated %s exposes reference_view", profile, def.name)
+			}
+		}
+	}
+}
