@@ -1,6 +1,6 @@
 {
   "goal": 100,
-  "counted_cycles": 3,
+  "counted_cycles": 4,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -247,6 +247,85 @@
         "note": "This is one matched after pair, not proof of a population-wide advantage. Before and after were separate randomized model runs; never attribute the time difference between runs causally to prompt revision."
       },
       "evidence_note": "Codex turn traces and independently graded JSON files are held in local isolated .scratch directories.",
+      "counted": true
+    },
+    {
+      "cycle": 4,
+      "task": "S02-go-exhaustive-semantic-constructor-impact",
+      "language": "Go",
+      "before_run": "agent-effect-100-s02-before-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 28.628,
+        "noncached_input_tokens": 23605,
+        "total_input_tokens": 157237,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "shell_cli_calls": 3
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 19.285,
+        "noncached_input_tokens": 17398,
+        "total_input_tokens": 118646,
+        "mcp_calls": 3,
+        "mcp_tools": [
+          "inspect_symbol",
+          "preview_rename",
+          "find_references"
+        ],
+        "mcp_response_bytes": 6428,
+        "shell_cli_calls": 0
+      },
+      "found_problems": [
+        "The connected agent requested inspect_symbol, preview_rename, and find_references for a read-only exhaustive impact file list. The preview was unrelated to the task and detailed source lines were unnecessary. The first MCP trial called 3 tools, consuming 6428 response bytes.",
+        "The independent exact-files answer oracle was present in the frozen Go repository copy (though recorded agent commands did not access the Python oracle); contaminating future blinded evaluations was possible."
+      ],
+      "corrections": [
+        "Document direct find_references(path,symbol_path,relation_view=locations) when a declaration identity is already known. Distinguish read-only impact analysis from write-intent semantic rename in the shared agent policy.",
+        "Update the find_references MCP tool description: avoid preview_rename and inspect_symbol for known target identities; use locations for path-only questions.",
+        "Exclude docs/benchmarks entirely from the frozen Go source copy for both agent arms, protecting independent scoring keys and grading logic. Preserve original source and independent external grader."
+      ],
+      "after_run": "agent-effect-100-s02-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 32.672,
+        "noncached_input_tokens": 11423,
+        "total_input_tokens": 118431,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "shell_cli_calls": 4
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 14.526,
+        "noncached_input_tokens": 16937,
+        "total_input_tokens": 68521,
+        "mcp_calls": 1,
+        "mcp_tools": [
+          "find_references"
+        ],
+        "mcp_response_bytes": 4336,
+        "shell_cli_calls": 0
+      },
+      "after_rerun_summary": {
+        "baseline_quality_pass": true,
+        "mcp_quality_pass": true,
+        "baseline_seconds": 32.672,
+        "mcp_seconds": 14.526,
+        "mcp_time_change_percent": -55.54,
+        "mcp_noncached_token_change_percent": 48.27,
+        "mcp_actual_calls": 1,
+        "model_initiated_tool": "find_references",
+        "mcp_tool_bytes_before": 6428,
+        "mcp_tool_bytes_after": 4336,
+        "mcp_tool_redundant_calls_removed": 2,
+        "held_out_answer_oracle_excluded_from_both_after_arms": true,
+        "limitation": "The connected agent still requested relation_view=lines rather than locations, so 4336 bytes of detailed references remain. Small one-pair result is not a statistically conclusive productivity effect."
+      },
+      "evidence_note": "Before raw model calls were audited to exclude oracle reading, but frozen oracle exposure is a methodological flaw and is disclosed. After fresh run has no grader assets in either model workspace. Baseline used gopls CLI, so comparison is native Codex capabilities vs MCP connector, not a proof of no language server without MCP.",
       "counted": true
     }
   ]

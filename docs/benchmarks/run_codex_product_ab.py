@@ -50,7 +50,7 @@ You are fixing code in an isolated copy of a real project. Make the smallest
 correct change, preserve behavior except as requested, and verify with relevant
 tests. The same rules apply whether a semantic LSP connector is present or not.
 Use tools to get only the evidence needed for the task, not for quotas.
-When the task is a cross-file rename of a declaration whose spelling collides
+When performing an actual cross-file rename of a declaration whose spelling collides
 with unrelated declarations, and the `simple-lsp` MCP is connected, use its
 read-only `preview_rename` DEFAULT SUMMARY for every affected file and
 edit count; request full only if exact individual edits need inspection.
@@ -58,6 +58,11 @@ Then use `rename_symbol(apply=true)` if safe and available, or a normal editor
 if that is safer. The LSP computes semantic identity; ordinary
 text matching cannot distinguish declarations with the same name. When the
 MCP is not connected, proceed normally with search, editing, tests and Git.
+For a read-only list of exact usages of a known declaration, prefer a
+single find_references(path,symbol_path,relation_view=locations) call when
+simple-lsp is connected. Do not preview_rename or inspect_symbol first
+unless the declaration itself is unknown; those add no needed caller paths.
+When no LSP is connected, use ordinary code search and Go syntax analysis.
 For literal text, obvious compiler errors and unrelated tasks, do not invoke
 an LSP without a concrete semantic question. This is task-conditional guidance,
 not a blanket requirement for an LSP call or a tool-count target.
@@ -419,11 +424,28 @@ def grading(case:dict,work:Path,final:str)->dict:
    "T34":["cmd/simple-lsp-mcp/doctor.go","cmd/simple-lsp-mcp/main.go","tools.New"],
    "T44":["backend/benchdomain/orders.py","visible_orders","owner_invoice","!="],
   }
-  needles=case.get("answer_must_include", conditions.get(case["id"], []))
-  if not needles:
-   raise ValueError(f"no independent answer oracle for {case['id']}")
-  checks.append({"name":"answer_evidence","ok":all(x.lower() in final.lower() for x in needles),
-    "missing":[x for x in needles if x.lower() not in final.lower()]})
+  if "answer_exact_files" in case:
+   try:
+    parsed=json.loads(final.strip())
+    actual=parsed["files"] if isinstance(parsed,dict) else []
+    if not isinstance(actual,list) or any(not isinstance(item,str) for item in actual):
+     actual=[]
+   except (ValueError,KeyError,TypeError):
+    actual=[]
+   expected=case["answer_exact_files"]
+   checks.append({
+    "name":"exact_semantic_callsite_files",
+    "ok":len(actual)==len(set(actual)) and set(actual)==set(expected),
+    "expected_count":len(expected),"actual_count":len(actual),
+    "missing":sorted(set(expected)-set(actual)),
+    "unexpected":sorted(set(actual)-set(expected))
+   })
+  else:
+   needles=case.get("answer_must_include", conditions.get(case["id"], []))
+   if not needles:
+    raise ValueError(f"no independent answer oracle for {case['id']}")
+   checks.append({"name":"answer_evidence","ok":all(x.lower() in final.lower() for x in needles),
+     "missing":[x for x in needles if x.lower() not in final.lower()]})
  else:
   if case["seed"]=="go":
    check("go_test",[GO,"test","./..."],180)
@@ -539,7 +561,15 @@ def main():
  # Freeze only source projects needed by the requested cases. Once frozen, no source edits are allowed. No worktree changes after
  # this point can change the A/B inputs. Both arms use an identical seed commit.
  FROZEN.mkdir(exist_ok=False)
- if any(c["seed"]=="go" for c in cases):copy_project(ROOT,FROZEN/"go")
+ if any(c["seed"]=="go" for c in cases):
+  copy_project(ROOT,FROZEN/"go")
+  # Keep the independent scoring oracle out of BOTH model workspaces.
+  # Otherwise an agent could read codex_semantic_ab_cases.py and echo its
+  # exact hidden expected file list instead of solving the semantic task.
+  grader_assets=FROZEN/"go"/"docs"/"benchmarks"
+  if grader_assets.exists():
+   shutil.rmtree(grader_assets)
+  assert not (FROZEN/"go"/"docs"/"benchmarks").exists()
  if any(c["seed"] in ("ts","py") for c in cases):
   if not catalog.FASTAPI.is_dir():parser.error("PRODUCT_AB_FASTAPI must name a pinned FastAPI source checkout for TS/Python cases")
   copy_project(catalog.FASTAPI,FROZEN/"fastapi")
@@ -557,6 +587,7 @@ def main():
   "codex_binary":CODEX,"mcp_binary":MCP,"source_root":str(ROOT),
   "python_typechecker":PYRIGHT if any(c["seed"]=="py" for c in cases) else None,
   "baseline_fixture_preflight": "strict Pyright for Python, tsc for TypeScript, before fault injection",
+  "go_scoring_oracle_excluded": any(c["seed"]=="go" for c in cases),
   "frozen_source_sha256":frozen_hashes,
   "mcp_executable_sha256":binary_sha256(MCP),
   "source_commit":run_command(["git","rev-parse","HEAD"],ROOT).stdout.strip(),

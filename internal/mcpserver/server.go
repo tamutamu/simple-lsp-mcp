@@ -187,7 +187,7 @@ func definitions() []definition {
 
 		// Ask for one exact semantic relationship at a time.
 		{"get_definition", "LSP: definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_definition", "textDocument/definition", "definition")},
-		{"find_references", "Exact LSP references to a declaration. relation_view=lines includes source text; exclude_test_files=true narrows to non-test files (opt-in), retaining the excluded count and filter scope. For production-only callers prefer no declaration, no test files.", objSchema(targetProps("include_declaration", "relation_view", "exclude_test_files")), relation("find_references", "textDocument/references", "references")},
+		{"find_references", "Exact LSP references. If path and symbol_path are known, call directly, without preview_rename or inspect_symbol. Use relation_view=locations for path-only impact; lines adds source text. exclude_test_files=true opts out of test hits, reporting excluded_count.", objSchema(targetProps("include_declaration", "relation_view", "exclude_test_files")), relation("find_references", "textDocument/references", "references")},
 		{"find_implementations", "LSP: implementation locations for a target.", objSchema(targetProps("relation_view")), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
