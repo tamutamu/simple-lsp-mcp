@@ -608,8 +608,8 @@ def main():
   else OUTGOING_CALLS_AGENTS if args.policy == "outgoing-calls"
   else COMMON_AGENTS
  )
- if PROFILE not in ("full", "coding"):
-  parser.error("PRODUCT_AB_PROFILE must be full or coding")
+ if PROFILE not in ("full", "coding", "analysis"):
+  parser.error("PRODUCT_AB_PROFILE must be full, coding or analysis")
  policy=args.policy
  cache_policy=args.cache_policy
  args=argparse.Namespace(cases=args.cases,repetitions=args.repetitions,timeout=args.timeout)

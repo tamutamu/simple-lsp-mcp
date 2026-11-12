@@ -1,6 +1,6 @@
 {
   "goal": 200,
-  "counted_cycles": 8,
+  "counted_cycles": 9,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count. Each accepted cycle must pass docs/benchmarks/audit_agent_effect_cycles.py against original Codex trace and graded results, including token/cache accounting, all 4 A/B trials, same model and seed per pair, successful model-initiated LSP use after correction, and full grade checks. Savings must not be claimed on cached-token cumulative counts alone.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -720,6 +720,109 @@
       },
       "evidence_note": "All four Codex results, original event traces, manifests, independent exact file-list grades and token usage are retained under the named isolated .scratch directories. Raw traces are not published.",
       "counted": true
+    },
+    {
+      "cycle": 9,
+      "task": "S01-go-notifier-implementations-minimal-readonly-analysis-profile",
+      "language": "Go",
+      "before_run": "agent-effect-200-s01-analysis-before-20261113",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 29.244,
+        "noncached_input_tokens": 10826,
+        "cached_input_tokens": 68608,
+        "total_input_tokens": 79434,
+        "output_tokens": 1270,
+        "model_usage_updates": 4,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": [],
+        "shell_calls": 3
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 39.378,
+        "noncached_input_tokens": 12779,
+        "cached_input_tokens": 117888,
+        "total_input_tokens": 130667,
+        "output_tokens": 1733,
+        "model_usage_updates": 6,
+        "model_lsp_calls": 2,
+        "mcp_tools": [
+          "find_implementations",
+          "find_implementations"
+        ],
+        "mcp_response_bytes": [
+          288,
+          404
+        ],
+        "shell_calls": 2
+      },
+      "found_problems": [
+        "The existing coding profile advertises 14 tools including writable semantic rename and diagnostics while a read-only structural interface implementation audit needs only semantic navigation and file evidence.",
+        "The before connected Codex agent made two find_implementations calls (lines then locations); the two queries returned overlapping semantic evidence and did not outperform Codex alone in time or input usage."
+      ],
+      "corrections": [
+        "Add an explicit opt-in 10-tool read-only analysis MCP profile, preserving full22 and the default Codex coding14 profiles and their stable tool contracts. Include implementation, reference, incoming/outgoing call and source inspection tools.",
+        "Expose analysis as a supported CLI and explicit setup option, add profile-specific tests for exact 10-tool membership/read-only safety and unchanged Codex default, and update the Codex benchmark/discovery runners.",
+        "Verify the advertised tool catalog size on actual Codex app-server MCP discovery: coding14=15,902B, analysis10=11,987B (24.62% smaller)."
+      ],
+      "direct_reproduction": {
+        "coding_catalog_count": 14,
+        "coding_catalog_json_bytes": 15902,
+        "analysis_catalog_count": 10,
+        "analysis_catalog_json_bytes": 11987,
+        "catalog_reduction_pct": 24.62,
+        "model_invoked_implementations_before": 2,
+        "model_invoked_implementations_after": 1,
+        "both_correct_independent_implementation_audit": true
+      },
+      "after_run": "agent-effect-200-s01-analysis-after-20261113",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 38.102,
+        "noncached_input_tokens": 14682,
+        "cached_input_tokens": 105472,
+        "total_input_tokens": 120154,
+        "output_tokens": 1589,
+        "model_usage_updates": 6,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": [],
+        "shell_calls": 4
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 35.675,
+        "noncached_input_tokens": 15242,
+        "cached_input_tokens": 116736,
+        "total_input_tokens": 131978,
+        "output_tokens": 1512,
+        "model_usage_updates": 6,
+        "model_lsp_calls": 1,
+        "mcp_tools": [
+          "find_implementations"
+        ],
+        "mcp_response_bytes": [
+          288
+        ],
+        "shell_calls": 3
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 38.102,
+        "mcp_seconds": 35.675,
+        "time_change_percent": -6.37,
+        "total_input_token_change_percent": 9.84,
+        "noncached_input_token_change_percent": 3.81,
+        "mcp_actual_tool_calls": 1,
+        "mcp_tool_used": "find_implementations",
+        "note": "On this single post-correction A/B pair both arms passed and the model initiated a real LSP implementation search, but total input tokens and fresh tokens increased in the connected arm. Reduced MCP catalog is directly established; causal cost or speed improvements are not."
+      },
+      "known_remaining_defect": "The narrow profile is beneficial only where semantic navigation is selected. In a separate S02 reference-file audit, the agent used zero MCP tools and instead called gopls CLI, so that experiment is excluded from counted cycles. Tool selection and true priced input-cost improvement are not established.",
+      "evidence_note": "Original Codex traces and independent answer-grader evidence held in isolated .scratch. Live MCP catalog inventories and test outputs available there.",
+      "counted": true
     }
   ],
   "uncounted_evaluations": [
@@ -742,6 +845,13 @@
       "task": "T34-cross-file-impact-analysis",
       "reason": "Both A/B arms failed before producing model tokens or a usable answer; no MCP use; independent answer-evidence grade failed. Invalid baseline, no causal improvement or after comparison; do not count.",
       "counted": false
+    },
+    {
+      "task": "S02-go-reference-file-audit-under-analysis-profile",
+      "run": "agent-effect-200-s02-analysis-after-20261113",
+      "quality_pass_both": true,
+      "mcp_actual_tool_calls": 0,
+      "why_not_counted": "The treatment arm never invoked simple-lsp-mcp; it used shell gopls references instead. Therefore it is not evidence of MCP-driven improvement and cannot satisfy the required trace usage check."
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",

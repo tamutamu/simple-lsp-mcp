@@ -101,8 +101,27 @@ func toolAnnotations(name string) *mcp.ToolAnnotations {
 // --tool-profile full.
 func definitionsForProfile(profile string) []definition {
 	all := definitions()
-	if profile != "coding" {
+	if profile != "coding" && profile != "analysis" {
 		return all
+	}
+	// Read-only semantic investigations need neither file-writing tools
+	// nor code-actions, formatting and diagnostic schemas. The existing
+	// coding and full profiles remain unchanged and are still available.
+	if profile == "analysis" {
+		allowed := map[string]bool{
+			"search_symbols": true, "list_workspace_symbols": true,
+			"get_document_symbols": true, "inspect_symbol": true,
+			"get_hover": true, "get_definition": true,
+			"find_references": true, "find_implementations": true,
+			"get_incoming_calls": true, "get_outgoing_calls": true,
+		}
+		out := make([]definition, 0, len(allowed))
+		for _, d := range all {
+			if allowed[d.name] {
+				out = append(out, d)
+			}
+		}
+		return out
 	}
 	allowed := map[string]bool{
 		"search_symbols": true, "list_workspace_symbols": true,

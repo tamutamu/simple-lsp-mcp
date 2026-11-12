@@ -55,7 +55,7 @@ func main() {
 	// Parse server settings before starting the stdio transport.
 	flag.StringVar(&root, "workspace", "", "workspace root (default: current working directory)")
 	flag.StringVar(&logLevel, "log-level", "info", "debug|info|warn|error")
-	flag.StringVar(&toolProfile, "tool-profile", "full", "MCP tool surface: full (all available tools), coding (focused everyday navigation/semantic rename tools)")
+	flag.StringVar(&toolProfile, "tool-profile", "full", "MCP tool surface: full (22 tools), coding (14), analysis (10 read-only navigation)")
 	flag.StringVar(&resultFormat, "result-format", "both", "MCP response: both (text + structured, compatible default), text (JSON text only), or readable (human-readable source for inspection and semantic relations)")
 	flag.DurationVar(&timeout, "request-timeout", 0, "LSP request timeout (default 15s, 180s with managed LSP)")
 	flag.DurationVar(&wait, "diagnostics-wait", 2*time.Second, "push diagnostics wait")
@@ -69,8 +69,8 @@ func main() {
 		fmt.Printf("simple-lsp-mcp %s\n", ver)
 		return
 	}
-	if toolProfile != "full" && toolProfile != "coding" {
-		fmt.Fprintln(os.Stderr, "invalid --tool-profile: expected full or coding")
+	if toolProfile != "full" && toolProfile != "coding" && toolProfile != "analysis" {
+		fmt.Fprintln(os.Stderr, "invalid --tool-profile: expected full, coding or analysis")
 		os.Exit(2)
 	}
 	if resultFormat != "both" && resultFormat != "text" && resultFormat != "readable" {

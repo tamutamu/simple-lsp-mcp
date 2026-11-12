@@ -49,3 +49,16 @@ func TestSetupCommandManagedModeUsesOneRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupExplicitAnalysisProfileKeepsCodexDefaultsUnchanged(t *testing.T) {
+	name, args, err := setupCommandWithProfile("codex", "/tmp/simple-lsp-mcp", false, "analysis")
+	want := []string{"mcp", "add", "simple-lsp", "--", "/tmp/simple-lsp-mcp",
+		"--result-format", "readable", "--tool-profile", "analysis"}
+	if err != nil || name != "codex" || !reflect.DeepEqual(args, want) {
+		t.Fatalf("explicit analysis registration differs: %v %v %v", name, args, err)
+	}
+	name, args, err = setupCommand("codex", "/tmp/simple-lsp-mcp")
+	if err != nil || name != "codex" || args[len(args)-1] != "coding" {
+		t.Fatalf("default Codex setup must remain coding: %v %v %v", name, args, err)
+	}
+}

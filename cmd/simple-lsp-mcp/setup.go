@@ -23,8 +23,8 @@ func setupCommandOptions(client, binary string, autoInstall bool) (string, []str
 // Claude retains its existing full surface for backward compatibility.
 // Explicit full/coding overrides remain available for advanced workflows.
 func setupCommandWithProfile(client, binary string, autoInstall bool, profile string) (string, []string, error) {
-	if profile != "auto" && profile != "coding" && profile != "full" {
-		return "", nil, fmt.Errorf("unsupported tool profile %q: use auto, coding or full", profile)
+	if profile != "auto" && profile != "coding" && profile != "full" && profile != "analysis" {
+		return "", nil, fmt.Errorf("unsupported tool profile %q: use auto, coding, analysis or full", profile)
 	}
 	switch client {
 	case "claude", "codex":
@@ -58,13 +58,13 @@ func setupCommandWithProfile(client, binary string, autoInstall bool, profile st
 
 func runSetup(args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: simple-lsp-mcp setup claude|codex [--apply] [--auto-install-lsp] [--tool-profile auto|coding|full]")
+		return fmt.Errorf("usage: simple-lsp-mcp setup claude|codex [--apply] [--auto-install-lsp] [--tool-profile auto|coding|analysis|full]")
 	}
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	apply := flags.Bool("apply", false, "explicitly register the MCP server with the client")
 	autoInstall := flags.Bool("auto-install-lsp", false, "allow pinned language server packages to be downloaded when first needed")
-	toolProfile := flags.String("tool-profile", "auto", "MCP surface: auto (lean Codex), coding, or full")
+	toolProfile := flags.String("tool-profile", "auto", "MCP surface: auto (lean Codex), coding, analysis (read-only), or full")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}

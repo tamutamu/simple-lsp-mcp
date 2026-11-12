@@ -1,0 +1,5 @@
+phase,arm,quality_pass,seconds,noncached_input_tokens,cached_input_tokens,total_input_tokens,output_tokens,model_usage_updates,model_lsp_calls,mcp_tools,mcp_response_bytes,shell_calls
+before,baseline,True,29.244,10826,68608,79434,1270,4,0,[],[],3
+before,mcp,True,39.378,12779,117888,130667,1733,6,2,"[""find_implementations"", ""find_implementations""]","[288, 404]",2
+after,baseline,True,38.102,14682,105472,120154,1589,6,0,[],[],4
+after,mcp,True,35.675,15242,116736,131978,1512,6,1,"[""find_implementations""]",[288],3

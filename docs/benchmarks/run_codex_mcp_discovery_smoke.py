@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mcp", default=shutil.which("simple-lsp-mcp"))
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--result-format", choices=("both", "text", "readable"), default="readable")
-    parser.add_argument("--tool-profile", choices=("full", "coding"), default="full")
+    parser.add_argument("--tool-profile", choices=("full", "coding", "analysis"), default="full")
     parser.add_argument("--inventory-output", type=Path, help="Optional nonsecret MCP metadata inventory JSON")
     return parser.parse_args()
 
@@ -176,10 +176,14 @@ def main() -> int:
                     json.dumps({"server": server_info, "tools": tools}, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8",
                 )
-            expected_count = {"full":22, "coding":14}[args.tool_profile]
+            expected_count = {"full":22, "coding":14, "analysis":10}[args.tool_profile]
             if len(tools) != expected_count:
                 raise AssertionError(f"{args.tool_profile} MCP catalog expected {expected_count}, found {len(tools)}")
-            if "preview_rename" not in tools or "rename_symbol" not in tools:
+            rename_available = "preview_rename" in tools and "rename_symbol" in tools
+            if args.tool_profile == "analysis":
+                if rename_available or any(key in tools for key in ("get_diagnostics","format_document","apply_code_action")):
+                    raise AssertionError("read-only analysis catalog leaked mutation or diagnostic tools")
+            elif not rename_available:
                 raise AssertionError(f"rename pair absent from {args.tool_profile} catalog")
             if "get_document_symbols" not in tools:
                 raise AssertionError(
@@ -217,20 +221,21 @@ def main() -> int:
                     + rendered[:1200]
                 )
 
-            invalid = app.request(
-                "mcpServer/tool/call",
-                {
-                    "threadId": thread,
-                    "server": "simple-lsp",
-                    "tool": "preview_rename",
-                    "arguments": {"path": "internal/mcpserver/server.go", "symbol_path": "NewWithOptions"},
-                },
-            )
-            if not invalid.get("isError"):
-                raise AssertionError("rename without required new_name was not rejected")
-            invalid_text = json.dumps(invalid, ensure_ascii=False)
-            if "new_name" not in invalid_text or "error" not in invalid_text:
-                raise AssertionError(f"invalid rename did not return an informative error: {invalid_text[:800]}")
+            if rename_available:
+                invalid = app.request(
+                    "mcpServer/tool/call",
+                    {
+                        "threadId": thread,
+                        "server": "simple-lsp",
+                        "tool": "preview_rename",
+                        "arguments": {"path": "internal/mcpserver/server.go", "symbol_path": "NewWithOptions"},
+                    },
+                )
+                if not invalid.get("isError"):
+                    raise AssertionError("rename without required new_name was not rejected")
+                invalid_text = json.dumps(invalid, ensure_ascii=False)
+                if "new_name" not in invalid_text or "error" not in invalid_text:
+                    raise AssertionError(f"invalid rename did not return an informative error: {invalid_text[:800]}")
 
             if args.tool_profile == "coding":
                 bad_diagnostics = app.request(
@@ -289,7 +294,7 @@ def main() -> int:
                         "outline_response_bytes": len(outline.encode("utf-8")),
                         "tool_profile": args.tool_profile,
                         "catalog_json_bytes": len(json.dumps(tools, ensure_ascii=False, separators=(",",":")).encode()),
-                        "invalid_rename_rejected": True,
+                        "invalid_rename_rejected": rename_available,
                         "unscoped_diagnostics_rejected": args.tool_profile == "coding",
                         "advertised_tool": "get_document_symbols",
                         "tool_title": title,

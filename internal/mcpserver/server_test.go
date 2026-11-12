@@ -522,3 +522,41 @@ func TestFileOnlyReferencesSchemaDoesNotAffectOtherRelations(t *testing.T) {
 		}
 	}
 }
+
+func TestAnalysisProfileContainsOnlyTenReadOnlySemanticTools(t *testing.T) {
+	analysis := definitionsForProfile("analysis")
+	coding := definitionsForProfile("coding")
+	if len(analysis) != 10 || len(coding) != 14 {
+		t.Fatalf("unexpected catalog sizes: analysis=%d coding=%d", len(analysis), len(coding))
+	}
+	inCoding := make(map[string]bool, len(coding))
+	for _, d := range coding {
+		inCoding[d.name] = true
+	}
+	seen := make(map[string]bool)
+	for _, d := range analysis {
+		if seen[d.name] || !inCoding[d.name] {
+			t.Fatalf("analysis contains a duplicated or non-coding tool: %s", d.name)
+		}
+		seen[d.name] = true
+		if !toolAnnotations(d.name).ReadOnlyHint {
+			t.Fatalf("analysis must only provide read-only tools: %s", d.name)
+		}
+		if d.schema == nil || d.call == nil {
+			t.Fatalf("analysis tool missing contract: %s", d.name)
+		}
+	}
+	for _, needed := range []string{"find_references", "find_implementations",
+		"get_incoming_calls", "get_outgoing_calls", "get_document_symbols",
+		"inspect_symbol"} {
+		if !seen[needed] {
+			t.Fatalf("analysis lacks essential semantic tool: %s", needed)
+		}
+	}
+	for _, forbidden := range []string{"rename_symbol", "format_document",
+		"apply_code_action", "get_diagnostics"} {
+		if seen[forbidden] {
+			t.Fatalf("analysis exposes mutation or unrelated diagnostics: %s", forbidden)
+		}
+	}
+}
