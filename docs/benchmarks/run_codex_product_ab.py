@@ -94,15 +94,29 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
     " use ordinary tools. There is no LSP call quota.\n"
 )
 
+OUTGOING_CALLS_AGENTS = COMMON_AGENTS + (
+    "\nWhen a task asks for all exact direct callees of a known Go method,"
+    " get_outgoing_calls(path,symbol_path) provides semantic call hierarchy"
+    " if simple-lsp is connected. Go pointer-method names look like"
+    " /(*Engine).Relationship, NOT /Engine/Relationship; unknown names"
+    " require get_document_symbols(path) first. Reuse a complete hierarchy"
+    " response to produce unique callee names and declaration paths; do"
+    " not re-inspect the whole source if the relation is already complete."
+    " Without LSP use normal source-level tracing and Go syntax."
+    " No mandatory tool calls or quotas.\n"
+)
+
 CALL_HIERARCHY_AGENTS = COMMON_AGENTS + (
-    "\nWhen a task explicitly asks for the exact direct calling functions of"
-    " a named Go method, call simple-lsp get_incoming_calls(path,symbol_path)"
-    " if connected. Go's gopls uses names like (*Store).SyncBytes, not"
-    " /Store/SyncBytes; for an unknown exact method name first use"
-    " get_document_symbols(path) and its returned symbol_id. Verify the"
-    " complete flag and report caller names/paths without rereading"
-    " source already covered. With no LSP, use precise code search and"
-    " method receiver reasoning. Never call tools to meet quotas.\n"
+    "\nFor a direct Go call-graph question, distinguish direction:"
+    " get_incoming_calls(path,symbol_path) finds callers; get_outgoing_calls"
+    " finds callees. Use the appropriate LSP hierarchy tool when connected"
+    " and semantic receiver identity matters. gopls uses names like"
+    " (*Store).SyncBytes, not /Store/SyncBytes. If unsure of a symbol path,"
+    " first use get_document_symbols(path) and reuse its exact symbol_id."
+    " Check meta.complete before claiming exhaustive results; report unique"
+    " declaration paths and names, not call-site duplicates. Avoid extra"
+    " source reads when a complete hierarchy answer suffices. Without LSP,"
+    " use precise code search and receiver reasoning. No tool quotas.\n"
 )
 
 SEMANTIC_IMPLEMENTATIONS_AGENTS = COMMON_AGENTS + (
@@ -435,20 +449,21 @@ def grading(case:dict,work:Path,final:str)->dict:
    "T34":["cmd/simple-lsp-mcp/doctor.go","cmd/simple-lsp-mcp/main.go","tools.New"],
    "T44":["backend/benchdomain/orders.py","visible_orders","owner_invoice","!="],
   }
-  if "answer_exact_callers" in case:
+  if "answer_exact_callers" in case or "answer_exact_callees" in case:
+   relation_name="callers" if "answer_exact_callers" in case else "callees"
    try:
     parsed=json.loads(final.strip())
-    actual=parsed["callers"] if isinstance(parsed,dict) else []
+    actual=parsed[relation_name] if isinstance(parsed,dict) else []
     if not isinstance(actual,list) or any(not isinstance(item,dict) or set(item)!={"path","name"}
                                           or any(not isinstance(v,str) for v in item.values()) for item in actual):
      actual=[]
    except (ValueError,KeyError,TypeError):
     actual=[]
-   expected={(item["path"],item["name"]) for item in case["answer_exact_callers"]}
+   expected={(item["path"],item["name"]) for item in case["answer_exact_"+relation_name]}
    actual_pairs=[(item["path"],item["name"]) for item in actual]
    actual_set=set(actual_pairs)
    checks.append({
-    "name":"exact_semantic_incoming_callers",
+    "name":"exact_semantic_"+relation_name,
     "ok":len(actual_pairs)==len(actual_set) and actual_set==expected,
     "expected_count":len(expected),"actual_count":len(actual_pairs),
     "missing":sorted(expected-actual_set),"unexpected":sorted(actual_set-expected)
@@ -559,7 +574,7 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
- parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions","semantic-implementations","call-hierarchy"), default="semantic-rename")
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions","semantic-implementations","call-hierarchy","outgoing-calls"), default="semantic-rename")
  parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
@@ -575,6 +590,7 @@ def main():
   else CODE_ACTIONS_AGENTS if args.policy == "code-actions"
   else SEMANTIC_IMPLEMENTATIONS_AGENTS if args.policy == "semantic-implementations"
   else CALL_HIERARCHY_AGENTS if args.policy == "call-hierarchy"
+  else OUTGOING_CALLS_AGENTS if args.policy == "outgoing-calls"
   else COMMON_AGENTS
  )
  if PROFILE not in ("full", "coding"):

@@ -1,6 +1,6 @@
 {
   "goal": 100,
-  "counted_cycles": 5,
+  "counted_cycles": 6,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -432,6 +432,100 @@
         "limitation": "One matched after A/B pair, not a statistically significant general speed benefit. Noncached input tokens remained ~9.8% higher on MCP arm."
       },
       "evidence_note": "Direct gopls call-hierarchy oracle returned four named callers and complete=true; both after agent answers exactly match the held-out expected object list. Trace kept isolated.",
+      "counted": true
+    },
+    {
+      "cycle": 6,
+      "task": "S04-go-exhaustive-direct-outgoing-call-graph",
+      "language": "Go",
+      "before_run": "agent-effect-100-s04-before-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 26.307,
+        "noncached_input_tokens": 19680,
+        "total_input_tokens": 72672,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "cli_calls": 3
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 42.542,
+        "noncached_input_tokens": 21701,
+        "total_input_tokens": 232133,
+        "mcp_calls": 3,
+        "mcp_tools": [
+          [
+            "get_outgoing_calls",
+            "failed",
+            false
+          ],
+          [
+            "get_document_symbols",
+            "completed",
+            false
+          ],
+          [
+            "get_outgoing_calls",
+            "completed",
+            false
+          ]
+        ],
+        "mcp_response_bytes": 11317,
+        "cli_calls": 1
+      },
+      "found_problems": [
+        "For the 15 distinct outgoing callees of (*Engine).Relationship, the connected model guessed /Engine/Relationship and received a failed MCP call.",
+        "It then requested get_document_symbols(detail=full), returning 5500 bytes, and used the discovered symbol ID to get the 5691-byte outgoing relation. This extra lookup and retry made the connected agent 42.5s vs the baseline 26.3s and used 21701 vs 19680 noncached input tokens."
+      ],
+      "corrections": [
+        "Added an actual Go outgoing semantic call graph S04 task with an independent exact oracle containing 15 name/path pairs, holding oracle files outside both workspaces.",
+        "Updated the get_outgoing_calls tool discovery text to show direct Go pointer receiver method syntax /(*Engine).Relationship, and discourage incorrect /Engine/Relationship.",
+        "Added a conditional outbound call hierarchy policy, identical between arms, emphasizing one get_outgoing_calls request for a known method and no redundant source rereads; no mandatory LSP calls."
+      ],
+      "after_run": "agent-effect-100-s04-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 24.101,
+        "noncached_input_tokens": 8011,
+        "total_input_tokens": 65995,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "cli_calls": 2
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 16.038,
+        "noncached_input_tokens": 17153,
+        "total_input_tokens": 68481,
+        "mcp_calls": 1,
+        "mcp_tools": [
+          [
+            "get_outgoing_calls",
+            "completed",
+            false
+          ]
+        ],
+        "mcp_response_bytes": 5691,
+        "cli_calls": 0
+      },
+      "after_rerun_summary": {
+        "baseline_quality_pass": true,
+        "mcp_quality_pass": true,
+        "baseline_seconds": 24.101,
+        "mcp_seconds": 16.038,
+        "mcp_time_change_percent": -33.46,
+        "mcp_noncached_token_change_percent": 114.12,
+        "mcp_actual_calls": 1,
+        "only_tool": "get_outgoing_calls",
+        "symbol_path_used": "(*Engine).Relationship",
+        "failed_mcp_calls_before": 1,
+        "failed_mcp_calls_after": 0,
+        "note": "One-pair observed result: speed improved ~33.5%, noncached tokens increased ~114%, and both answered all 15 exact name/path pairs. Not a universal statistically significant result."
+      },
+      "evidence_note": "Before and after are independent A/B pairs. Direct prior gopls outgoingCalls returned complete=true and 15 distinct callees. Raw logs kept local.",
       "counted": true
     }
   ]

@@ -192,7 +192,7 @@ func definitions() []definition {
 		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
 		{"get_incoming_calls", "Exact direct callers. For Go pointer methods use LSP name /(*Store).SyncBytes, NOT /Store/SyncBytes; unknown names should first be discovered via get_document_symbols(path) and its symbol_id.", targetSchema(), hierarchy("get_incoming_calls")},
-		{"get_outgoing_calls", "LSP: direct callees.", targetSchema(), hierarchy("get_outgoing_calls")},
+		{"get_outgoing_calls", "Exact directly called functions. For Go pointer methods use LSP name /(*Engine).Relationship, NOT /Engine/Relationship; for unknown names first discover get_document_symbols(path) and its symbol_id.", targetSchema(), hierarchy("get_outgoing_calls")},
 		{"get_supertypes", "LSP: direct supertypes.", targetSchema(), hierarchy("get_supertypes")},
 		{"get_subtypes", "LSP: direct subtypes.", targetSchema(), hierarchy("get_subtypes")},
 	}

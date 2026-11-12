@@ -6,6 +6,24 @@ reason about actual source ownership and cross-package relationships.
 """
 CASES = [
     {
+        "id":"S04","name":"go-exhaustive-direct-outgoing-call-graph",
+        "language":"go","seed":"go","read_only":True,
+        "prompt":(
+            "Perform an exact semantic call-graph audit for the existing "
+            "(*Engine).Relationship method declared in internal/tools/engine.go. "
+            "Identify every distinct directly called Go function or method, "
+            "including methods with receivers in other packages. Exclude the "
+            "Relationship function itself, builtin operations, and any named "
+            "identifier merely appearing in comments, strings or type names. "
+            "Do not edit files. Return ONLY a JSON object whose sole key "
+            "is callees and whose value is a sorted array of {path,name} "
+            "objects, where path is a workspace-relative file path that "
+            "declares the callee and name is its plain name without receiver. "
+            "No prose or Markdown fences."
+        ),
+        "answer_exact_callees":[{'path': 'internal/core/types.go', 'name': 'NewError'}, {'path': 'internal/lsp/session/session.go', 'name': 'Capabilities'}, {'path': 'internal/tools/engine.go', 'name': 'locationsAt'}, {'path': 'internal/tools/helpers.go', 'name': 'capable'}, {'path': 'internal/tools/helpers.go', 'name': 'limit'}, {'path': 'internal/tools/helpers.go', 'name': 'target'}, {'path': 'internal/tools/helpers.go', 'name': 'unsupported'}, {'path': 'internal/tools/input.go', 'name': 'boolValDefault'}, {'path': 'internal/tools/input.go', 'name': 'stringVal'}, {'path': 'internal/tools/reference_filter.go', 'name': 'excludeTestReferenceLocations'}, {'path': 'internal/tools/relation_preview.go', 'name': 'populateLocationPreviews'}, {'path': 'internal/tools/warm.go', 'name': 'primeProjectSemantics'}, {'path': 'internal/tools/warm.go', 'name': 'projectAlreadyWarmed'}, {'path': 'internal/tools/warm.go', 'name': 'warmNameForPosition'}, {'path': 'internal/tools/warm.go', 'name': 'warmProjectSymbolCandidates'}]
+    },
+    {
         "id":"S03","name":"go-exhaustive-call-hierarchy",
         "language":"go","seed":"go","read_only":True,
         "prompt":(
@@ -69,7 +87,9 @@ def validate() -> None:
     assert len({case["id"] for case in CASES})==len(CASES)
     for case in CASES:
         assert case["read_only"] and case["seed"] in {"go","ts","py"}
-        if "answer_exact_callers" in case:
+        if "answer_exact_callees" in case:
+            assert len(case["answer_exact_callees"])>1
+        elif "answer_exact_callers" in case:
             assert len(case["answer_exact_callers"])>1
         elif "answer_exact_files" in case:
             assert len(case["answer_exact_files"])>1
