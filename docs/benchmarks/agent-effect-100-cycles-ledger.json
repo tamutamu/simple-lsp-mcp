@@ -1,6 +1,6 @@
 {
   "goal": 100,
-  "counted_cycles": 1,
+  "counted_cycles": 2,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -91,6 +91,85 @@
         "note": "Separate stochastic A/B pairs. Tool-preview size difference is directly observed; time or token differences between runs are not causal proof of the repair."
       },
       "evidence_note": "Raw traces, results and corrected-grade JSON remain in isolated .scratch directories, not published because paths and assistant logs can contain sensitive context.",
+      "counted": true
+    },
+    {
+      "cycle": 2,
+      "task": "T45-ts-missing-import-code-action",
+      "language": "TypeScript",
+      "before_run": "agent-effect-100-t45-before-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 49.766,
+        "noncached_input_tokens": 8411,
+        "total_input_tokens": 165851,
+        "mcp_calls": 0,
+        "mcp_tools": []
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 45.739,
+        "noncached_input_tokens": 16088,
+        "total_input_tokens": 156120,
+        "mcp_calls": 0,
+        "mcp_tools": []
+      },
+      "found_problems": [
+        "Codex connected to full 22 tools but performed a trivial missing import manually; no model-initiated LSP usage in the first A/B pair.",
+        "Independent reproduction against typescript-language-server found get_code_actions intermittently fails with internal error Cannot read properties of null (reading filter). Root cause: Go nil slice serialized mandatory LSP CodeActionContext.diagnostics as JSON null, not an array.",
+        "The suggested TypeScript Update import action includes both an edit and a command; apply_code_action intentionally refuses partial application for safety."
+      ],
+      "corrections": [
+        "Normalize required CodeActionContext.diagnostics to an empty JSON array when diagnostics have not yet been published; add a regression checking serialized JSON arrays.",
+        "Document a task-conditional code-actions policy equally for both A/B arms: consult LSP diagnostics and code-action suggestions when connected, but fall back to manual edit when execution of an LSP command would be required. Never force an LSP quota."
+      ],
+      "direct_reproduction": {
+        "before": "get_code_actions at the missing InvoiceSummary reference returned LSP INTERNAL_ERROR due to null diagnostics.",
+        "after": "the same get_code_actions returned three suggestions, including a preferred Update import action, with valid diagnostics and no error."
+      },
+      "after_run": "agent-effect-100-t45-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 64.524,
+        "noncached_input_tokens": 14471,
+        "total_input_tokens": 157447,
+        "mcp_calls": 0,
+        "mcp_tools": []
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 52.068,
+        "noncached_input_tokens": 21654,
+        "total_input_tokens": 267286,
+        "mcp_calls": 2,
+        "mcp_tools": [
+          [
+            "get_diagnostics",
+            "completed",
+            false
+          ],
+          [
+            "get_code_actions",
+            "completed",
+            false
+          ]
+        ]
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 64.524,
+        "mcp_seconds": 52.068,
+        "mcp_time_change_percent": -19.3,
+        "model_initiated_lsp_calls": 2,
+        "model_lsp_call_sequence": [
+          "get_diagnostics",
+          "get_code_actions"
+        ],
+        "mcp_noncached_token_change_percent": 49.64,
+        "note": "One stochastic pair, not a causal claim. The tool suggestions were informational; a manual import edit was still necessary because the action also required a command."
+      },
+      "evidence_note": "Detailed Codex events and direct TS tool responses are in local isolated .scratch logs. No model-completion API-only exercises counted.",
       "counted": true
     }
   ]

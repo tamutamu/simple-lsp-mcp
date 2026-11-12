@@ -84,6 +84,18 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
     " use ordinary tools. There is no LSP call quota.\n"
 )
 
+CODE_ACTIONS_AGENTS = COMMON_AGENTS + (
+    "\nWhen a TypeScript missing-import problem has been localized, inspect the"
+    " relevant source and if simple-lsp is connected use get_diagnostics(path)"
+    " to identify the unresolved name before get_code_actions(path,line,column)."
+    " It may suggest a semantic import edit. Never apply actions that require"
+    " executing an LSP command: apply_code_action intentionally refuses"
+    " command-backed partial edits. If a safe full WorkspaceEdit is unavailable,"
+    " repair the import normally and run tsc/tests. If no connector exists,"
+    " diagnose and edit with ordinary code tools. Do not call LSP for a"
+    " problem already solved or to satisfy a tool-use quota.\n"
+)
+
 ENV=os.environ.copy()
 if CODEX_HOME is not None:
  ENV["CODEX_HOME"]=str(CODEX_HOME)
@@ -476,7 +488,7 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
- parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references"), default="semantic-rename")
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions"), default="semantic-rename")
  parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
@@ -489,6 +501,7 @@ def main():
  COMMON_AGENTS = (
   TYPE_DIAGNOSTICS_AGENTS if args.policy == "type-diagnostics"
   else SEMANTIC_REFERENCES_AGENTS if args.policy == "semantic-references"
+  else CODE_ACTIONS_AGENTS if args.policy == "code-actions"
   else COMMON_AGENTS
  )
  if PROFILE not in ("full", "coding"):

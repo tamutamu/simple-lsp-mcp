@@ -2,8 +2,35 @@ package tools
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/tamutamu/simple-lsp-mcp/internal/lsp/protocol"
 )
+
+func TestCodeActionContextAlwaysSerializesDiagnosticsAsArray(t *testing.T) {
+	for _, payload := range []struct {
+		name  string
+		input []protocol.Diagnostic
+		want  string
+	}{
+		{"no diagnostics", nil, `{"diagnostics":[]}`},
+		{"one diagnostic", []protocol.Diagnostic{{Message: "missing import"}}, `{"diagnostics":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"message":"missing import"}]}`},
+	} {
+		t.Run(payload.name, func(t *testing.T) {
+			encoded, err := json.Marshal(codeActionContext(payload.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if payload.name == "no diagnostics" && string(encoded) != payload.want {
+				t.Fatalf("missing required empty array: %s", encoded)
+			}
+			if payload.name != "no diagnostics" && !strings.Contains(string(encoded), `"diagnostics":[`) {
+				t.Fatalf("diagnostic list serialized incorrectly: %s", encoded)
+			}
+		})
+	}
+}
 
 func TestCodeActionIDIsStableAcrossJSONKeyOrder(t *testing.T) {
 	a := json.RawMessage(`{"title":"Fix","kind":"quickfix","data":{"b":2,"a":1}}`)

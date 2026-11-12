@@ -89,7 +89,7 @@ func (e *Engine) codeActions(ctx context.Context, in map[string]any) (codeAction
 			diagnostics = s.Diagnostics(d.URI)
 		}
 	}
-	contextValue := map[string]any{"diagnostics": diagnostics}
+	contextValue := codeActionContext(diagnostics)
 	var only []string
 	switch kinds := in["code_action_kinds"].(type) {
 	case []any:
@@ -120,6 +120,16 @@ func (e *Engine) codeActions(ctx context.Context, in map[string]any) (codeAction
 		return codeActionRequestResult{}, err
 	}
 	return codeActionRequestResult{Profile: p, Session: s, Document: d, Actions: actions}, nil
+}
+
+// CodeActionContext.diagnostics is required by the LSP protocol to be an
+// array. A Go nil slice serializes to JSON null; tsserver raises a server
+// exception when its quickfix handler calls .filter on null.
+func codeActionContext(diagnostics []protocol.Diagnostic) map[string]any {
+	if diagnostics == nil {
+		diagnostics = []protocol.Diagnostic{}
+	}
+	return map[string]any{"diagnostics": diagnostics}
 }
 
 // GetCodeActions lists LSP code actions without executing commands or writing.
