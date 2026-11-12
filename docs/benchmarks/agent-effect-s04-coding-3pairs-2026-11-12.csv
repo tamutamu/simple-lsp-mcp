@@ -1,0 +1,7 @@
+repetition,arm,grade_pass,work_seconds,input_tokens,cached_input_tokens,noncached_input_tokens,output_tokens,mcp_calls,mcp_method,mcp_view,mcp_response_bytes,input_proxy_cache_10pct
+1,baseline,True,21.979,68943,59648,9295,912,0,,,0,15259.8
+1,mcp,True,12.779,61916,48896,13020,414,1,get_outgoing_calls,name_path,986,17909.6
+2,baseline,True,31.689,90223,79488,10735,1266,0,,,0,18683.8
+2,mcp,True,13.486,61993,42240,19753,498,1,get_outgoing_calls,name_path,986,23977.0
+3,baseline,True,22.822,69035,59648,9387,831,0,,,0,15351.8
+3,mcp,True,12.18,61306,48640,12666,452,1,get_outgoing_calls,name_path,986,17530.0

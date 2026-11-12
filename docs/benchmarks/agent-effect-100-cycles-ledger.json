@@ -620,5 +620,21 @@
       "evidence_note": "Raw traces preserved in isolated .scratch; independently inspected by docs/benchmarks/audit_agent_effect_cycles.py.",
       "counted": true
     }
+  ],
+  "uncounted_evaluations": [
+    {
+      "task": "S04-hierarchy-tool-profile-sensitivity",
+      "full_profile_run": "agent-effect-100-s04-compact-three-reps-20261112",
+      "coding_profile_run": "agent-effect-100-s04-coding-profile-three-reps-20261112",
+      "complete_matched_pairs_per_profile": 3,
+      "raw_agent_trials": 12,
+      "all_grade_pass": true,
+      "actual_lsp_calls_per_connected_trial": 1,
+      "time_change_vs_baseline_pct_full": -45.46,
+      "time_change_vs_baseline_pct_coding": -49.74,
+      "illustrative_input_proxy_at_cached_weight_0_1_pct_full": 35.2,
+      "illustrative_input_proxy_at_cached_weight_0_1_pct_coding": 20.53,
+      "why_not_counted": "Not a distinct corrected and revalidated causal agent-effect cycle; it checks a configuration hypothesis across separate snapshots. No proven monetary savings."
+    }
   ]
 }
