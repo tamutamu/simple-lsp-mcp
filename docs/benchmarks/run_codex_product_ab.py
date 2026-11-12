@@ -28,6 +28,11 @@ catalog=importlib.util.module_from_spec(spec)
 sys.modules[spec.name]=catalog
 spec.loader.exec_module(catalog)
 catalog.validate()
+SEMANTIC_CATALOG = Path(__file__).resolve().parent / "codex_semantic_ab_cases.py"
+extra_spec = importlib.util.spec_from_file_location("semantic_cases", SEMANTIC_CATALOG)
+semantic_catalog = importlib.util.module_from_spec(extra_spec)
+extra_spec.loader.exec_module(semantic_catalog)
+semantic_catalog.validate()
 
 NODE=os.environ.get("PRODUCT_AB_NODE") or shutil.which("node") or ""
 CODEX=os.environ.get("PRODUCT_AB_CODEX") or shutil.which("codex") or ""
@@ -82,6 +87,19 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
     " for exhaustive results: it caps each relation at 20. Reuse complete"
     " results instead of rereading unchanged source. With no LSP,"
     " use ordinary tools. There is no LSP call quota.\n"
+)
+
+SEMANTIC_IMPLEMENTATIONS_AGENTS = COMMON_AGENTS + (
+    "\nWhen the task asks for ALL concrete implementations of a Go interface,"
+    " exact structural type identity matters: simple source matching can"
+    " mistake a similarly named method for an implementation, or miss"
+    " distinct pointer/value receiver method sets. If simple-lsp is"
+    " connected, consider find_implementations(path=...,symbol_path=...)"
+    " on the exact interface declaration and verify the returned paths and"
+    " type names. Check whether result meta.complete is true; do not claim"
+    " complete coverage from a partial result. Without LSP use Go method"
+    " sets and code inspection. No tool-use quota: use LSP only if it"
+    " supplies needed semantic information.\n"
 )
 
 CODE_ACTIONS_AGENTS = COMMON_AGENTS + (
@@ -401,7 +419,9 @@ def grading(case:dict,work:Path,final:str)->dict:
    "T34":["cmd/simple-lsp-mcp/doctor.go","cmd/simple-lsp-mcp/main.go","tools.New"],
    "T44":["backend/benchdomain/orders.py","visible_orders","owner_invoice","!="],
   }
-  needles=conditions[case["id"]]
+  needles=case.get("answer_must_include", conditions.get(case["id"], []))
+  if not needles:
+   raise ValueError(f"no independent answer oracle for {case['id']}")
   checks.append({"name":"answer_evidence","ok":all(x.lower() in final.lower() for x in needles),
     "missing":[x for x in needles if x.lower() not in final.lower()]})
  else:
@@ -488,7 +508,7 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
- parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions"), default="semantic-rename")
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions","semantic-implementations"), default="semantic-rename")
  parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
@@ -502,6 +522,7 @@ def main():
   TYPE_DIAGNOSTICS_AGENTS if args.policy == "type-diagnostics"
   else SEMANTIC_REFERENCES_AGENTS if args.policy == "semantic-references"
   else CODE_ACTIONS_AGENTS if args.policy == "code-actions"
+  else SEMANTIC_IMPLEMENTATIONS_AGENTS if args.policy == "semantic-implementations"
   else COMMON_AGENTS
  )
  if PROFILE not in ("full", "coding"):
@@ -510,7 +531,7 @@ def main():
  cache_policy=args.cache_policy
  args=argparse.Namespace(cases=args.cases,repetitions=args.repetitions,timeout=args.timeout)
  case_ids={x["id"] for x in catalog.CASES} if args.cases=="all" else set(args.cases.split(","))
- cases=[x for x in catalog.CASES if x["id"] in case_ids]
+ cases=[x for x in catalog.CASES+semantic_catalog.CASES if x["id"] in case_ids]
  assert len(cases)==len(case_ids),(case_ids,{x["id"] for x in cases})
  BASE.mkdir(parents=True,exist_ok=True)
  (BASE/"cache-go").mkdir(exist_ok=True)

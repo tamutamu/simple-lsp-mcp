@@ -1,6 +1,6 @@
 {
   "goal": 100,
-  "counted_cycles": 2,
+  "counted_cycles": 3,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -170,6 +170,83 @@
         "note": "One stochastic pair, not a causal claim. The tool suggestions were informational; a manual import edit was still necessary because the action also required a command."
       },
       "evidence_note": "Detailed Codex events and direct TS tool responses are in local isolated .scratch logs. No model-completion API-only exercises counted.",
+      "counted": true
+    },
+    {
+      "cycle": 3,
+      "task": "S01-go-interface-implementation-audit",
+      "language": "Go",
+      "before_run": "agent-effect-100-s01-before-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 32.981,
+        "noncached_input_tokens": 11482,
+        "total_input_tokens": 77658,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "cli_calls": 3
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 87.383,
+        "noncached_input_tokens": 13523,
+        "total_input_tokens": 96467,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "cli_calls": 4
+      },
+      "found_problems": [
+        "Even a task requiring complete structural Go interface implementation analysis used zero MCP calls with the generic agent policy. The connected arm spent 87.4s versus 33.0s for Codex-only despite equal quality. It relied on four textual shell commands.",
+        "The default agent instructions did not explain when find_implementations is materially more precise than matching similarly named methods. Direct gopls verification identified all three structural implementers of document.Notifier, including the test double."
+      ],
+      "corrections": [
+        "Added independent, checkable semantic implementation task S01 requiring the three actual implementing types and exact source paths, with independent answer evidence in the A/B evaluator.",
+        "Added a semantic-implementations conditional agent policy to both A/B arms: when interface conformance matters and LSP is connected, consider find_implementations and verify completeness; without LSP, use ordinary source reasoning. No tool-use quotas or mandatory calls."
+      ],
+      "after_run": "agent-effect-100-s01-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 46.96,
+        "noncached_input_tokens": 20384,
+        "total_input_tokens": 153120,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "cli_calls": 4
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 42.425,
+        "noncached_input_tokens": 15591,
+        "total_input_tokens": 145127,
+        "mcp_calls": 1,
+        "mcp_tools": [
+          [
+            "find_implementations",
+            "completed",
+            false
+          ]
+        ],
+        "cli_calls": 3
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 46.96,
+        "mcp_seconds": 42.425,
+        "mcp_time_change_percent": -9.66,
+        "mcp_noncached_token_change_percent": -23.51,
+        "mcp_calls": 1,
+        "tool": "find_implementations",
+        "model_tool_arguments": {
+          "path": "internal/document/store.go",
+          "symbol_path": "/Notifier",
+          "relation_view": "lines",
+          "limit": 200
+        },
+        "mcp_response_bytes": 288,
+        "note": "This is one matched after pair, not proof of a population-wide advantage. Before and after were separate randomized model runs; never attribute the time difference between runs causally to prompt revision."
+      },
+      "evidence_note": "Codex turn traces and independently graded JSON files are held in local isolated .scratch directories.",
       "counted": true
     }
   ]
