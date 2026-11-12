@@ -1,5 +1,5 @@
 {
-  "source": "Codex app-server MCP catalog after runtime argument validation, 2026-11-12",
+  "source": "Codex app-server MCP catalog after strict input validation plus compact hierarchy view, 2026-11-12",
   "server": {
     "name": "simple-lsp-mcp",
     "title": "Simple LSP semantic code navigation",
@@ -193,7 +193,7 @@
     "find_references": {
       "name": "find_references",
       "title": "Find references",
-      "description": "Exact LSP references to a declaration. relation_view=lines includes source text; exclude_test_files=true narrows to non-test files (opt-in), retaining the excluded count and filter scope. For production-only callers prefer no declaration, no test files.",
+      "description": "Exact LSP references. If path and symbol_path are known, call directly, without preview_rename or inspect_symbol. Use relation_view=locations for path-only impact; lines adds source text. exclude_test_files=true opts out of test hits, reporting excluded_count.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -203,7 +203,7 @@
             "type": "integer"
           },
           "exclude_test_files": {
-            "description": "Opt-in: omit _test.go, test_*.py, *.test.ts/js and other known test paths from exact LSP references. Results report excluded_count; default false.",
+            "description": "Omit test files from references; reports excluded_count. Default false.",
             "type": "boolean"
           },
           "include_declaration": {
@@ -715,7 +715,7 @@
     "get_incoming_calls": {
       "name": "get_incoming_calls",
       "title": "Get incoming calls",
-      "description": "LSP: direct callers.",
+      "description": "Direct callers. Go pointer-method path: /(*Store).SyncBytes. name_path gives file/name only; default full gives ranges.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -723,6 +723,14 @@
             "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
+          },
+          "hierarchy_view": {
+            "description": "name_path: compact exact name and file; full (default): ranges and handles.",
+            "enum": [
+              "full",
+              "name_path"
+            ],
+            "type": "string"
           },
           "language": {
             "description": "Language; inferred from path when possible.",
@@ -774,7 +782,7 @@
     "get_outgoing_calls": {
       "name": "get_outgoing_calls",
       "title": "Get outgoing calls",
-      "description": "LSP: direct callees.",
+      "description": "Direct callees. Go pointer-method path: /(*Engine).Relationship. name_path gives file/name only; default full gives ranges.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -782,6 +790,14 @@
             "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
+          },
+          "hierarchy_view": {
+            "description": "name_path: compact exact name and file; full (default): ranges and handles.",
+            "enum": [
+              "full",
+              "name_path"
+            ],
+            "type": "string"
           },
           "language": {
             "description": "Language; inferred from path when possible.",
@@ -1056,7 +1072,7 @@
             "type": "string"
           },
           "related": {
-            "description": "Bounded context (max 20 per kind); full refs: find_references.",
+            "description": "Max 20 per kind. For all refs: find_references.",
             "items": {
               "enum": [
                 "references",
@@ -1076,7 +1092,7 @@
             "uniqueItems": true
           },
           "relation_limit": {
-            "description": "Per-relation cap 1–20, default 8; for exhaustive usages use find_references.",
+            "description": "Relation cap 1–20, default 8.",
             "maximum": 20,
             "minimum": 1,
             "type": "integer"
@@ -1310,7 +1326,7 @@
     "preview_rename": {
       "name": "preview_rename",
       "title": "Preview rename",
-      "description": "READ ONLY: preview semantic rename. Default summary lists all affected files and edit counts; preview_detail=full is only needed for exact edit review. Apply separately with rename_symbol.",
+      "description": "READ ONLY: rename summary gives every changed file/count. full gives exact edits. Apply separately with rename_symbol.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

@@ -120,6 +120,23 @@ func main() { tools.NewEngine(nil, nil) }
             (left / "sub" / "shortcut").unlink()
             self.assertEqual(h, RUNNER.snapshot_sha256(left))
 
+    def test_agent_metrics_keep_total_cached_noncached_and_usage_updates(self):
+        events=[
+            {"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{
+                "inputTokens":100,"cachedInputTokens":40,"outputTokens":8}}}},
+            {"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{
+                "inputTokens":240,"cachedInputTokens":160,"outputTokens":16}}}},
+        ]
+        row=RUNNER.event_metrics(events)
+        self.assertEqual(row["input_tokens"],240)
+        self.assertEqual(row["cached_input_tokens"],160)
+        self.assertEqual(row["noncached_input_tokens"],80)
+        self.assertEqual(row["output_tokens"],16)
+        self.assertEqual(row["model_usage_updates"],2)
+        with self.assertRaisesRegex(ValueError,"invalid model input token"):
+            RUNNER.event_metrics([{"method":"thread/tokenUsage/updated","params":{
+                "tokenUsage":{"total":{"inputTokens":10,"cachedInputTokens":11}}}}])
+
     def test_quota_error_stops_future_trials_without_fabricating_failure(self):
         import json
         with tempfile.TemporaryDirectory(prefix="ab-quota-") as tmp:

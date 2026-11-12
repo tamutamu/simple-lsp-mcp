@@ -474,3 +474,30 @@ func TestTextOnlyResultAvoidsDuplicateStructuredPayload(t *testing.T) {
 		t.Fatal("text-only must retain tool error status")
 	}
 }
+
+func TestCompactCallHierarchyAdvertisesOnlyExplicitOptIn(t *testing.T) {
+	for _, profile := range []string{"full", "coding"} {
+		for _, d := range definitionsForProfile(profile) {
+			properties := d.schema["properties"].(map[string]any)
+			_, hasView := properties["hierarchy_view"]
+			switch d.name {
+			case "get_incoming_calls", "get_outgoing_calls":
+				if !hasView {
+					t.Fatalf("%s/%s missing opt-in hierarchy view", profile, d.name)
+				}
+				good := map[string]any{"hierarchy_view": "name_path"}
+				if err := validateToolArguments(d.schema, good); err != nil {
+					t.Fatalf("%s/%s rejects name_path: %v", profile, d.name, err)
+				}
+				bad := map[string]any{"hierarchy_view": "unsupported"}
+				if err := validateToolArguments(d.schema, bad); err == nil {
+					t.Fatalf("%s/%s accepts an unknown hierarchy view", profile, d.name)
+				}
+			default:
+				if hasView {
+					t.Fatalf("%s/%s accepts irrelevant hierarchy view", profile, d.name)
+				}
+			}
+		}
+	}
+}

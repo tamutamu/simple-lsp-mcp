@@ -96,8 +96,9 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
 
 OUTGOING_CALLS_AGENTS = COMMON_AGENTS + (
     "\nWhen a task asks for all exact direct callees of a known Go method,"
-    " get_outgoing_calls(path,symbol_path) provides semantic call hierarchy"
-    " if simple-lsp is connected. Go pointer-method names look like"
+    " get_outgoing_calls(path,symbol_path,hierarchy_view=name_path) returns"
+    " exact name/path pairs without redundant edit ranges when simple-lsp"
+    " is connected. Go pointer-method names look like"
     " /(*Engine).Relationship, NOT /Engine/Relationship; unknown names"
     " require get_document_symbols(path) first. Reuse a complete hierarchy"
     " response to produce unique callee names and declaration paths; do"
@@ -260,6 +261,7 @@ def read_events(trace:Path)->list[dict]:
 
 def event_metrics(events:list[dict])->dict:
  token={}
+ usage_updates=0
  call=[]
  cmd=[]
  final=""
@@ -267,6 +269,7 @@ def event_metrics(events:list[dict])->dict:
   method=event.get("method")
   if method=="thread/tokenUsage/updated":
    token=event.get("params",{}).get("tokenUsage",{}).get("total",{})
+   usage_updates+=1
   item=event.get("params",{}).get("item",{})
   if method=="item/completed" and item.get("type")=="mcpToolCall":
    content=(item.get("result") or {}).get("content") or []
@@ -278,7 +281,15 @@ def event_metrics(events:list[dict])->dict:
     "exit_code":item.get("exitCode")})
   if method=="item/completed" and item.get("type")=="agentMessage":
    final=str(item.get("text") or final)
- return {"tokens":token,"noncached_input_tokens":token.get("inputTokens",0)-token.get("cachedInputTokens",0),
+ total_input=token.get("inputTokens",0)
+ cached_input=token.get("cachedInputTokens",0)
+ if cached_input<0 or total_input<cached_input:
+  raise ValueError("invalid model input token/cache accounting")
+ return {"tokens":token,
+  "input_tokens":total_input,"cached_input_tokens":cached_input,
+  "noncached_input_tokens":total_input-cached_input,
+  "output_tokens":token.get("outputTokens",0),
+  "model_usage_updates":usage_updates,
   "mcp_calls":call,"cli_calls":cmd,"final_answer":final,
   "rg_calls":sum("rg " in x["command"] or "grep " in x["command"] for x in cmd),
   "read_calls":sum("sed " in x["command"] or "cat " in x["command"] or "head " in x["command"] for x in cmd)}
@@ -672,7 +683,9 @@ def main():
     (trial/(arm+"-results.json")).write_text(json.dumps(r,indent=2,ensure_ascii=False)+"\n")
     summaries.append({"id":case["id"],"rep":rep,"arm":arm,"passed":r["grade"]["pass"],
      "seconds":r.get("work_seconds"),"mcp_calls":len(r.get("mcp_calls",[])),
+     "total_input_tokens":r.get("input_tokens"),"cached_input_tokens":r.get("cached_input_tokens"),
      "noncached_input_tokens":r.get("noncached_input_tokens"),
+     "output_tokens":r.get("output_tokens"),"model_usage_updates":r.get("model_usage_updates"),
      "error":r.get("error")})
     (BASE/"summary.json").write_text(json.dumps(summaries,indent=2,ensure_ascii=False)+"\n")
     if trace_has_quota_error(trial/(arm+"-trace.jsonl")):

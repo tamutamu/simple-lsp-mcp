@@ -34,6 +34,21 @@ func (e *Engine) callHierarchy(ctx context.Context, name string, p language.Prof
 	if err != nil {
 		return nil, err
 	}
+	// A task that only needs the exact callee/caller names and declaration
+	// files does not need each LSP range, registration handle or from_ranges.
+	// Keep the complete legacy response by default. Compactness is opt-in so
+	// agents never silently lose detailed evidence needed for editing.
+	view := stringVal(in, "hierarchy_view")
+	if view != "" && view != "full" && view != "name_path" {
+		return nil, core.NewError(core.InvalidArgument, "hierarchy_view must be full or name_path")
+	}
+	compact := func(item protocol.CallHierarchyItem) map[string]any {
+		path, err := normalize.URIPath(e.WS, item.URI)
+		if err != nil {
+			return map[string]any{"name": item.Name, "path_unavailable": true}
+		}
+		return map[string]any{"name": item.Name, "path": path}
+	}
 	var out []any
 	if name == "get_incoming_calls" {
 		var xs []protocol.CallHierarchyIncomingCall
@@ -41,7 +56,11 @@ func (e *Engine) callHierarchy(ctx context.Context, name string, p language.Prof
 			return nil, err
 		}
 		for _, x := range xs {
-			out = append(out, e.callItem(p, s, x.From, x.FromRanges))
+			if view == "name_path" {
+				out = append(out, compact(x.From))
+			} else {
+				out = append(out, e.callItem(p, s, x.From, x.FromRanges))
+			}
 		}
 	} else {
 		var xs []protocol.CallHierarchyOutgoingCall
@@ -49,12 +68,23 @@ func (e *Engine) callHierarchy(ctx context.Context, name string, p language.Prof
 			return nil, err
 		}
 		for _, x := range xs {
-			out = append(out, e.callItem(p, s, x.To, x.FromRanges))
+			if view == "name_path" {
+				out = append(out, compact(x.To))
+			} else {
+				out = append(out, e.callItem(p, s, x.To, x.FromRanges))
+			}
 		}
 	}
 	tr := len(out) > limit
 	if tr {
 		out = out[:limit]
+	}
+	if view == "name_path" {
+		for _, item := range out {
+			if item.(map[string]any)["path_unavailable"] == true {
+				return nil, core.NewError(core.IncompleteSearch, "call hierarchy item has no workspace-relative declaration path")
+			}
+		}
 	}
 	return map[string]any{"calls": out, "meta": core.Meta{Complete: !tr, Truncated: tr}}, nil
 }

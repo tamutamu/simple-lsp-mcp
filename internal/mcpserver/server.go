@@ -145,7 +145,7 @@ func definitions() []definition {
 		{"rename_symbol", "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "apply"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.RenameSymbol(c, i)
 		}},
-		{"preview_rename", "READ ONLY: preview semantic rename. Omit preview_detail to get ALL affected file paths and counts plus samples. Request full only to inspect every edit, not to confirm file scope. Apply separately with rename_symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
+		{"preview_rename", "READ ONLY: rename summary gives every changed file/count. full gives exact edits. Apply separately with rename_symbol.", objSchema(props("symbol_id", "symbol_path", "path", "line", "column", "language", "new_name", "preview_detail"), "new_name"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
 			return e.PreviewRename(c, i)
 		}},
 		{"format_document", "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.", objSchema(props("path", "language", "line", "column", "end_line", "end_column", "tab_size", "insert_spaces", "trim_trailing_whitespace", "insert_final_newline", "trim_final_newlines", "apply"), "path"), func(c context.Context, e *tools.Engine, i map[string]any) (map[string]any, error) {
@@ -191,8 +191,8 @@ func definitions() []definition {
 		{"find_implementations", "LSP: implementation locations for a target.", objSchema(targetProps("relation_view")), relation("find_implementations", "textDocument/implementation", "implementation")},
 		{"get_type_definition", "LSP: type-definition locations for a target.", objSchema(targetProps("relation_view")), relation("get_type_definition", "textDocument/typeDefinition", "typeDefinition")},
 		{"get_declaration", "LSP: declaration locations for a target.", objSchema(targetProps("relation_view")), relation("get_declaration", "textDocument/declaration", "declaration")},
-		{"get_incoming_calls", "Exact direct callers. For Go pointer methods use LSP name /(*Store).SyncBytes, NOT /Store/SyncBytes; unknown names should first be discovered via get_document_symbols(path) and its symbol_id.", targetSchema(), hierarchy("get_incoming_calls")},
-		{"get_outgoing_calls", "Exact directly called functions. For Go pointer methods use LSP name /(*Engine).Relationship, NOT /Engine/Relationship; for unknown names first discover get_document_symbols(path) and its symbol_id.", targetSchema(), hierarchy("get_outgoing_calls")},
+		{"get_incoming_calls", "Direct callers. Go pointer-method path: /(*Store).SyncBytes. name_path gives file/name only; default full gives ranges.", objSchema(targetProps("hierarchy_view")), hierarchy("get_incoming_calls")},
+		{"get_outgoing_calls", "Direct callees. Go pointer-method path: /(*Engine).Relationship. name_path gives file/name only; default full gives ranges.", objSchema(targetProps("hierarchy_view")), hierarchy("get_outgoing_calls")},
 		{"get_supertypes", "LSP: direct supertypes.", targetSchema(), hierarchy("get_supertypes")},
 		{"get_subtypes", "LSP: direct subtypes.", targetSchema(), hierarchy("get_subtypes")},
 	}
@@ -240,13 +240,14 @@ func allProperties() map[string]any {
 		"kinds":               describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":          describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
-		"exclude_test_files":  describe(map[string]any{"type": "boolean"}, "Opt-in: omit _test.go, test_*.py, *.test.ts/js and other known test paths from exact LSP references. Results report excluded_count; default false."),
+		"exclude_test_files":  describe(map[string]any{"type": "boolean"}, "Omit test files from references; reports excluded_count. Default false."),
 		"detail":              describe(enumStringSchema("compact", "outline", "full"), "compact (default), outline or full LSP details."),
 		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
 		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
+		"hierarchy_view":      describe(enumStringSchema("full", "name_path"), "name_path: compact exact name and file; full (default): ranges and handles."),
 		"max_lines":           describe(positiveIntegerSchema(), "Source lines, default 120, max 500."),
-		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Bounded context (max 20 per kind); full refs: find_references."),
-		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Per-relation cap 1–20, default 8; for exhaustive usages use find_references."),
+		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Max 20 per kind. For all refs: find_references."),
+		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Relation cap 1–20, default 8."),
 		"targets": describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 8,
 			"items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 				"path": stringSchema(), "symbol_id": stringSchema(),

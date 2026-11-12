@@ -1,7 +1,7 @@
 {
   "goal": 100,
-  "counted_cycles": 6,
-  "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
+  "counted_cycles": 7,
+  "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count. Each accepted cycle must pass docs/benchmarks/audit_agent_effect_cycles.py against original Codex trace and graded results, including token/cache accounting, all 4 A/B trials, same model and seed per pair, successful model-initiated LSP use after correction, and full grade checks. Savings must not be claimed on cached-token cumulative counts alone.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
     "no_ci_changes": true,
@@ -526,6 +526,98 @@
         "note": "One-pair observed result: speed improved ~33.5%, noncached tokens increased ~114%, and both answered all 15 exact name/path pairs. Not a universal statistically significant result."
       },
       "evidence_note": "Before and after are independent A/B pairs. Direct prior gopls outgoingCalls returned complete=true and 15 distinct callees. Raw logs kept local.",
+      "counted": true
+    },
+    {
+      "cycle": 7,
+      "task": "S04-go-exhaustive-direct-outgoing-call-graph-name-path",
+      "language": "Go",
+      "before_run": "agent-effect-100-s04-after-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 24.101,
+        "noncached_input_tokens": 8011,
+        "cached_input_tokens": 57984,
+        "total_input_tokens": 65995,
+        "output_tokens": 894,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "shell_calls": 2
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 16.038,
+        "noncached_input_tokens": 17153,
+        "cached_input_tokens": 51328,
+        "total_input_tokens": 68481,
+        "output_tokens": 426,
+        "model_lsp_calls": 1,
+        "mcp_tools": [
+          "get_outgoing_calls"
+        ],
+        "mcp_response_bytes": 5691,
+        "shell_calls": 0
+      },
+      "found_problems": [
+        "Call hierarchy tools returned full LSP range and identity objects (5691 bytes for 15 callees) even when the task requested only exact callee names and file paths; this wastes context on irrelevant details.",
+        "Previous reports equated similar total-token counts with similar monetary cost. The cached/noncached split has different cost weights and model-call counts, so total input alone is not a reliable cost proxy."
+      ],
+      "corrections": [
+        "Added optional hierarchy_view=name_path to incoming/outgoing calls; preserve full result by default, retain completeness/truncation metadata and reject entries whose declaration path cannot be established.",
+        "Changed the task-conditional same-to-both-arms agent instruction to prefer hierarchy_view=name_path for name/file-only call-graph queries. No forced MCP calls.",
+        "Added an independent agent-level ledger auditor that verifies trace token usage, model requests, exact A/B seed hashes, actual MCP invocations, completion and quality, and calculates input cost scenarios without inventing dollar pricing."
+      ],
+      "direct_reproduction": {
+        "task": "get_outgoing_calls on /(*Engine).Relationship, same live gopls and workspace",
+        "full_response_bytes": 5691,
+        "name_path_response_bytes": 986,
+        "reduction_percent": 82.67,
+        "complete_file_name_pairs_full": 15,
+        "complete_file_name_pairs_compact": 15,
+        "matched_semantic_pairs": true
+      },
+      "after_run": "agent-effect-100-s04-compact-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 23.617,
+        "noncached_input_tokens": 10424,
+        "cached_input_tokens": 62720,
+        "total_input_tokens": 73144,
+        "output_tokens": 905,
+        "model_lsp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "shell_calls": 2
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 12.788,
+        "noncached_input_tokens": 19877,
+        "cached_input_tokens": 43904,
+        "total_input_tokens": 63781,
+        "output_tokens": 481,
+        "model_lsp_calls": 1,
+        "mcp_tools": [
+          "get_outgoing_calls"
+        ],
+        "mcp_response_bytes": 986,
+        "shell_calls": 0
+      },
+      "after_rerun_summary": {
+        "baseline_pass": true,
+        "mcp_pass": true,
+        "baseline_seconds": 23.617,
+        "mcp_seconds": 12.788,
+        "time_change_percent": -45.85,
+        "total_input_token_change_percent": -12.8,
+        "noncached_input_token_change_percent": 90.68,
+        "mcp_actual_tool_calls": 1,
+        "tool_response_bytes_before": 5691,
+        "tool_response_bytes_after": 986,
+        "note": "One stochastic post-correction A/B pair; tool-payload reduction is directly measured against identical LSP data. Do not infer equal billing cost from total tokens, nor attribute all timing changes to the new view."
+      },
+      "evidence_note": "Raw traces preserved in isolated .scratch; independently inspected by docs/benchmarks/audit_agent_effect_cycles.py.",
       "counted": true
     }
   ]
