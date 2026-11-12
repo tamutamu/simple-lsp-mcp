@@ -1,5 +1,5 @@
 {
-  "goal": 100,
+  "goal": 200,
   "counted_cycles": 7,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count. Each accepted cycle must pass docs/benchmarks/audit_agent_effect_cycles.py against original Codex trace and graded results, including token/cache accounting, all 4 A/B trials, same model and seed per pair, successful model-initiated LSP use after correction, and full grade checks. Savings must not be claimed on cached-token cumulative counts alone.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
@@ -635,6 +635,14 @@
       "illustrative_input_proxy_at_cached_weight_0_1_pct_full": 35.2,
       "illustrative_input_proxy_at_cached_weight_0_1_pct_coding": 20.53,
       "why_not_counted": "Not a distinct corrected and revalidated causal agent-effect cycle; it checks a configuration hypothesis across separate snapshots. No proven monetary savings."
+    },
+    {
+      "run": "agent-effect-turn2-t34-before-20261113",
+      "task": "T34-cross-file-impact-analysis",
+      "reason": "Both A/B arms failed before producing model tokens or a usable answer; no MCP use; independent answer-evidence grade failed. Invalid baseline, no causal improvement or after comparison; do not count.",
+      "counted": false
     }
-  ]
+  ],
+  "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",
+  "completion_guard": "python3 docs/benchmarks/audit_agent_effect_cycles.py --output .scratch/agent-effect-audit-200 --require-goal 200 --require-complete"
 }

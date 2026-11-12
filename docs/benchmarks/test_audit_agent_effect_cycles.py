@@ -37,7 +37,7 @@ class AuditEvidenceTests(unittest.TestCase):
             for arm in ("baseline","mcp"):
                 self.make_trial(root,phase,arm)
         ledger=root/"ledger.json"
-        data={"goal":100,"counted_cycles":1,"cycles":[{
+        data={"goal":200,"counted_cycles":1,"cycles":[{
             "cycle":1,"task":"S11-demo","before_run":"before","after_run":"after",
             "counted":True,"found_problems":["Actual product or evaluation defect"],
             "corrections":["Specific fix followed by fresh A/B comparison"]}]}
@@ -78,6 +78,18 @@ class AuditEvidenceTests(unittest.TestCase):
             root=Path(tmp);ledger=self.fixtures(root)
             self.make_trial(root,"after","mcp",used=0)
             with self.assertRaisesRegex(ValueError,"no successful model-initiated LSP"):
+                AUDIT.audit(ledger,root)
+
+    def test_rejects_duplicate_after_run_when_claiming_two_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=self.fixtures(root)
+            record=json.loads(ledger.read_text())
+            second=dict(record["cycles"][0])
+            second["cycle"]=2
+            record["cycles"].append(second)
+            record["counted_cycles"]=2
+            ledger.write_text(json.dumps(record)+"\n")
+            with self.assertRaisesRegex(ValueError,"duplicate post-correction"):
                 AUDIT.audit(ledger,root)
 
     def test_rejects_false_cycle_count(self):

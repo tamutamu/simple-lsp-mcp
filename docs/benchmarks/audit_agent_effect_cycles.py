@@ -129,6 +129,11 @@ def audit(ledger_path: Path, scratch: Path) -> tuple[list[dict],list[dict]]:
     require(ledger["counted_cycles"]==len(cycles),"counted_cycles disagrees with records")
     require([c["cycle"] for c in cycles]==list(range(1,len(cycles)+1)),"cycle numbering invalid")
     require(len(cycles)<=ledger["goal"],"goal exceeded")
+    # The previous AFTER evaluation can serve as a new BEFORE reference,
+    # but a previously accepted AFTER evaluation cannot be counted again.
+    after_runs=[c["after_run"] for c in cycles]
+    require(len(after_runs)==len(set(after_runs)),
+            "duplicate post-correction A/B evidence counted more than once")
     trials=[]
     pairs=[]
     for cycle in cycles:
@@ -155,8 +160,21 @@ def main() -> None:
     parser.add_argument("--ledger",type=Path,default=Path("docs/benchmarks/agent-effect-100-cycles-ledger.json"))
     parser.add_argument("--scratch",type=Path,default=Path(".scratch"))
     parser.add_argument("--output",type=Path,required=True)
+    parser.add_argument("--require-goal",type=int,default=0,
+                        help="Fail if the user goal is reduced below this target")
+    parser.add_argument("--require-complete",action="store_true",
+                        help="Fail unless every required cycle is complete and audited")
     args=parser.parse_args()
+    ledger=read_json(args.ledger)
+    require(ledger["goal"]>=args.require_goal,
+            f"goal reduced below required {args.require_goal}")
+    if args.require_complete:
+        require(args.require_goal>=1,
+                "--require-complete requires --require-goal")
     trials,pairs=audit(args.ledger,args.scratch)
+    if args.require_complete:
+        require(len(trials)//4>=args.require_goal,
+                f"NOT COMPLETE: {len(trials)//4} of {args.require_goal} audited development cycles")
     args.output.mkdir(parents=True,exist_ok=True)
     for name,rows in (("trials.csv",trials),("pairs.csv",pairs)):
         require(bool(rows),"empty audit")
