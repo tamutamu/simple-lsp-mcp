@@ -1,0 +1,51 @@
+cycle,name,tool,expected,evidence,before_status,after_status,before_seconds,after_seconds,analysis,remediation,reverified
+1,"document symbols, default",get_document_symbols,success,symbols,ok,ok,0.1919,0.0041,"successful semantic response, as expected",regression contract installed; product already correct,True
+2,"document symbols, full detail",get_document_symbols,success,symbols,ok,ok,0.0039,0.0034,"successful semantic response, as expected",regression contract installed; product already correct,True
+3,"document symbols, missing path",get_document_symbols,invalid,,error,error,0.0015,0.0015,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+4,"document symbols, numeric path",get_document_symbols,invalid,,error,error,0.0012,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+5,"document symbols, malformed detail",get_document_symbols,invalid,,error,error,0.0014,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+6,"document symbols, out-of-enum detail",get_document_symbols,invalid,,error,error,0.0019,0.0012,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+7,search known symbol,search_symbols,success,symbols,ok,ok,0.0065,0.0042,"successful semantic response, as expected",regression contract installed; product already correct,True
+8,search missing query,search_symbols,invalid,,error,error,0.0013,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+9,search whitespace query,search_symbols,invalid,,error,error,0.0011,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+10,search wrong language,search_symbols,invalid,,error,error,0.001,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+11,search wrong kinds type,search_symbols,invalid,,error,error,0.001,0.0009,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+12,search wrong kinds enum,search_symbols,invalid,,error,error,0.001,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+13,search fractional limit,search_symbols,invalid,,error,error,0.0011,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+14,search boolean limit,search_symbols,invalid,,error,error,0.0012,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+15,search valid limit,search_symbols,success,symbols,ok,ok,0.005,0.0057,"successful semantic response, as expected",regression contract installed; product already correct,True
+16,workspace listing default no args,list_workspace_symbols,success,symbols,ok,ok,0.008,0.0034,"successful semantic response, as expected",regression contract installed; product already correct,True
+17,workspace listing valid paging,list_workspace_symbols,success,next_cursor,ok,ok,0.0025,0.0022,paginated list has an explicit incomplete flag and next_cursor,regression contract installed; product already correct,True
+18,workspace listing fractional limit,list_workspace_symbols,invalid,,error,error,0.0011,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+19,workspace listing zero limit,list_workspace_symbols,invalid,,error,error,0.0013,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+20,workspace listing stale cursor,list_workspace_symbols,invalid,,error,error,0.0012,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+21,inspect exact symbol,inspect_symbol,success,code,ok,ok,0.0019,0.0022,"successful semantic response, as expected",regression contract installed; product already correct,True
+22,inspect source via explicit view,inspect_symbol,success,code,ok,ok,0.0019,0.0017,"successful semantic response, as expected",regression contract installed; product already correct,True
+23,inspect wrong related type,inspect_symbol,invalid,,error,error,0.0011,0.0009,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+24,inspect duplicate related entries,inspect_symbol,invalid,,error,error,0.0011,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+25,inspect relation limit above maximum,inspect_symbol,invalid,,error,error,0.0011,0.0009,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+26,inspect fractional relation limit,inspect_symbol,invalid,,error,error,0.0012,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+27,hover on exact symbol,get_hover,success,hover,ok,ok,0.0023,0.0022,"successful semantic response, as expected",regression contract installed; product already correct,True
+28,hover fractional line,get_hover,invalid,,error,error,0.0017,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+29,hover fractional column,get_hover,invalid,,error,error,0.001,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+30,hover unknown input field,get_hover,invalid,,error,error,0.001,0.001,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+31,definition from invocation,get_definition,success,locations,ok,ok,0.0019,0.0019,"successful semantic response, as expected",regression contract installed; product already correct,True
+32,definition bad relation view,get_definition,invalid,,error,error,0.0012,0.0012,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+33,type definition,get_type_definition,success,locations,ok,ok,0.0027,0.0023,"successful semantic response, as expected",regression contract installed; product already correct,True
+34,declaration unsupported by gopls,get_declaration,unsupported,,error,error,0.0012,0.001,expected METHOD_NOT_SUPPORTED; got error / METHOD_NOT_SUPPORTED,regression contract installed; product already correct,True
+35,semantic references,find_references,success,locations,ok,ok,0.0025,0.0022,"successful semantic response, as expected",regression contract installed; product already correct,True
+36,references invalid include flag,find_references,invalid,,error,error,0.0011,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+37,references invalid test filter,find_references,invalid,,error,error,0.0014,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+38,references valid test filter,find_references,success,locations,ok,ok,0.0025,0.0023,"successful semantic response, as expected",regression contract installed; product already correct,True
+39,implementations of interface,find_implementations,success,locations,ok,ok,0.0406,0.0028,"successful semantic response, as expected",regression contract installed; product already correct,True
+40,incoming call hierarchy,get_incoming_calls,success,calls,ok,ok,0.0036,0.003,"successful semantic response, as expected",regression contract installed; product already correct,True
+41,outgoing call hierarchy,get_outgoing_calls,success,calls,ok,ok,0.0035,0.0031,"successful semantic response, as expected",regression contract installed; product already correct,True
+42,supertype hierarchy,get_supertypes,success,types,ok,ok,0.0031,0.0033,"successful semantic response, as expected",regression contract installed; product already correct,True
+43,subtype hierarchy,get_subtypes,success,types,ok,ok,0.0031,0.003,"successful semantic response, as expected",regression contract installed; product already correct,True
+44,compiler diagnostics,get_diagnostics,success,diagnostics,ok,ok,0.0055,0.0027,"successful semantic response, as expected",regression contract installed; product already correct,True
+45,diagnostics bad severity list,get_diagnostics,invalid,,error,error,0.0013,0.0012,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+46,diagnostics bad severity enum,get_diagnostics,invalid,,error,error,0.0011,0.0011,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+47,complete transitive impact,analyze_impact,success,edges,ok,ok,0.0044,0.004,"successful semantic response, as expected",regression contract installed; product already correct,True
+48,impact fractional depth,analyze_impact,invalid,,error,error,0.0013,0.0014,expected INVALID_ARGUMENT; got error / INVALID_ARGUMENT,regression contract installed; product already correct,True
+49,safe rename preview,preview_rename,success,edit_count,ok,ok,0.0027,0.0025,"successful semantic response, as expected",regression contract installed; product already correct,True
+50,safe format preview,preview_format,success,edit_count,ok,ok,0.0019,0.0019,"successful semantic response, as expected",regression contract installed; product already correct,True

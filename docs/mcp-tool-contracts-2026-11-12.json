@@ -1,9 +1,9 @@
 {
-  "source": "Codex app-server MCP catalog for 0.11.1-candidate on 2026-11-12",
+  "source": "Codex app-server MCP catalog after runtime argument validation, 2026-11-12",
   "server": {
     "name": "simple-lsp-mcp",
     "title": "Simple LSP semantic code navigation",
-    "version": "0.11.1-candidate",
+    "version": "dev",
     "description": null,
     "icons": null,
     "websiteUrl": "https://github.com/tamutamu/simple-lsp-mcp"
@@ -14,6 +14,7 @@
       "title": "Analyze impact",
       "description": "Recursive LSP reference graph. path+line; depth=1 direct, 2 next hop (default 8, max 16). Cycles and truncation reported.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "depth": {
             "description": "1=direct, 2=next hop; default 8, maximum 16.",
@@ -21,7 +22,7 @@
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
@@ -31,7 +32,7 @@
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           }
         },
@@ -39,6 +40,9 @@
           "path",
           "line"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -51,6 +55,7 @@
       "title": "Apply code action",
       "description": "Apply the selected action_id only when it resolves to the same WorkspaceEdit-backed action; commands are not executed.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "action_id": {
             "description": "action_id returned by get_code_actions.",
@@ -64,7 +69,7 @@
             "type": "array"
           },
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
@@ -79,7 +84,7 @@
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -93,12 +98,12 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           }
         },
@@ -108,6 +113,9 @@
           "column",
           "action_id"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -120,14 +128,15 @@
       "title": "Find implementations",
       "description": "LSP: implementation locations for a target.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -141,17 +150,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "relation_view": {
@@ -163,14 +172,17 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -183,9 +195,10 @@
       "title": "Find references",
       "description": "Exact LSP references to a declaration. relation_view=lines includes source text; exclude_test_files=true narrows to non-test files (opt-in), retaining the excluded count and filter scope. For production-only callers prefer no declaration, no test files.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
@@ -198,7 +211,7 @@
             "type": "boolean"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -212,17 +225,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "relation_view": {
@@ -234,14 +247,17 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -254,13 +270,14 @@
       "title": "Format document",
       "description": "Apply validated document/range formatting only with apply=true (writes files); use preview_format first.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "apply": {
             "description": "Apply validated edits; preview tools default false.",
             "type": "boolean"
           },
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
@@ -279,11 +296,11 @@
             "type": "boolean"
           },
           "insert_spaces": {
-            "description": "Formatting insertSpaces; default true.",
+            "description": "Format spaces; default true.",
             "type": "boolean"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -297,12 +314,12 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "tab_size": {
@@ -324,6 +341,9 @@
         ],
         "type": "object"
       },
+      "outputSchema": {
+        "type": "object"
+      },
       "annotations": {
         "destructiveHint": true,
         "openWorldHint": false
@@ -334,6 +354,7 @@
       "title": "Get code actions",
       "description": "List LSP code actions without writing; use the returned action_id with apply_code_action.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "code_action_kinds": {
             "description": "Requested code-action kinds.",
@@ -343,7 +364,7 @@
             "type": "array"
           },
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
@@ -358,7 +379,7 @@
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -372,17 +393,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           }
         },
@@ -391,6 +412,9 @@
           "line",
           "column"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -403,14 +427,15 @@
       "title": "Get declaration",
       "description": "LSP: declaration locations for a target.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -424,17 +449,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "relation_view": {
@@ -446,14 +471,17 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -466,14 +494,15 @@
       "title": "Get definition",
       "description": "LSP: definition locations for a target.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -487,17 +516,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "relation_view": {
@@ -509,14 +538,17 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -529,9 +561,10 @@
       "title": "Get diagnostics",
       "description": "For type errors, get warmed LSP diagnostics for a file with exact lines, compiler message, and completeness; fix from evidence then verify with tests. Always pass path for current diagnostics: an unscoped request returns incomplete status, not a clean bill of health.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -545,12 +578,12 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "severities": {
@@ -569,6 +602,9 @@
         },
         "type": "object"
       },
+      "outputSchema": {
+        "type": "object"
+      },
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -579,6 +615,7 @@
       "title": "Get document symbols",
       "description": "Discover names and structure in an unfamiliar file. Skip this before inspect_symbol when the function name is already known.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "detail": {
             "description": "compact (default), outline or full LSP details.",
@@ -590,7 +627,7 @@
             "type": "string"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -604,13 +641,16 @@
             "type": "string"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           }
         },
         "required": [
           "path"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -623,14 +663,15 @@
       "title": "Get hover",
       "description": "Get LSP hover/type information for an exact target.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -644,23 +685,26 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -673,14 +717,15 @@
       "title": "Get incoming calls",
       "description": "LSP: direct callers.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -694,28 +739,31 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -728,14 +776,15 @@
       "title": "Get outgoing calls",
       "description": "LSP: direct callees.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -749,28 +798,31 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -783,14 +835,15 @@
       "title": "Get subtypes",
       "description": "LSP: direct subtypes.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -804,28 +857,31 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -838,14 +894,15 @@
       "title": "Get supertypes",
       "description": "LSP: direct supertypes.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -859,28 +916,31 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -893,14 +953,15 @@
       "title": "Get type definition",
       "description": "LSP: type-definition locations for a target.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -914,17 +975,17 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "relation_view": {
@@ -936,14 +997,17 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -956,14 +1020,15 @@
       "title": "Inspect symbol",
       "description": "Inspect one exact declaration or batch verified targets[]. related[] returns only bounded context (maximum 20 per relation), never an exhaustive reference list. For all usages call find_references instead. If name is unknown, discover get_document_symbols(path) first; do not guess.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -977,7 +1042,7 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
@@ -987,11 +1052,11 @@
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "related": {
-            "description": "Optional bounded context ONLY, maximum 20 per kind; truncated results in related_meta. For complete refs use find_references.",
+            "description": "Bounded context (max 20 per kind); full refs: find_references.",
             "items": {
               "enum": [
                 "references",
@@ -1017,16 +1082,17 @@
             "type": "integer"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           },
           "targets": {
             "description": "Batch 1–8, shared view; no top-level target.",
             "items": {
+              "additionalProperties": false,
               "properties": {
                 "column": {
                   "minimum": 1,
@@ -1068,6 +1134,9 @@
         },
         "type": "object"
       },
+      "outputSchema": {
+        "type": "object"
+      },
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -1078,6 +1147,7 @@
       "title": "List workspace symbols",
       "description": "Enumerate compact symbol identities page by page; follow next_cursor until absent. detail=full adds complete ranges.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "cursor": {
             "description": "next_cursor from a prior workspace-symbol page.",
@@ -1128,7 +1198,7 @@
             "type": "array"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -1142,11 +1212,14 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -1159,9 +1232,10 @@
       "title": "Preview format",
       "description": "READ ONLY: preview exact LSP document/range formatting edits, without writing files or requiring approval.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
@@ -1180,11 +1254,11 @@
             "type": "boolean"
           },
           "insert_spaces": {
-            "description": "Formatting insertSpaces; default true.",
+            "description": "Format spaces; default true.",
             "type": "boolean"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -1198,12 +1272,12 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "tab_size": {
@@ -1225,6 +1299,9 @@
         ],
         "type": "object"
       },
+      "outputSchema": {
+        "type": "object"
+      },
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -1235,14 +1312,15 @@
       "title": "Preview rename",
       "description": "READ ONLY: preview semantic rename. Default summary lists all affected files and edit counts; preview_detail=full is only needed for exact edit review. Apply separately with rename_symbol.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -1256,7 +1334,7 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
@@ -1265,7 +1343,7 @@
             "type": "string"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "preview_detail": {
@@ -1277,17 +1355,20 @@
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
         "required": [
           "new_name"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -1300,18 +1381,19 @@
       "title": "Rename symbol",
       "description": "Apply an LSP semantic rename only with apply=true (writes files); use preview_rename first for a read-only preview.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "apply": {
             "description": "Apply validated edits; preview tools default false.",
             "type": "boolean"
           },
           "column": {
-            "description": "One-based column.",
+            "description": "1-based column.",
             "minimum": 1,
             "type": "integer"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -1325,7 +1407,7 @@
             "type": "string"
           },
           "line": {
-            "description": "One-based line.",
+            "description": "1-based line.",
             "minimum": 1,
             "type": "integer"
           },
@@ -1334,21 +1416,24 @@
             "type": "string"
           },
           "path": {
-            "description": "Workspace-relative file path.",
+            "description": "Workspace-relative path.",
             "type": "string"
           },
           "symbol_id": {
-            "description": "Previously returned symbol_id.",
+            "description": "Returned symbol_id.",
             "type": "string"
           },
           "symbol_path": {
-            "description": "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors.",
+            "description": "Nested name; leading / anchors, path scopes.",
             "type": "string"
           }
         },
         "required": [
           "new_name"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {
@@ -1361,6 +1446,7 @@
       "title": "Search symbols",
       "description": "Find semantically identified declarations; return only name/kind/path/line/handle by default, detail=full for exact ranges.",
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
           "detail": {
             "description": "compact (default), outline or full LSP details.",
@@ -1407,7 +1493,7 @@
             "type": "array"
           },
           "language": {
-            "description": "Language; target tools infer it when possible.",
+            "description": "Language; inferred from path when possible.",
             "enum": [
               "python",
               "typescript",
@@ -1421,7 +1507,7 @@
             "type": "string"
           },
           "limit": {
-            "description": "Maximum results.",
+            "description": "Max results.",
             "minimum": 1,
             "type": "integer"
           },
@@ -1434,6 +1520,9 @@
           "query",
           "language"
         ],
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "annotations": {

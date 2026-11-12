@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/tamutamu/simple-lsp-mcp/internal/config"
@@ -61,7 +62,7 @@ func (e *Engine) SearchSymbols(ctx context.Context, in map[string]any) (map[stri
 		return nil, err
 	}
 	query := stringVal(in, "query")
-	if query == "" {
+	if strings.TrimSpace(query) == "" {
 		return nil, core.NewError(core.InvalidArgument, "query must be a non-empty string")
 	}
 	p, err := language.Require(stringVal(in, "language"))

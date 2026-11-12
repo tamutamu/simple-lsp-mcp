@@ -200,7 +200,6 @@ def main() -> int:
                     "tool": "get_document_symbols",
                     "arguments": {
                         "path": "internal/mcpserver/server.go",
-                        "include_source": True,
                     },
                 },
             )

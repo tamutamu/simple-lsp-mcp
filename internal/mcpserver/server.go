@@ -34,11 +34,16 @@ func NewWithOptions(engine *tools.Engine, version, profile, resultFormat string)
 	for _, d := range definitionsForProfile(profile) {
 		def := d
 		s.AddTool(&mcp.Tool{Name: def.name, Title: toolTitle(def.name), Description: def.description, InputSchema: def.schema, OutputSchema: outputSchemaForFormat(resultFormat), Annotations: toolAnnotations(def.name)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			var in map[string]any
+			// A tool without required fields accepts absent arguments.
+			// JSON null is not an object and remains invalid.
+			in := map[string]any{}
 			if len(req.Params.Arguments) > 0 {
 				if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
 					return resultWithFormat(map[string]any{"error": map[string]any{"code": core.InvalidArgument, "message": "invalid tool arguments"}}, true, resultFormat), nil
 				}
+			}
+			if err := validateToolArguments(def.schema, in); err != nil {
+				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
 			}
 			if err := validateToolProfileArguments(profile, def.name, in); err != nil {
 				return resultWithFormat(map[string]any{"error": errorObject(err)}, true, resultFormat), nil
@@ -210,6 +215,7 @@ func objectSchema() map[string]any { return map[string]any{"type": "object"} }
 // objSchema builds an input schema exposing exactly the named properties.
 func objSchema(properties map[string]any, required ...string) map[string]any {
 	s := objectSchema()
+	s["additionalProperties"] = false
 	s["properties"] = properties
 	if len(required) > 0 {
 		s["required"] = required
@@ -222,15 +228,15 @@ func allProperties() map[string]any {
 	return map[string]any{
 		"query":               describe(stringSchema(), "Non-empty symbol query."),
 		"cursor":              describe(stringSchema(), "next_cursor from a prior workspace-symbol page."),
-		"path":                describe(stringSchema(), "Workspace-relative file path."),
-		"symbol_id":           describe(stringSchema(), "Previously returned symbol_id."),
-		"symbol_path":         describe(stringSchema(), "Nested name, e.g. UserService/createUser. Add path to scope; leading / anchors."),
-		"line":                describe(positiveIntegerSchema(), "One-based line."),
-		"column":              describe(positiveIntegerSchema(), "One-based column."),
-		"limit":               describe(positiveIntegerSchema(), "Maximum results."),
+		"path":                describe(stringSchema(), "Workspace-relative path."),
+		"symbol_id":           describe(stringSchema(), "Returned symbol_id."),
+		"symbol_path":         describe(stringSchema(), "Nested name; leading / anchors, path scopes."),
+		"line":                describe(positiveIntegerSchema(), "1-based line."),
+		"column":              describe(positiveIntegerSchema(), "1-based column."),
+		"limit":               describe(positiveIntegerSchema(), "Max results."),
 		"depth":               describe(positiveIntegerSchema(), "1=direct, 2=next hop; default 8, maximum 16."),
 		"max_nodes":           describe(positiveIntegerSchema(), "Maximum graph nodes; default 80, maximum 200."),
-		"language":            describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; target tools infer it when possible."),
+		"language":            describe(enumStringSchema("python", "typescript", "typescriptreact", "javascript", "javascriptreact", "go", "html", "css"), "Language; inferred from path when possible."),
 		"kinds":               describe(map[string]any{"type": "array", "items": enumStringSchema("file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum_member", "struct", "event", "operator", "type_parameter")}, "Allowed symbol kinds."),
 		"severities":          describe(map[string]any{"type": "array", "items": enumStringSchema("error", "warning", "information", "hint")}, "Allowed diagnostic severities."),
 		"include_declaration": describe(map[string]any{"type": "boolean"}, "Include declaration among references."),
@@ -239,10 +245,10 @@ func allProperties() map[string]any {
 		"view":                describe(enumStringSchema("source", "signature", "location", "edit"), "source/default, edit/context, signature/header or location/range."),
 		"relation_view":       describe(enumStringSchema("locations", "lines"), "locations (default): exact LSP positions; lines: also include a bounded source line at every result."),
 		"max_lines":           describe(positiveIntegerSchema(), "Source lines, default 120, max 500."),
-		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Optional bounded context ONLY, maximum 20 per kind; truncated results in related_meta. For complete refs use find_references."),
+		"related":             describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": enumStringSchema("references", "implementations", "type_definition", "declaration", "incoming_calls", "outgoing_calls", "supertypes", "subtypes")}, "Bounded context (max 20 per kind); full refs: find_references."),
 		"relation_limit":      describe(map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "Per-relation cap 1–20, default 8; for exhaustive usages use find_references."),
 		"targets": describe(map[string]any{"type": "array", "minItems": 1, "maxItems": 8,
-			"items": map[string]any{"type": "object", "properties": map[string]any{
+			"items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 				"path": stringSchema(), "symbol_id": stringSchema(),
 				"symbol_path": stringSchema(), "line": positiveIntegerSchema(),
 				"column": positiveIntegerSchema(), "language": stringSchema(),
@@ -253,7 +259,7 @@ func allProperties() map[string]any {
 		"end_line":                 describe(positiveIntegerSchema(), "One-based range end line."),
 		"end_column":               describe(positiveIntegerSchema(), "One-based range end column."),
 		"tab_size":                 describe(positiveIntegerSchema(), "Formatting tab size; default 4."),
-		"insert_spaces":            describe(map[string]any{"type": "boolean"}, "Formatting insertSpaces; default true."),
+		"insert_spaces":            describe(map[string]any{"type": "boolean"}, "Format spaces; default true."),
 		"trim_trailing_whitespace": describe(map[string]any{"type": "boolean"}, "Formatting trimTrailingWhitespace."),
 		"insert_final_newline":     describe(map[string]any{"type": "boolean"}, "Formatting insertFinalNewline."),
 		"trim_final_newlines":      describe(map[string]any{"type": "boolean"}, "Formatting trimFinalNewlines."),
