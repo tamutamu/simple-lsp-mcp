@@ -1,0 +1,16 @@
+id,name,language,pairs,baseline_pass,mcp_pass,mean_baseline_seconds,mean_mcp_seconds,time_change_pct,noncached_baseline_tokens,noncached_mcp_tokens,mcp_actual_calls,mcp_successful_calls,status,source,tool_profile
+T33,unknown-code-understanding,go,2,2,2,30.688,34.212,11.5,62387,57909,0,0,paired_verified,product-ab-T33-2rep-20261112,coding
+T34,cross-file-impact-analysis,go,1,1,1,14.153,16.162,14.2,8540,9477,0,0,paired_verified,product-ab-literal-selector-policy-20261112,coding
+T35,go-type-error-fix,go,3,3,3,61.018,60.222,-1.3,69844,58559,2,2,paired_verified,product-ab-diagnostics-path-enforced-20261111,coding
+T36,go-runtime-regression-fix,go,1,1,1,57.051,69.852,22.4,18595,18169,0,0,paired_verified,product-ab-remaining-eight-pilot-20261112,coding
+T37,ts-type-error-fix,ts,2,2,2,23.617,22.116,-6.4,12558,16099,0,0,paired_verified,product-ab-T37-typescript-2rep-20261112,coding
+T38,ts-runtime-regression-fix,ts,1,1,1,55.771,61.745,10.7,17690,8870,0,0,paired_verified,product-ab-remaining-eight-pilot-20261112,coding
+T39,python-type-runtime-fix,py,2,2,2,42.227,38.318,-9.3,18793,21311,0,0,paired_verified,product-ab-T39-pyright-fixed-2rep-20261112,coding
+T40,python-feature-addition,py,1,1,1,44.22,70.298,59.0,7429,8151,0,0,paired_verified,product-ab-remaining-eight-pilot-20261112,coding
+T41,python-behavior-change,py,1,1,1,24.659,41.856,69.7,13200,8039,0,0,paired_verified,product-ab-last-five-resumed-20261112,coding
+T42,ts-interface-implementation,ts,2,2,2,44.449,38.835,-12.6,15866,21453,0,0,paired_verified,product-ab-T42-interface-2rep-20261112,coding
+T43,go-semantic-rename,go,3,3,3,151.133,92.364,-38.9,72008,66992,6,6,paired_verified,product-ab-evaluation-optimized-coding-20261111,unrecorded
+T44,python-complex-root-cause,py,1,1,1,21.36,31.525,47.6,9005,8929,0,0,paired_verified,product-ab-last-five-resumed-20261112,coding
+T45,ts-missing-import-code-action,ts,1,1,1,50.827,47.018,-7.5,6774,9117,0,0,paired_verified,product-ab-last-five-resumed-20261112,coding
+T46,large-repo-defect,py,0,0,0,,,,,,0,0,not_paired,separate attempts,
+T47,go-compound-workflow,go,1,1,1,70.125,63.502,-9.4,23284,25974,0,0,paired_verified,product-ab-remaining-eight-pilot-20261112,coding

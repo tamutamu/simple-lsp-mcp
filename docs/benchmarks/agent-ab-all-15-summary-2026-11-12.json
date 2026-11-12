@@ -1,0 +1,21 @@
+{
+  "task_count": 15,
+  "tasks_with_verified_pairs": 14,
+  "verified_pairs": 22,
+  "verified_agent_trials": 44,
+  "tasks_with_mcp_calls": 2,
+  "actual_mcp_calls": 8,
+  "successful_mcp_calls": 8,
+  "t46_unpaired": {
+    "baseline_seconds": 100.182,
+    "mcp_seconds": 143.043,
+    "baseline_noncached_tokens": 19101,
+    "mcp_noncached_tokens": 14102,
+    "mcp_calls": 0,
+    "same_tracked_source_hash": "f64740cd30c2a0e8f67f47afc4acb968281534af736723a066d55079a50c5152",
+    "baseline_seed_commit": "ef4f859f0574cac3085c405e759002577f7fd7f0",
+    "mcp_seed_commit": "77a5a7bfdce5ef8c50ed1c0f553fc4d7b4e9b8bf",
+    "paired": false,
+    "caution": "Post hoc, separate runs and Git commits. Do not use for a controlled difference estimate."
+  }
+}

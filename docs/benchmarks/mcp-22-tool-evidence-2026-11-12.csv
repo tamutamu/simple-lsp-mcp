@@ -1,0 +1,23 @@
+tool,positive_lsp_language,successful_response,semantic_nonempty,elapsed_seconds,response_bytes,note
+analyze_impact,go,true,true,0.005,678,real LSP result; controlled fixture
+apply_code_action,go,true,true,0.003,279,actual isolated-file edit applied
+find_implementations,go,true,true,0.066,148,real LSP result; controlled fixture
+find_references,go,true,true,0.004,226,real LSP result; controlled fixture
+format_document,go,true,true,0.002,642,actual isolated-file edit applied
+get_code_actions,go,true,true,0.004,858,real LSP result; controlled fixture
+get_declaration,python,true,true,0.462,148,gopls does not advertise textDocument/declaration; Pyright does
+get_definition,go,true,true,0.002,226,real LSP result; controlled fixture
+get_diagnostics,go,true,true,0.021,253,real LSP result; controlled fixture
+get_document_symbols,go,true,true,0.471,679,real LSP result; controlled fixture
+get_hover,go,true,true,0.007,321,real LSP result; controlled fixture
+get_incoming_calls,go,true,true,0.004,387,real LSP result; controlled fixture
+get_outgoing_calls,go,true,true,0.004,719,real LSP result; controlled fixture
+get_subtypes,go,true,true,0.003,297,real LSP result; controlled fixture
+get_supertypes,go,true,true,0.003,302,real LSP result; controlled fixture
+get_type_definition,go,true,true,0.002,148,real LSP result; controlled fixture
+inspect_symbol,go,true,true,0.003,393,real LSP result; controlled fixture
+list_workspace_symbols,go,true,true,0.01,1420,real LSP result; controlled fixture
+preview_format,go,true,true,0.002,643,real LSP result; controlled fixture
+preview_rename,go,true,true,0.032,309,real LSP result; controlled fixture
+rename_symbol,go,true,true,0.003,308,actual isolated-file edit applied
+search_symbols,go,true,true,0.024,224,real LSP result; controlled fixture

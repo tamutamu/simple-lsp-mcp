@@ -1,0 +1,531 @@
+[
+  {
+    "tool": "get_document_symbols",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 679,
+    "elapsed_sec": 0.471,
+    "semantic_nonempty": true,
+    "preview": "{\"path\":\"models.go\",\"symbols\":[{\"children\":[{\"kind\":\"method\",\"line\":4,\"name\":\"Greet\",\"symbol_id\":\"sym_40ea5a9c1215e8417ff9763f\"}],\"kind\":\"interface\",\"line\":3,\"name\":\"Greeter\",\"symbol_id\":\"sym_e495fc02b515a52ad332e120\"},{\"children\":[{\"kind\":\"field\",\"line\":6,\"name\":\"Name\",\"symbol_id\":\"sym_4f9a1111256821b35434419f\"}],\"kind\":\"struct\",\"line\":6,\"name\":\"Person\",\"symbol_id\":\"sym_967f488ba89590389f8e891e\"},{\"kind\":\"method\",\"line\":7,\"name\":\"(Person).Greet\",\"symbol_id\":\"sym_5d16d4356e5ff6f19ef7df30\"},{\"kind\":\"function\",\"line\":8,\"name\":\"MakePerson\",\"symbol_id\":\"sym_b3856faf2a2e9b7d05085fe7\"},{\"kind\":\"function\",\"line\":9,\"name\":\"UsePerson\",\"symbol_id\":\"sym_fbff3bdf6e1ff583d8497f7c\"}]}",
+    "keys": [
+      "path",
+      "symbols"
+    ]
+  },
+  {
+    "tool": "search_symbols",
+    "language": "go",
+    "arguments": {
+      "query": "MakePerson",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 224,
+    "elapsed_sec": 0.024,
+    "semantic_nonempty": true,
+    "preview": "{\"meta\":{\"complete\":true,\"truncated\":false,\"servers\":[\"go\"]},\"symbols\":[{\"container_name\":\"example.com/matrix22\",\"kind\":\"function\",\"line\":8,\"name\":\"MakePerson\",\"path\":\"models.go\",\"symbol_id\":\"sym_96cd2766141d62087b1c1411\"}]}",
+    "keys": [
+      "meta",
+      "symbols"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false,
+      "servers": [
+        "go"
+      ]
+    }
+  },
+  {
+    "tool": "list_workspace_symbols",
+    "language": "go",
+    "arguments": {
+      "language": "go",
+      "limit": 40
+    },
+    "isError": false,
+    "result_bytes": 1420,
+    "elapsed_sec": 0.01,
+    "semantic_nonempty": true,
+    "preview": "{\"meta\":{\"complete\":true,\"truncated\":false},\"symbols\":[{\"kind\":\"function\",\"line\":5,\"name\":\"UnusedAction\",\"path\":\"actions.go\",\"symbol_id\":\"sym_055b6bce0cfe58c836b73b6f\",\"symbol_path\":\"UnusedAction\"},{\"kind\":\"function\",\"line\":2,\"name\":\"CallPerson\",\"path\":\"caller.go\",\"symbol_id\":\"sym_b0d94b20008afd85e7dc2f71\",\"symbol_path\":\"CallPerson\"},{\"kind\":\"function\",\"line\":2,\"name\":\"NeedsFormat\",\"path\":\"format.go\",\"symbol_id\":\"sym_6fc45d9720be7e5b1df51745\",\"symbol_path\":\"NeedsFormat\"},{\"kind\":\"interface\",\"line\":3,\"name\":\"Greeter\",\"path\":\"models.go\",\"symbol_id\":\"sym_e495fc02b515a52ad332e120\",\"symbol_path\":\"Greeter\"},{\"kind\":\"method\",\"line\":4,\"name\":\"Greet\",\"path\":\"models.go\",\"symbol_id\":\"sym_40ea5a9c1215e8417ff9763f\",\"symbol_path\":\"Greeter/Greet\"},{\"kind\":\"struct\",\"line\":6,\"name\":\"Person\",\"path\":\"models.go\",\"symbol_id\":\"sym_967f488ba89590389f8e891e\",\"symbol_path\":\"Person\"},{\"kind\":\"field\",\"line\":6,\"nam",
+    "keys": [
+      "meta",
+      "symbols"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "inspect_symbol",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go",
+      "view": "edit"
+    },
+    "isError": false,
+    "result_bytes": 393,
+    "elapsed_sec": 0.003,
+    "semantic_nonempty": true,
+    "preview": "{\"code\":\"func MakePerson(name string) Person { return Person{Name: name} }\\n\",\"context_selection\":\"referenced-module-declarations\",\"kind\":\"function\",\"meta\":{\"complete\":true,\"truncated\":false},\"name\":\"MakePerson\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":8,\"column\":1},\"end\":{\"line\":8,\"column\":66}},\"selection_range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"view\":\"edit\"}",
+    "keys": [
+      "code",
+      "context_selection",
+      "kind",
+      "meta",
+      "name",
+      "path",
+      "range",
+      "selection_range",
+      "view"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_hover",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 321,
+    "elapsed_sec": 0.007,
+    "semantic_nonempty": true,
+    "preview": "{\"hover\":{\"contents\":\"```go\\nfunc MakePerson(name string) Person\\n```\\n\\n---\\n\\n[`matrix22.MakePerson` on pkg.go.dev](https://pkg.go.dev/example.com/matrix22#MakePerson)\",\"kind\":\"markdown\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}}},\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "hover",
+      "meta"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_definition",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "line": 9,
+      "column": 36,
+      "language": "go",
+      "relation_view": "lines"
+    },
+    "isError": false,
+    "result_bytes": 226,
+    "elapsed_sec": 0.002,
+    "semantic_nonempty": true,
+    "preview": "{\"locations\":[{\"path\":\"models.go\",\"range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"preview\":\"func MakePerson(name string) Person { return Person{Name: name} }\"}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "locations",
+      "meta"
+    ],
+    "locations": 1,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_declaration",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "line": 9,
+      "column": 36,
+      "language": "go"
+    },
+    "isError": true,
+    "result_bytes": 152,
+    "elapsed_sec": 0.001,
+    "semantic_nonempty": false,
+    "preview": "{\"error\":{\"code\":\"METHOD_NOT_SUPPORTED\",\"language\":\"go\",\"message\":\"go does not advertise textDocument/declaration\",\"method\":\"textDocument/declaration\"}}",
+    "keys": [
+      "error"
+    ],
+    "error": {
+      "code": "METHOD_NOT_SUPPORTED",
+      "language": "go",
+      "message": "go does not advertise textDocument/declaration",
+      "method": "textDocument/declaration"
+    }
+  },
+  {
+    "tool": "get_type_definition",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "line": 9,
+      "column": 36,
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 148,
+    "elapsed_sec": 0.002,
+    "semantic_nonempty": true,
+    "preview": "{\"locations\":[{\"path\":\"models.go\",\"range\":{\"start\":{\"line\":6,\"column\":6},\"end\":{\"line\":6,\"column\":12}}}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "locations",
+      "meta"
+    ],
+    "locations": 1,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "find_references",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go",
+      "include_declaration": false,
+      "relation_view": "lines"
+    },
+    "isError": false,
+    "result_bytes": 226,
+    "elapsed_sec": 0.004,
+    "semantic_nonempty": true,
+    "preview": "{\"locations\":[{\"path\":\"models.go\",\"range\":{\"start\":{\"line\":9,\"column\":34},\"end\":{\"line\":9,\"column\":44}},\"preview\":\"func UsePerson() string { return MakePerson(\\\"alice\\\").Greet() }\"}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "locations",
+      "meta"
+    ],
+    "locations": 1,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "find_implementations",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/Greeter",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 148,
+    "elapsed_sec": 0.066,
+    "semantic_nonempty": true,
+    "preview": "{\"locations\":[{\"path\":\"models.go\",\"range\":{\"start\":{\"line\":6,\"column\":6},\"end\":{\"line\":6,\"column\":12}}}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "locations",
+      "meta"
+    ],
+    "locations": 1,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_incoming_calls",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 387,
+    "elapsed_sec": 0.004,
+    "semantic_nonempty": true,
+    "preview": "{\"calls\":[{\"from_ranges\":[{\"start\":{\"line\":8,\"character\":33},\"end\":{\"line\":8,\"character\":43}}],\"kind\":\"function\",\"name\":\"UsePerson\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":9,\"column\":6},\"end\":{\"line\":9,\"column\":15}},\"selection_range\":{\"start\":{\"line\":9,\"column\":6},\"end\":{\"line\":9,\"column\":15}},\"symbol_id\":\"sym_c3059a4e00bb210da32edad8\"}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "calls",
+      "meta"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_outgoing_calls",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/UsePerson",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 719,
+    "elapsed_sec": 0.004,
+    "semantic_nonempty": true,
+    "preview": "{\"calls\":[{\"from_ranges\":[{\"start\":{\"line\":8,\"character\":53},\"end\":{\"line\":8,\"character\":58}}],\"kind\":\"function\",\"name\":\"Greet\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":7,\"column\":17},\"end\":{\"line\":7,\"column\":22}},\"selection_range\":{\"start\":{\"line\":7,\"column\":17},\"end\":{\"line\":7,\"column\":22}},\"symbol_id\":\"sym_a8035ddd228c2e97d8476740\"},{\"from_ranges\":[{\"start\":{\"line\":8,\"character\":33},\"end\":{\"line\":8,\"character\":43}}],\"kind\":\"function\",\"name\":\"MakePerson\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"selection_range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"symbol_id\":\"sym_96cd2766141d62087b1c1411\"}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "calls",
+      "meta"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_supertypes",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/Person",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 302,
+    "elapsed_sec": 0.003,
+    "semantic_nonempty": true,
+    "preview": "{\"meta\":{\"complete\":true,\"truncated\":false},\"types\":[{\"kind\":\"interface\",\"name\":\"Greeter\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":3,\"column\":6},\"end\":{\"line\":3,\"column\":13}},\"selection_range\":{\"start\":{\"line\":3,\"column\":6},\"end\":{\"line\":3,\"column\":13}},\"symbol_id\":\"sym_f2537c3bc9884444489cdab4\"}]}",
+    "keys": [
+      "meta",
+      "types"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_subtypes",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/Greeter",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 297,
+    "elapsed_sec": 0.003,
+    "semantic_nonempty": true,
+    "preview": "{\"meta\":{\"complete\":true,\"truncated\":false},\"types\":[{\"kind\":\"class\",\"name\":\"Person\",\"path\":\"models.go\",\"range\":{\"start\":{\"line\":6,\"column\":6},\"end\":{\"line\":6,\"column\":12}},\"selection_range\":{\"start\":{\"line\":6,\"column\":6},\"end\":{\"line\":6,\"column\":12}},\"symbol_id\":\"sym_dfbcf0d8add079e070bd6314\"}]}",
+    "keys": [
+      "meta",
+      "types"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_diagnostics",
+    "language": "go",
+    "arguments": {
+      "path": "actions.go",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 253,
+    "elapsed_sec": 0.021,
+    "semantic_nonempty": true,
+    "preview": "{\"diagnostics\":[{\"path\":\"actions.go\",\"range\":{\"start\":{\"line\":3,\"column\":4},\"end\":{\"line\":3,\"column\":9}},\"severity\":\"error\",\"code\":\"UnusedImport\",\"source\":\"compiler\",\"message\":\"\\\"fmt\\\" imported and not used\"}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "diagnostics",
+      "meta"
+    ],
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "analyze_impact",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "line": 8,
+      "depth": 4,
+      "max_nodes": 60
+    },
+    "isError": false,
+    "result_bytes": 678,
+    "elapsed_sec": 0.005,
+    "semantic_nonempty": true,
+    "preview": "{\"depth\":4,\"edges\":[{\"from\":\"n0\",\"to\":\"n1\",\"reference_lines\":[9],\"reference_count\":1},{\"from\":\"n1\",\"to\":\"n2\",\"reference_lines\":[3],\"reference_count\":1}],\"meta\":{\"complete\":true,\"limit_reasons\":[],\"note\":\"Static LSP references only: dynamic calls, reflection and unindexed sources may be missed. Edges indicate potential impact, not mandatory edits.\",\"truncated\":false},\"nodes\":[{\"id\":\"n0\",\"path\":\"models.go\",\"line\":8,\"name\":\"MakePerson\",\"kind\":\"function\",\"depth\":0},{\"id\":\"n1\",\"path\":\"models.go\",\"line\":9,\"name\":\"UsePerson\",\"kind\":\"function\",\"depth\":1},{\"id\":\"n2\",\"path\":\"caller.go\",\"line\":2,\"name\":\"CallPerson\",\"kind\":\"function\",\"depth\":2}],\"root\":\"n0\",\"unmapped_references\":0}",
+    "keys": [
+      "depth",
+      "edges",
+      "meta",
+      "nodes",
+      "root",
+      "unmapped_references"
+    ],
+    "meta": {
+      "complete": true,
+      "limit_reasons": [],
+      "note": "Static LSP references only: dynamic calls, reflection and unindexed sources may be missed. Edges indicate potential impact, not mandatory edits.",
+      "truncated": false
+    }
+  },
+  {
+    "tool": "preview_format",
+    "language": "go",
+    "arguments": {
+      "path": "format.go",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 643,
+    "elapsed_sec": 0.002,
+    "semantic_nonempty": true,
+    "preview": "{\"applied\":false,\"edit_count\":6,\"file_count\":1,\"files\":[{\"path\":\"format.go\",\"edits\":[{\"range\":{\"start\":{\"line\":2,\"column\":1},\"end\":{\"line\":2,\"column\":1}},\"new_text\":\"\\n\"},{\"range\":{\"start\":{\"line\":2,\"column\":18},\"end\":{\"line\":2,\"column\":18}},\"new_text\":\")\"},{\"range\":{\"start\":{\"line\":2,\"column\":19},\"end\":{\"line\":2,\"column\":20}},\"new_text\":\"\"},{\"range\":{\"start\":{\"line\":2,\"column\":23},\"end\":{\"line\":2,\"column\":23}},\"new_text\":\" \"},{\"range\":{\"start\":{\"line\":2,\"column\":24},\"end\":{\"line\":2,\"column\":24}},\"new_text\":\" \"},{\"range\":{\"start\":{\"line\":2,\"column\":33},\"end\":{\"line\":2,\"column\":33}},\"new_text\":\" \"}]}],\"method\":\"textDocument/formatting\"}",
+    "keys": [
+      "applied",
+      "edit_count",
+      "file_count",
+      "files",
+      "method"
+    ]
+  },
+  {
+    "tool": "format_document",
+    "language": "go",
+    "arguments": {
+      "path": "format.go",
+      "language": "go",
+      "apply": true
+    },
+    "isError": false,
+    "result_bytes": 642,
+    "elapsed_sec": 0.002,
+    "semantic_nonempty": true,
+    "preview": "{\"applied\":true,\"edit_count\":6,\"file_count\":1,\"files\":[{\"path\":\"format.go\",\"edits\":[{\"range\":{\"start\":{\"line\":2,\"column\":1},\"end\":{\"line\":2,\"column\":1}},\"new_text\":\"\\n\"},{\"range\":{\"start\":{\"line\":2,\"column\":18},\"end\":{\"line\":2,\"column\":18}},\"new_text\":\")\"},{\"range\":{\"start\":{\"line\":2,\"column\":19},\"end\":{\"line\":2,\"column\":20}},\"new_text\":\"\"},{\"range\":{\"start\":{\"line\":2,\"column\":23},\"end\":{\"line\":2,\"column\":23}},\"new_text\":\" \"},{\"range\":{\"start\":{\"line\":2,\"column\":24},\"end\":{\"line\":2,\"column\":24}},\"new_text\":\" \"},{\"range\":{\"start\":{\"line\":2,\"column\":33},\"end\":{\"line\":2,\"column\":33}},\"new_text\":\" \"}]}],\"method\":\"textDocument/formatting\"}",
+    "keys": [
+      "applied",
+      "edit_count",
+      "file_count",
+      "files",
+      "method"
+    ]
+  },
+  {
+    "tool": "get_code_actions",
+    "language": "go",
+    "arguments": {
+      "path": "actions.go",
+      "line": 2,
+      "column": 1,
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 858,
+    "elapsed_sec": 0.004,
+    "semantic_nonempty": true,
+    "preview": "{\"actions\":[{\"index\":0,\"action_id\":\"action_1341401327c83da2\",\"title\":\"Organize Imports\",\"kind\":\"source.organizeImports\",\"has_edit\":true,\"has_command\":false},{\"index\":1,\"action_id\":\"action_39da22c8c25b1610\",\"title\":\"Browse documentation for package matrix22\",\"kind\":\"source.doc\",\"has_edit\":false,\"has_command\":true},{\"index\":2,\"action_id\":\"action_574b953fcad02c30\",\"title\":\"Split package \\\"matrix22\\\"\",\"kind\":\"source.splitPackage\",\"has_edit\":false,\"has_command\":true},{\"index\":3,\"action_id\":\"action_05488925da471688\",\"title\":\"Show compiler optimization details for \\\"fixture\\\"\",\"kind\":\"source.toggleCompilerOptDetails\",\"has_edit\":false,\"has_command\":true},{\"index\":4,\"action_id\":\"action_459e5552d82f0669\",\"title\":\"Browse gopls feature documentation\",\"kind\":\"gopls.doc.features\",\"has_edit\":false,\"has_command\":true}],\"meta\":{\"complete\":true,\"truncated\":false}}",
+    "keys": [
+      "actions",
+      "meta"
+    ],
+    "actions": 5,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "apply_code_action",
+    "language": "go",
+    "arguments": {
+      "path": "actions.go",
+      "line": 2,
+      "column": 1,
+      "action_id": "action_1341401327c83da2",
+      "language": "go"
+    },
+    "isError": false,
+    "result_bytes": 279,
+    "elapsed_sec": 0.003,
+    "semantic_nonempty": true,
+    "preview": "{\"action_id\":\"action_1341401327c83da2\",\"applied\":true,\"edit_count\":1,\"file_count\":1,\"files\":[{\"path\":\"actions.go\",\"edits\":[{\"range\":{\"start\":{\"line\":2,\"column\":1},\"end\":{\"line\":5,\"column\":1}},\"new_text\":\"\"}]}],\"index\":0,\"kind\":\"source.organizeImports\",\"title\":\"Organize Imports\"}",
+    "keys": [
+      "action_id",
+      "applied",
+      "edit_count",
+      "file_count",
+      "files",
+      "index",
+      "kind",
+      "title"
+    ]
+  },
+  {
+    "tool": "preview_rename",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go",
+      "new_name": "CreatePerson"
+    },
+    "isError": false,
+    "result_bytes": 309,
+    "elapsed_sec": 0.032,
+    "semantic_nonempty": true,
+    "preview": "{\"applied\":false,\"edit_count\":2,\"file_count\":1,\"files\":[{\"path\":\"models.go\",\"edits\":[{\"range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"new_text\":\"CreatePerson\"},{\"range\":{\"start\":{\"line\":9,\"column\":34},\"end\":{\"line\":9,\"column\":44}},\"new_text\":\"CreatePerson\"}]}],\"new_name\":\"CreatePerson\"}",
+    "keys": [
+      "applied",
+      "edit_count",
+      "file_count",
+      "files",
+      "new_name"
+    ]
+  },
+  {
+    "tool": "rename_symbol",
+    "language": "go",
+    "arguments": {
+      "path": "models.go",
+      "symbol_path": "/MakePerson",
+      "language": "go",
+      "new_name": "CreatePerson",
+      "apply": true
+    },
+    "isError": false,
+    "result_bytes": 308,
+    "elapsed_sec": 0.003,
+    "semantic_nonempty": true,
+    "preview": "{\"applied\":true,\"edit_count\":2,\"file_count\":1,\"files\":[{\"path\":\"models.go\",\"edits\":[{\"range\":{\"start\":{\"line\":8,\"column\":6},\"end\":{\"line\":8,\"column\":16}},\"new_text\":\"CreatePerson\"},{\"range\":{\"start\":{\"line\":9,\"column\":34},\"end\":{\"line\":9,\"column\":44}},\"new_text\":\"CreatePerson\"}]}],\"new_name\":\"CreatePerson\"}",
+    "keys": [
+      "applied",
+      "edit_count",
+      "file_count",
+      "files",
+      "new_name"
+    ]
+  },
+  {
+    "tool": "get_declaration",
+    "language": "python",
+    "arguments": {
+      "path": "use.py",
+      "line": 2,
+      "column": 10,
+      "language": "python"
+    },
+    "isError": false,
+    "result_bytes": 148,
+    "elapsed_sec": 0.462,
+    "semantic_nonempty": true,
+    "locations": 1,
+    "meta": {
+      "complete": true,
+      "truncated": false
+    },
+    "preview": "{\"locations\":[{\"path\":\"people.py\",\"range\":{\"start\":{\"line\":1,\"column\":7},\"end\":{\"line\":1,\"column\":13}}}],\"meta\":{\"complete\":true,\"truncated\":false}}"
+  }
+]

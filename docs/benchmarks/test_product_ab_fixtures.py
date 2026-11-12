@@ -92,6 +92,28 @@ class FixturePreflightTests(unittest.TestCase):
             (left / "sub" / "shortcut").unlink()
             self.assertEqual(h, RUNNER.snapshot_sha256(left))
 
+    def test_quota_error_stops_future_trials_without_fabricating_failure(self):
+        import json
+        with tempfile.TemporaryDirectory(prefix="ab-quota-") as tmp:
+            path = Path(tmp) / "trace.jsonl"
+            items=[
+                {"event":{"method":"turn/completed","params":{"turn":{
+                    "status":"failed","error":{"codexErrorInfo":"usageLimitExceeded"}
+                }}}},
+            ]
+            path.write_text("\n".join(json.dumps(x) for x in items)+"\n")
+            self.assertTrue(RUNNER.trace_has_quota_error(path))
+            items=[{"event":{"method":"turn/completed","params":{"turn":{
+                "status":"failed","error":{"codexErrorInfo":"modelError"}
+            }}}}]
+            path.write_text("\n".join(json.dumps(x) for x in items)+"\n")
+            self.assertFalse(RUNNER.trace_has_quota_error(path))
+            items=[{"event":{"method":"error","params":{"error":{
+                "codexErrorInfo":"usageLimitExceeded"
+            }}}}]
+            path.write_text("\n".join(json.dumps(x) for x in items)+"\n")
+            self.assertTrue(RUNNER.trace_has_quota_error(path))
+
     def test_readonly_grader_catches_untracked_source_and_ignores_python_caches(self):
         with tempfile.TemporaryDirectory(prefix="ab-changes-") as tmp:
             root = Path(tmp)

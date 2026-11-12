@@ -146,6 +146,31 @@ def make_baseline(case:dict, trial:Path):
   if proc.returncode:raise RuntimeError("cannot freeze baseline: "+proc.stderr[:700])
  return run_command(["git","rev-parse","HEAD"],trial).stdout.strip()
 
+def trace_has_quota_error(path:Path)->bool:
+ """Detect quota exhaustion from Codex RPC events, not from grader failure.
+
+ A non-quota model failure remains an actual unsuccessful trial. Quota-limited
+ trials are retained in the audit but must not trigger more paid attempts.
+ """
+ if not path.is_file():
+  return False
+ for line in path.read_text(encoding="utf-8").splitlines():
+  try:
+   event=json.loads(line)["event"]
+  except (ValueError,KeyError,TypeError):
+   continue
+  params=event.get("params") or {}
+  if event.get("method")=="error":
+   error=params.get("error") or {}
+  elif event.get("method")=="turn/completed":
+   error=(params.get("turn") or {}).get("error") or {}
+  else:
+   continue
+  if error.get("codexErrorInfo")=="usageLimitExceeded":
+   return True
+ return False
+
+
 def agent_workspace_environment(case:dict, work:Path, warm_cache:bool)->tuple[dict,float,int]:
  """Use a sandbox-writable, prewarmed Go cache with independent A/B copies.
  A missing/intentional compile error is recorded, never called a success.
@@ -536,6 +561,9 @@ def main():
      "noncached_input_tokens":r.get("noncached_input_tokens"),
      "error":r.get("error")})
     (BASE/"summary.json").write_text(json.dumps(summaries,indent=2,ensure_ascii=False)+"\n")
+    if trace_has_quota_error(trial/(arm+"-trace.jsonl")):
+     print("STOPPED_QUOTA",case["id"],rep,arm,"previous completed trials preserved; no further trial attempted",flush=True)
+     raise SystemExit(75)
  print("RESULTS",json.dumps(summaries,ensure_ascii=False),flush=True)
 
 if __name__=="__main__":main()
