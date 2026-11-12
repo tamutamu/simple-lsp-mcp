@@ -6,6 +6,28 @@ reason about actual source ownership and cross-package relationships.
 """
 CASES = [
     {
+        "id":"S03","name":"go-exhaustive-call-hierarchy",
+        "language":"go","seed":"go","read_only":True,
+        "prompt":(
+            "Identify every direct function or method caller of the exact "
+            "document.Store.SyncBytes method in internal/document/store.go "
+            "in this Go project, including ordinary code, test functions and "
+            "benchmarks. Don't count the declaration or unrelated methods "
+            "named SyncBytes; inspect the actual call relationships. "
+            "Return ONLY a JSON object with one key callers containing "
+            "a sorted list of {path,name} objects, where path is a "
+            "workspace-relative Go source path and name is the direct "
+            "calling function or method name (method names without receiver). "
+            "No prose, no Markdown fences, and do not edit files."
+        ),
+        "answer_exact_callers":[
+            {"path":"internal/document/store.go","name":"Sync"},
+            {"path":"internal/document/store_benchmark_test.go","name":"BenchmarkWarmCandidateSync"},
+            {"path":"internal/document/store_test.go","name":"TestSyncBytesUsesAlreadyReadSourceSnapshot"},
+            {"path":"internal/tools/warm.go","name":"warmProjectSymbolCandidates"}
+        ],
+    },
+    {
         "id":"S02","name":"go-exhaustive-semantic-constructor-impact",
         "language":"go","seed":"go","read_only":True,
         "prompt":(
@@ -47,7 +69,9 @@ def validate() -> None:
     assert len({case["id"] for case in CASES})==len(CASES)
     for case in CASES:
         assert case["read_only"] and case["seed"] in {"go","ts","py"}
-        if "answer_exact_files" in case:
+        if "answer_exact_callers" in case:
+            assert len(case["answer_exact_callers"])>1
+        elif "answer_exact_files" in case:
             assert len(case["answer_exact_files"])>1
         else:
             assert len(case["answer_must_include"])>1

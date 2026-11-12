@@ -1,6 +1,6 @@
 {
   "goal": 100,
-  "counted_cycles": 4,
+  "counted_cycles": 5,
   "counting_rule": "One complete real development agent A/B comparison, explicit root-cause diagnosis, a justified product or evaluation-method correction, and a fresh matched A/B re-evaluation with independent quality grading. Direct MCP calls, unit tests, and repetitions without changes DO NOT count.",
   "workspace_branch": "agent/simple-lsp-release-20261111",
   "constraints": {
@@ -326,6 +326,112 @@
         "limitation": "The connected agent still requested relation_view=lines rather than locations, so 4336 bytes of detailed references remain. Small one-pair result is not a statistically conclusive productivity effect."
       },
       "evidence_note": "Before raw model calls were audited to exclude oracle reading, but frozen oracle exposure is a methodological flaw and is disclosed. After fresh run has no grader assets in either model workspace. Baseline used gopls CLI, so comparison is native Codex capabilities vs MCP connector, not a proof of no language server without MCP.",
+      "counted": true
+    },
+    {
+      "cycle": 5,
+      "task": "S03-go-exhaustive-call-hierarchy",
+      "language": "Go",
+      "before_run": "agent-effect-100-s03-before-20261112",
+      "before_baseline": {
+        "quality_pass": true,
+        "seconds": 21.097,
+        "noncached_input_tokens": 7529,
+        "total_input_tokens": 48233,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "cli_calls": 2
+      },
+      "before_mcp": {
+        "quality_pass": true,
+        "seconds": 20.975,
+        "noncached_input_tokens": 31658,
+        "total_input_tokens": 118442,
+        "mcp_calls": 5,
+        "mcp_tools": [
+          [
+            "find_references",
+            "failed",
+            false
+          ],
+          [
+            "get_incoming_calls",
+            "failed",
+            false
+          ],
+          [
+            "get_document_symbols",
+            "completed",
+            false
+          ],
+          [
+            "find_references",
+            "completed",
+            false
+          ],
+          [
+            "get_incoming_calls",
+            "completed",
+            false
+          ]
+        ],
+        "mcp_response_bytes": 3659,
+        "cli_calls": 0
+      },
+      "found_problems": [
+        "The connected agent wrongly guessed /Store/SyncBytes in Go although gopls identifies this pointer method as (*Store).SyncBytes, causing two failed MCP attempts.",
+        "The agent then requested get_document_symbols and both find_references and get_incoming_calls, even though one successful get_incoming_calls suffices to identify the four direct callers. Five tool attempts increased noncached input tokens from 7529 to 31658 (plus 320%)."
+      ],
+      "corrections": [
+        "Changed get_incoming_calls tool description to explicitly demonstrate Go pointer-method LSP symbol_path /(*Store).SyncBytes and discourage unverified /Store/SyncBytes guesses.",
+        "Added same-to-both-arms call-hierarchy work policy: use one get_incoming_calls call for known exact method identity, get_document_symbols only if unknown; avoid token-consuming redundant calls and artificial tool quotas.",
+        "Added a held-out S03 read-only task with four exact named caller path+function pairs and deterministic strict JSON independent grading."
+      ],
+      "after_run": "agent-effect-100-s03-after-20261112",
+      "after_baseline": {
+        "quality_pass": true,
+        "seconds": 25.654,
+        "noncached_input_tokens": 14308,
+        "total_input_tokens": 64868,
+        "mcp_calls": 0,
+        "mcp_tools": [],
+        "mcp_response_bytes": 0,
+        "cli_calls": 2
+      },
+      "after_mcp": {
+        "quality_pass": true,
+        "seconds": 14.73,
+        "noncached_input_tokens": 15709,
+        "total_input_tokens": 66909,
+        "mcp_calls": 1,
+        "mcp_tools": [
+          [
+            "get_incoming_calls",
+            "completed",
+            false
+          ]
+        ],
+        "mcp_response_bytes": 1569,
+        "cli_calls": 0
+      },
+      "after_rerun_summary": {
+        "baseline_quality_pass": true,
+        "mcp_quality_pass": true,
+        "baseline_seconds": 25.654,
+        "mcp_seconds": 14.73,
+        "mcp_time_change_percent": -42.58,
+        "mcp_noncached_token_change_percent": 9.79,
+        "actual_mcp_calls": 1,
+        "actual_tool": "get_incoming_calls",
+        "target_symbol_path": "/(*Store).SyncBytes",
+        "tool_attempts_before": 5,
+        "tool_attempts_after": 1,
+        "mcp_response_bytes_before": 3659,
+        "mcp_response_bytes_after": 1569,
+        "limitation": "One matched after A/B pair, not a statistically significant general speed benefit. Noncached input tokens remained ~9.8% higher on MCP arm."
+      },
+      "evidence_note": "Direct gopls call-hierarchy oracle returned four named callers and complete=true; both after agent answers exactly match the held-out expected object list. Trace kept isolated.",
       "counted": true
     }
   ]

@@ -94,6 +94,17 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
     " use ordinary tools. There is no LSP call quota.\n"
 )
 
+CALL_HIERARCHY_AGENTS = COMMON_AGENTS + (
+    "\nWhen a task explicitly asks for the exact direct calling functions of"
+    " a named Go method, call simple-lsp get_incoming_calls(path,symbol_path)"
+    " if connected. Go's gopls uses names like (*Store).SyncBytes, not"
+    " /Store/SyncBytes; for an unknown exact method name first use"
+    " get_document_symbols(path) and its returned symbol_id. Verify the"
+    " complete flag and report caller names/paths without rereading"
+    " source already covered. With no LSP, use precise code search and"
+    " method receiver reasoning. Never call tools to meet quotas.\n"
+)
+
 SEMANTIC_IMPLEMENTATIONS_AGENTS = COMMON_AGENTS + (
     "\nWhen the task asks for ALL concrete implementations of a Go interface,"
     " exact structural type identity matters: simple source matching can"
@@ -424,7 +435,25 @@ def grading(case:dict,work:Path,final:str)->dict:
    "T34":["cmd/simple-lsp-mcp/doctor.go","cmd/simple-lsp-mcp/main.go","tools.New"],
    "T44":["backend/benchdomain/orders.py","visible_orders","owner_invoice","!="],
   }
-  if "answer_exact_files" in case:
+  if "answer_exact_callers" in case:
+   try:
+    parsed=json.loads(final.strip())
+    actual=parsed["callers"] if isinstance(parsed,dict) else []
+    if not isinstance(actual,list) or any(not isinstance(item,dict) or set(item)!={"path","name"}
+                                          or any(not isinstance(v,str) for v in item.values()) for item in actual):
+     actual=[]
+   except (ValueError,KeyError,TypeError):
+    actual=[]
+   expected={(item["path"],item["name"]) for item in case["answer_exact_callers"]}
+   actual_pairs=[(item["path"],item["name"]) for item in actual]
+   actual_set=set(actual_pairs)
+   checks.append({
+    "name":"exact_semantic_incoming_callers",
+    "ok":len(actual_pairs)==len(actual_set) and actual_set==expected,
+    "expected_count":len(expected),"actual_count":len(actual_pairs),
+    "missing":sorted(expected-actual_set),"unexpected":sorted(actual_set-expected)
+   })
+  elif "answer_exact_files" in case:
    try:
     parsed=json.loads(final.strip())
     actual=parsed["files"] if isinstance(parsed,dict) else []
@@ -530,7 +559,7 @@ def main():
  parser.add_argument("--cases",default="all")
  parser.add_argument("--repetitions",type=int,default=2)
  parser.add_argument("--timeout",type=int,default=360)
- parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions","semantic-implementations"), default="semantic-rename")
+ parser.add_argument("--policy", choices=("semantic-rename","type-diagnostics","semantic-references","code-actions","semantic-implementations","call-hierarchy"), default="semantic-rename")
  parser.add_argument("--cache-policy",choices=("warm-workspace","legacy-external"),default="warm-workspace")
  args=parser.parse_args()
  if not CODEX or not MCP or not GO:
@@ -545,6 +574,7 @@ def main():
   else SEMANTIC_REFERENCES_AGENTS if args.policy == "semantic-references"
   else CODE_ACTIONS_AGENTS if args.policy == "code-actions"
   else SEMANTIC_IMPLEMENTATIONS_AGENTS if args.policy == "semantic-implementations"
+  else CALL_HIERARCHY_AGENTS if args.policy == "call-hierarchy"
   else COMMON_AGENTS
  )
  if PROFILE not in ("full", "coding"):
