@@ -197,8 +197,15 @@ def make_baseline(case:dict, trial:Path):
   p=trial/file
   if p.exists():p.unlink()
  (trial/"AGENTS.md").write_text(COMMON_AGENTS)
- for command in (["git","init","-q"],["git","add","-A"],["git","-c","user.name=Benchmark","-c","user.email=bench@example.invalid","commit","-qm","frozen-task-baseline"]):
-  proc=run_command(command,trial)
+ # Stable commit identity is part of the acceptance oracle. Git's default
+ # author/committer timestamps otherwise change the seed hash between
+ # independent before/after A/B runs even when every source byte is equal.
+ commands=(["git","init","-q"],["git","add","-A"],["git","-c","user.name=Benchmark","-c","user.email=bench@example.invalid","commit","-qm","frozen-task-baseline"])
+ for command in commands:
+  commit_env=ENV.copy()
+  if "commit" in command:
+   commit_env.update(GIT_AUTHOR_DATE="2000-01-01T00:00:00+00:00",GIT_COMMITTER_DATE="2000-01-01T00:00:00+00:00")
+  proc=subprocess.run(command,cwd=trial,env=commit_env,capture_output=True,text=True,timeout=120)
   if proc.returncode:raise RuntimeError("cannot freeze baseline: "+proc.stderr[:700])
  return run_command(["git","rev-parse","HEAD"],trial).stdout.strip()
 

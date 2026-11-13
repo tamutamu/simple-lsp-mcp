@@ -886,6 +886,15 @@
       "task": "S02-reference-file-audit",
       "counted": false,
       "reason": "After adding early MCP binary profile validation, both agents passed and MCP used find_references; baseline 27.803s, MCP 12.367s, fresh input 11208 vs 7041. Before/after seed hashes differ (0e7f4962 vs 04b313fa), so the strict same-source requirement is not satisfied. No cycle credit or causal efficiency claim."
+    },
+    {
+      "run": "2026-11-13-1630-deterministic-seed-identity-regression",
+      "task": "S02-before-after-seed-identity",
+      "counted": false,
+      "reason": "Existing S02 before/after A/B passed and invoked MCP, but baseline_hash differed across runs even with the same case. The benchmark seeded an ordinary Git commit with clock-dependent author/committer dates, so a fresh run could not be compared by immutable seed identity. Fixed timestamps in seed commit and added independent-run equality regression. This corrects the evaluator, but without a new full before/after A/B pair under a pinned source snapshot it is not a counted cycle.",
+      "previous_before_hash": "0e7f49627afddf044ca2e3d5dce1b6bba395cf87",
+      "previous_after_hash": "04b313fab086064a85856de807e59c95549118c4",
+      "regression": "python3 -m unittest discover -s docs/benchmarks -p test_product_ab_deterministic_seed.py -v"
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",
