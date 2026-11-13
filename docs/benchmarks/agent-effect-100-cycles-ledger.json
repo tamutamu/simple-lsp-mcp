@@ -932,6 +932,16 @@
         "mcp_cached": 44544
       },
       "next_action": "Decouple experiment instructions from frozen task seed or run strictly identical instructions and modify MCP implementation; do not relax immutable seed identity check."
+    },
+    {
+      "run": "2026-11-13-1924-cross-phase-seed-integrity-audit",
+      "task": "audit-before-after-immutable-initial-Git-snapshot",
+      "counted": false,
+      "reason": "All historical nine cycles have differing before/after Git seed commit hashes. These earlier records were accepted under weaker per-phase A/B matching and are not evidence of strict same-initial-snapshot before/after causality. New cycles 10+ now fail closed on cross-phase seed drift; the 9 legacy entries remain explicitly identified as historically weaker and must not be presented as strict cross-phase comparisons.",
+      "regression": "python3 -m unittest discover -s docs/benchmarks -p test_audit_agent_effect_cycles.py -v",
+      "model_preflight_connected": false,
+      "model_preflight_error": "Codex app-server exited with None (transient); no new A/B initiated",
+      "strict_cross_phase_valid_legacy_cycles": 0
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",

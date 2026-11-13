@@ -151,18 +151,26 @@ def audit(ledger_path: Path, scratch: Path) -> tuple[list[dict],list[dict]]:
         require(cycle.get("counted") is True,f"cycle {no}: no counted approval")
         require(bool(cycle.get("found_problems")) and bool(cycle.get("corrections")),
             f"cycle {no}: no causal diagnosis or correction")
+        phase_seeds=[]
         for phase in ("before","after"):
             root=scratch/cycle[phase+"_run"]
             allow_corrected=no==1 and phase=="before"
             b=verify_trial(root,"baseline",allow_corrected)
             m=verify_trial(root,"mcp",allow_corrected)
             diff=pair_differences(b,m)
+            phase_seeds.append(b["initial_seed_commit"])
             if phase=="after":
                 require(m["mcp_successful"]>0,
                     f"cycle {no}: no successful model-initiated LSP use after correction")
             pairs.append({"cycle":no,"task":cycle["task"],"phase":phase,**diff})
             for arm,record in [("baseline",b),("mcp",m)]:
                 trials.append({"cycle":no,"task":cycle["task"],"phase":phase,"arm":arm,**record})
+        # Historical cycles 1-9 predate deterministic frozen seeds and used
+        # changed policy files. Preserve their evidence, but reject any NEW
+        # cycle claiming an unchanged initial Git snapshot when it differs.
+        if no >= 10:
+            require(phase_seeds[0]==phase_seeds[1],
+                f"cycle {no}: before/after initial Git snapshots differ")
     return trials,pairs
 
 def main() -> None:

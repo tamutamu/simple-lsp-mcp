@@ -86,6 +86,29 @@ class AuditEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"different seeded"):
                 AUDIT.audit(ledger,root)
 
+    def test_rejects_cross_phase_seed_drift_for_new_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=self.fixtures(root)
+            data=json.loads(ledger.read_text())
+            data["cycles"][0]["cycle"]=10
+            # A real new cycle has nine predecessors. The focused check uses
+            # a single cycle numbered 10, with the numbering guard isolated.
+            original=AUDIT.require
+            def allow_numbering(condition,message):
+                if message=="cycle numbering invalid":
+                    return
+                return original(condition,message)
+            ledger.write_text(json.dumps(data)+"\n")
+            for arm in ("baseline","mcp"):
+                path=root/"after"/"S11-demo-rep1"/(arm+"-results.json")
+                result=json.loads(path.read_text())
+                result["baseline_hash"]="different-after"
+                path.write_text(json.dumps(result)+"\n")
+            from unittest.mock import patch
+            with patch.object(AUDIT,"require",side_effect=allow_numbering):
+                with self.assertRaisesRegex(ValueError,"before/after initial Git snapshots differ"):
+                    AUDIT.audit(ledger,root)
+
     def test_rejects_missing_genuine_lsp_use(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);ledger=self.fixtures(root)
