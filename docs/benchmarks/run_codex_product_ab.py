@@ -94,8 +94,11 @@ SEMANTIC_REFERENCES_AGENTS = COMMON_AGENTS + (
     " exclude_test_files=true and include_declaration=false; the filter"
     " scope is disclosed. Do not use inspect_symbol(related=references)"
     " for exhaustive results: it caps each relation at 20. Reuse complete"
-    " results instead of rereading unchanged source. With no LSP,"
-    " use ordinary tools. There is no LSP call quota.\n"
+    " results instead of rereading unchanged source. A complete files"
+    " result is sufficient for this task: do not request the same"
+    " declaration again with lines/locations or read every returned"
+    " file merely to reconfirm its presence. With no LSP, use ordinary"
+    " tools. There is no LSP call quota.\n"
 )
 
 OUTGOING_CALLS_AGENTS = COMMON_AGENTS + (

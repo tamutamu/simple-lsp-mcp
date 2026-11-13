@@ -903,6 +903,35 @@
       "reason": "Audit had trusted mcp_calls in results.json without checking model-generated item/completed events in raw trace. Added trace reconciliation and regression test; no fresh before/after Codex A/B, therefore no new valid cycle.",
       "quality": "Existing 9 cycles remain valid under stronger audit; 7 regression tests passed.",
       "model_preflight_connected": true
+    },
+    {
+      "run": "2026-11-13-1825-s02-references-duplicate-call-remediation",
+      "task": "S02-go-exhaustive-semantic-constructor-impact",
+      "counted": false,
+      "reason": "Before/after independent A/B both passed and used actual MCP, and revised reference guidance reduced duplicate MCP calls from 2 to 1. However the benchmark injects policy text into the committed AGENTS.md seed, so changing the evaluation guidance changes the seed Git hash. Strict same-initial-snapshot requirement fails; no new cycle counted.",
+      "before_run": "agent-effect-200-s02-deterministic-before-20261113",
+      "after_run": "agent-effect-200-s02-fixed-after-20261113",
+      "before_seed": "43d6ae5676168aeb27594ff163889781e4220194",
+      "after_seed": "1abc6ebd156ff5e33798ab2c04bce56aa0681a77",
+      "before": {
+        "baseline_seconds": 31.644,
+        "mcp_seconds": 17.236,
+        "mcp_calls": 2,
+        "baseline_noncached": 10471,
+        "mcp_noncached": 13278,
+        "baseline_cached": 67072,
+        "mcp_cached": 75008
+      },
+      "after": {
+        "baseline_seconds": 24.98,
+        "mcp_seconds": 14.215,
+        "mcp_calls": 1,
+        "baseline_noncached": 9277,
+        "mcp_noncached": 16503,
+        "baseline_cached": 67072,
+        "mcp_cached": 44544
+      },
+      "next_action": "Decouple experiment instructions from frozen task seed or run strictly identical instructions and modify MCP implementation; do not relax immutable seed identity check."
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",
