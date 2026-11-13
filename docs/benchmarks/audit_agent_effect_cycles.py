@@ -49,9 +49,16 @@ def verify_trial(root: Path, arm: str, allow_corrected: bool) -> dict:
     trace=path.with_name(arm+"-trace.jsonl")
     require(trace.is_file(),f"{path}: trace missing")
     usage_updates=[]
+    trace_mcp_calls=[]
     for line in trace.read_text(encoding="utf8").splitlines():
         try: event=json.loads(line)["event"]
         except (ValueError,KeyError):continue
+        if event.get("method")=="item/completed":
+            item=(event.get("params") or {}).get("item") or {}
+            if item.get("type")=="mcpToolCall":
+                require(item.get("server")=="simple-lsp",f"{trace}: unexpected MCP server")
+                trace_mcp_calls.append({"tool":item.get("tool"),"status":item.get("status"),
+                    "is_error":bool(item.get("error"))})
         if event.get("method")=="thread/tokenUsage/updated":
             usage_updates.append(event["params"]["tokenUsage"])
     require(len(usage_updates)>=1,f"{path}: missing model usage events")
@@ -59,6 +66,9 @@ def verify_trial(root: Path, arm: str, allow_corrected: bool) -> dict:
     require(int(last["inputTokens"])==total and int(last["cachedInputTokens"])==cached and int(last["outputTokens"])==output,
         f"{path}: trace and result model usage disagree")
     mcp=raw.get("mcp_calls") or []
+    require([(x.get("tool"),x.get("status"),bool(x.get("is_error",False))) for x in mcp]
+            ==[(x["tool"],x["status"],x["is_error"]) for x in trace_mcp_calls],
+            f"{path}: reported MCP calls disagree with actual model trace")
     successful=sum(call.get("status")=="completed" and not call.get("is_error",False) for call in mcp)
     return {
         "case_id":raw["case_id"],

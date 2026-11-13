@@ -29,7 +29,11 @@ class AuditEvidenceTests(unittest.TestCase):
         (folder/(arm+"-results.json")).write_text(json.dumps(value)+"\n")
         usage={"event":{"method":"thread/tokenUsage/updated","params":{
             "tokenUsage":{"total":{"inputTokens":total,"cachedInputTokens":cached,"outputTokens":12}}}}}
-        (folder/(arm+"-trace.jsonl")).write_text(json.dumps(usage)+"\n")
+        events=[usage]
+        for call in tool_calls:
+            events.append({"event":{"method":"item/completed","params":{"item":{
+                "type":"mcpToolCall","server":"simple-lsp",**call}}}})
+        (folder/(arm+"-trace.jsonl")).write_text("".join(json.dumps(e)+"\n" for e in events))
         return folder
 
     def fixtures(self,root:Path)->Path:
@@ -62,6 +66,15 @@ class AuditEvidenceTests(unittest.TestCase):
             data["noncached_input_tokens"]=50
             result.write_text(json.dumps(data)+"\n")
             with self.assertRaisesRegex(ValueError,"mismatched noncached"):
+                AUDIT.audit(ledger,root)
+
+    def test_rejects_fabricated_mcp_calls_not_in_model_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=self.fixtures(root)
+            trace=root/"after/S11-demo-rep1/mcp-trace.jsonl"
+            events=[json.loads(line) for line in trace.read_text().splitlines()]
+            trace.write_text(json.dumps(events[0])+"\n")
+            with self.assertRaisesRegex(ValueError,"reported MCP calls disagree"):
                 AUDIT.audit(ledger,root)
 
     def test_rejects_different_seed(self):

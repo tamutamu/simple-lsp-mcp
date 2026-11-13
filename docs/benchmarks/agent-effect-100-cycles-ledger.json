@@ -895,6 +895,14 @@
       "previous_before_hash": "0e7f49627afddf044ca2e3d5dce1b6bba395cf87",
       "previous_after_hash": "04b313fab086064a85856de807e59c95549118c4",
       "regression": "python3 -m unittest discover -s docs/benchmarks -p test_product_ab_deterministic_seed.py -v"
+    },
+    {
+      "run": "2026-11-13-17-30-audit-trace-integrity",
+      "task": "agent-level-audit-real-mcp-invocation-integrity",
+      "counted": false,
+      "reason": "Audit had trusted mcp_calls in results.json without checking model-generated item/completed events in raw trace. Added trace reconciliation and regression test; no fresh before/after Codex A/B, therefore no new valid cycle.",
+      "quality": "Existing 9 cycles remain valid under stronger audit; 7 regression tests passed.",
+      "model_preflight_connected": true
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",
