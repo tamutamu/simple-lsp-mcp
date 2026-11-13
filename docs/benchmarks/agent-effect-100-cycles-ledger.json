@@ -868,6 +868,24 @@
       "connected": false,
       "reason": "Codex app-server exited with None before authenticated model-turn evidence; no A/B trial started. Host execution used without_sandbox and explicit mise Codex path. This is not a quota determination.",
       "input_tokens": 0
+    },
+    {
+      "run": "agent-effect-200-s02-next-before-20261113",
+      "task": "S02-reference-file-audit",
+      "counted": false,
+      "reason": "Stale MCP binary did not support the analysis profile. Baseline succeeded but MCP initialize handshake failed; not a valid pair."
+    },
+    {
+      "run": "agent-effect-200-s02-next-valid-before-20261113",
+      "task": "S02-reference-file-audit",
+      "counted": false,
+      "reason": "Both agents passed, actual find_references used; baseline 37.993s, MCP 14.427s, fresh input 11815 vs 10391. Reused S02 task; evaluation-runner profile-preflight defect discovered. Before/after seed hashes differ; not claimed as a counted improvement cycle."
+    },
+    {
+      "run": "agent-effect-200-s02-next-after-20261113",
+      "task": "S02-reference-file-audit",
+      "counted": false,
+      "reason": "After adding early MCP binary profile validation, both agents passed and MCP used find_references; baseline 27.803s, MCP 12.367s, fresh input 11208 vs 7041. Before/after seed hashes differ (0e7f4962 vs 04b313fa), so the strict same-source requirement is not satisfied. No cycle credit or causal efficiency claim."
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",

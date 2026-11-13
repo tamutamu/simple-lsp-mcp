@@ -610,6 +610,17 @@ def main():
  )
  if PROFILE not in ("full", "coding", "analysis"):
   parser.error("PRODUCT_AB_PROFILE must be full, coding or analysis")
+ # A stale MCP executable may accept the default profile but reject newer
+ # profiles during Codex's initialize handshake. Fail before freezing sources
+ # or running a costly baseline arm, rather than mislabeling this as model failure.
+ try:
+  probe=subprocess.run([MCP,"--tool-profile",PROFILE,"--workspace",str(ROOT)],
+   input="",capture_output=True,text=True,timeout=8,env=ENV,cwd=ROOT)
+ except (OSError,subprocess.TimeoutExpired) as exc:
+  parser.error(f"MCP profile preflight failed: {exc}")
+ if probe.returncode!=0:
+  parser.error(f"MCP executable does not support profile {PROFILE!r}: "
+   +probe.stderr.strip()[:300])
  policy=args.policy
  cache_policy=args.cache_policy
  args=argparse.Namespace(cases=args.cases,repetitions=args.repetitions,timeout=args.timeout)
