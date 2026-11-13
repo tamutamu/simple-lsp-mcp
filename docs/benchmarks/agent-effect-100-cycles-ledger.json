@@ -852,6 +852,22 @@
       "quality_pass_both": true,
       "mcp_actual_tool_calls": 0,
       "why_not_counted": "The treatment arm never invoked simple-lsp-mcp; it used shell gopls references instead. Therefore it is not evidence of MCP-driven improvement and cannot satisfy the required trace usage check."
+    },
+    {
+      "run": "2026-11-13-automation-preflight-appserver-exit",
+      "task": "authenticated-model-transport-preflight",
+      "counted": false,
+      "connected": false,
+      "reason": "Codex app-server exited with None before authenticated model-turn evidence; no A/B trial started. Host execution used without_sandbox and explicit mise Codex path. This is not a quota determination.",
+      "input_tokens": 0
+    },
+    {
+      "run": "2026-11-13-automation-preflight-appserver-exit",
+      "task": "authenticated-model-transport-preflight",
+      "counted": false,
+      "connected": false,
+      "reason": "Codex app-server exited with None before authenticated model-turn evidence; no A/B trial started. Host execution used without_sandbox and explicit mise Codex path. This is not a quota determination.",
+      "input_tokens": 0
     }
   ],
   "execution_protocol": "docs/benchmarks/agent-effect-200-execution.md",
